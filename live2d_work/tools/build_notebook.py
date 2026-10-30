@@ -1,8 +1,9 @@
-"""see_through_kaggle_colab.ipynb を生成する(psd_report.py を埋め込むため、psd_report.py を直したら再実行)。"""
+"""see_through_kaggle_colab.ipynb を生成する(psd_report.py・run_lowmem.py を埋め込むため、それらを直したら再実行)。"""
 import json
 from pathlib import Path
 WORK = Path(__file__).resolve().parent.parent
 report_src = (WORK / "tools" / "psd_report.py").read_text()
+lowmem_src = (WORK / "tools" / "run_lowmem.py").read_text()
 COMMIT = "df019de5129d6c4b406587a14c3501669441a783"
 
 def md(s): return {"cell_type": "markdown", "metadata": {}, "source": s.strip("\n")}
@@ -111,9 +112,10 @@ Image.open("input/secretary_bust.png").resize((322, 640))
 md("""
 ## 4. パーツ分け実行(10〜20分)
 
-T4(VRAM 15GB)向けに `--group_offload`(約10GB)で実行。失敗したら自動で 8GB 量子化ルートに切り替えます。\n両方失敗した場合は、それぞれのエラーの末尾をまとめて表示します。
+T4(VRAM 15GB)向けに `--group_offload`(約10GB)で実行。T4 は省メモリ版の注意計算(bf16)に対応していないため、`run_lowmem.py` で注意計算を小分けにして実行します(結果は同じ)。失敗したら自動で 8GB 量子化ルートに切り替えます。\n両方失敗した場合は、それぞれのエラーの末尾をまとめて表示します。
 `--tblr_split` で左右の目・眉を別レイヤーにします(片目ウインク用)。
 """),
+code("%%writefile run_lowmem.py\n" + lowmem_src),
 code("""
 import os, subprocess
 env = dict(os.environ, CUDA_VISIBLE_DEVICES="0")  # T4 x2 でも1枚目だけを使う
@@ -126,7 +128,7 @@ if test.returncode != 0:
     raise SystemExit("GPU 計算の確認に失敗しました。上の表示とセル1の表示を秘書に貼ってください")
 
 def run(script, extra=(), log="run.log"):
-    cmd = ["python", f"inference/scripts/{script}", "--srcp", "input/secretary_bust.png",
+    cmd = ["python", "run_lowmem.py", f"inference/scripts/{script}", "--srcp", "input/secretary_bust.png",
            "--save_to_psd", "--tblr_split", "--save_dir", "workspace/layerdiff_output", *extra]
     print("$", " ".join(cmd))
     with open(log, "w") as f:
