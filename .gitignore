@@ -4,3 +4,4 @@ backend/__pycache__/
 frontend/node_modules/
 frontend/dist/
 .DS_Store
+live2d_work/**/*.zip

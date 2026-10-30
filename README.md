@@ -39,3 +39,7 @@
 
 - APIキーは `backend/.env` のみ(gitコミット禁止)。ブラウザ側には渡しません
 - パスワード類はこのシステムでは一切扱いません(投稿は社長が実行)
+
+## Live2D 化(進行中)
+
+秘書を Live2D モデルに置き換えるプロジェクトを `live2d_work/` で進めています。進捗と次の作業は [`live2d_work/README.md`](live2d_work/README.md) を参照。
