@@ -26,8 +26,18 @@ md("""
 """),
 md("## 1. GPU 確認"),
 code("""
-!nvidia-smi --query-gpu=name,memory.total --format=csv
-import sys; print(sys.version)
+import subprocess, sys
+print(sys.version)
+out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total,compute_cap", "--format=csv,noheader"],
+                     capture_output=True, text=True).stdout.strip()
+print(out or "GPU が見つかりません")
+if not out:
+    raise SystemExit("GPU が有効になっていません。Kaggle: Settings → Accelerator を『GPU T4 x2』に / Colab: ランタイムのタイプを『T4 GPU』に")
+cap = float(out.splitlines()[0].split(",")[-1])
+if cap < 7.5:
+    # See-through が使う PyTorch 2.8 (CUDA 12.8 版) は P100 など古いGPUに対応していない
+    raise SystemExit(f"このGPU({out.splitlines()[0]})は非対応です。Kaggle は Accelerator を『GPU T4 x2』に変えてください(P100 は不可)")
+print("GPU OK")
 """),
 md("## 2. See-through のインストール(10〜15分)"),
 code("""
@@ -94,21 +104,43 @@ Image.open("input/secretary_bust.png").resize((322, 640))
 md("""
 ## 4. パーツ分け実行(10〜20分)
 
-T4(VRAM 15GB)向けに `--group_offload`(約10GB)で実行。メモリ不足(OOM)で落ちたら自動で 8GB 量子化ルートに切り替えます。
+T4(VRAM 15GB)向けに `--group_offload`(約10GB)で実行。失敗したら自動で 8GB 量子化ルートに切り替えます。\n両方失敗した場合は、それぞれのエラーの末尾をまとめて表示します。
 `--tblr_split` で左右の目・眉を別レイヤーにします(片目ウインク用)。
 """),
 code("""
-import subprocess
-def run(script, extra=()):
+import os, subprocess
+env = dict(os.environ, CUDA_VISIBLE_DEVICES="0")  # T4 x2 でも1枚目だけを使う
+
+# まず GPU 計算が動くかを確認(ここで落ちる場合はGPUの種類かドライバの問題)
+test = subprocess.run(["python", "-c", "import torch; a = torch.randn(64, 64, device='cuda', dtype=torch.bfloat16); "
+                       "print(torch.cuda.get_device_name(0), float((a @ a).sum()))"], env=env, capture_output=True, text=True)
+print(test.stdout or test.stderr[-2000:])
+if test.returncode != 0:
+    raise SystemExit("GPU 計算の確認に失敗しました。上の表示とセル1の表示を秘書に貼ってください")
+
+def run(script, extra=(), log="run.log"):
     cmd = ["python", f"inference/scripts/{script}", "--srcp", "input/secretary_bust.png",
            "--save_to_psd", "--tblr_split", "--save_dir", "workspace/layerdiff_output", *extra]
-    print(" ".join(cmd)); return subprocess.run(cmd).returncode
-rc = run("inference_psd.py", ["--group_offload"])
+    print("$", " ".join(cmd))
+    with open(log, "w") as f:
+        p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in p.stdout:
+            print(line, end=""); f.write(line)
+    return p.wait()
+
+def tail(log, n=25):
+    return "".join(open(log).readlines()[-n:])
+
+rc = run("inference_psd.py", ["--group_offload"], log="run_main.log")
 if rc != 0:
-    print("→ 量子化ルートで再実行します")
-    import torch; torch.cuda.empty_cache()
-    rc = run("inference_psd_quantized.py")
-assert rc == 0, "失敗しました。エラー表示をそのまま秘書に貼ってください"
+    print("\\n→ 標準ルートが失敗したので、量子化ルートで再実行します\\n")
+    rc = run("inference_psd_quantized.py", log="run_quantized.log")
+if rc != 0:
+    print("=" * 60)
+    print("【標準ルートのエラー(末尾)】\\n" + tail("run_main.log"))
+    print("【量子化ルートのエラー(末尾)】\\n" + tail("run_quantized.log"))
+    print("=" * 60)
+    raise SystemExit("失敗しました。==== で囲まれた部分を秘書に貼ってください")
 !ls -la workspace/layerdiff_output
 """),
 md("## 5. 自動検収(レイヤー一覧画像 + 検収レポート)"),
