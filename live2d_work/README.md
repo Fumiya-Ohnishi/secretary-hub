@@ -29,8 +29,9 @@
 | `PHASE2_ROUTES.md` | リギング ルートA(FREE版)/B(外注3案)の見積もり比較 |
 | `RIGGING_SPEC_FREE.md` | ルートA の簡易リギング仕様書(パラメータ21個・ステップ解説) |
 | `tools/prepare_input.py` | 入力画像の切り出し |
+| `tools/run_lowmem.py` | T4 向けに注意計算を小分けにして See-through を実行するラッパー(ノートブックに埋め込み) |
 | `tools/psd_report.py` | PSD 自動検収(レイヤー一覧画像 + `qa_report.md`) |
-| `tools/build_notebook.py` | ノートブック再生成(`psd_report.py` を直したら実行) |
+| `tools/build_notebook.py` | ノートブック再生成(`psd_report.py`・`run_lowmem.py` を直したら実行) |
 
 ## 検収コマンド(手元で再チェックする場合)
 
