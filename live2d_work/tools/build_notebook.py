@@ -32,7 +32,8 @@ import sys; print(sys.version)
 md("## 2. See-through のインストール(10〜15分)"),
 code("""
 import os, subprocess, urllib.error, urllib.request
-ROOT = "/kaggle/working" if os.path.exists("/kaggle") else "/content"
+# Kaggle かどうかは環境変数で判定する(Colab にも /kaggle フォルダがあるため、フォルダの有無では判定できない)
+ROOT = "/kaggle/working" if os.environ.get("KAGGLE_KERNEL_RUN_TYPE") else "/content"
 REPO = ROOT + "/see-through"
 COMMIT = "__COMMIT__"
 
@@ -65,7 +66,7 @@ print("インストール完了。Colab で『セッションを再起動』と�
 md("## 3. 秘書の画像を用意"),
 code("""
 import glob, os, shutil
-REPO = "/kaggle/working/see-through" if os.path.exists("/kaggle") else "/content/see-through"
+REPO = ("/kaggle/working" if os.environ.get("KAGGLE_KERNEL_RUN_TYPE") else "/content") + "/see-through"
 if not os.path.exists(REPO + "/inference"):
     raise SystemExit("See-through がまだインストールされていません。セル2を実行し、最後に『インストール完了』と出るのを確認してください。")
 os.chdir(REPO)
