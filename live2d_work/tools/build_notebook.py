@@ -32,7 +32,8 @@ import sys; print(sys.version)
 md("## 2. See-through のインストール(10〜15分)"),
 code("""
 import os, subprocess, urllib.error, urllib.request
-ROOT = "/kaggle/working" if os.path.exists("/kaggle") else "/content"
+# Kaggle かどうかは環境変数で判定する(Colab にも /kaggle フォルダがあるため、フォルダの有無では判定できない)
+ROOT = "/kaggle/working" if os.environ.get("KAGGLE_KERNEL_RUN_TYPE") else "/content"
 REPO = ROOT + "/see-through"
 COMMIT = "__COMMIT__"
 
@@ -56,16 +57,23 @@ if not os.path.exists(REPO + "/.git"):
 sh("git checkout -q " + COMMIT)
 # 公式の固定バージョン(CUDA 12.8)
 sh("pip install -q torch==2.8.0+cu128 torchvision==0.23.0+cu128 torchaudio==2.8.0+cu128 --index-url https://download.pytorch.org/whl/cu128")
-sh("pip install -q -r requirements.txt")
+# 推論に不要な開発用・UI用ライブラリは入れない
+# (ipykernel 等を入れ替えると Colab/Kaggle 本体が不安定になるため)
+SKIP = ("ipykernel", "pytest", "pyqt6", "qtpy", "lpips", "convnext_perceptual_loss")
+with open(REPO + "/requirements.txt") as f:
+    reqs = [l for l in f if not l.strip().lower().startswith(SKIP)]
+with open(REPO + "/requirements-notebook.txt", "w") as f:
+    f.writelines(reqs)
+sh("pip install -q -r requirements-notebook.txt")
 sh("pip install -q -r requirements-inference-bnb.txt")  # 8GB 量子化ルート(予備)用
 sh("ln -sfn common/assets assets")
 os.chdir(REPO)
-print("インストール完了。Colab で『セッションを再起動』と出たら、再起動してからセル3へ進んでください。")
+print("インストール完了。依存関係の ERROR/警告(dependency conflicts)が出ていても問題ありません。"\n      "Colab で『セッションを再起動』と出たら、再起動してからセル3へ進んでください。")
 """.replace("__COMMIT__", COMMIT)),
 md("## 3. 秘書の画像を用意"),
 code("""
 import glob, os, shutil
-REPO = "/kaggle/working/see-through" if os.path.exists("/kaggle") else "/content/see-through"
+REPO = ("/kaggle/working" if os.environ.get("KAGGLE_KERNEL_RUN_TYPE") else "/content") + "/see-through"
 if not os.path.exists(REPO + "/inference"):
     raise SystemExit("See-through がまだインストールされていません。セル2を実行し、最後に『インストール完了』と出るのを確認してください。")
 os.chdir(REPO)
