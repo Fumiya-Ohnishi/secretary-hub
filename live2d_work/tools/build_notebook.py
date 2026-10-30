@@ -1,0 +1,115 @@
+"""see_through_kaggle_colab.ipynb を生成する(psd_report.py を埋め込むため、psd_report.py を直したら再実行)。"""
+import json
+from pathlib import Path
+WORK = Path(__file__).resolve().parent.parent
+report_src = (WORK / "tools" / "psd_report.py").read_text()
+COMMIT = "df019de5129d6c4b406587a14c3501669441a783"
+
+def md(s): return {"cell_type": "markdown", "metadata": {}, "source": s.strip("\n")}
+def code(s): return {"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [], "source": s.strip("\n")}
+
+cells = [
+md("""
+# 秘書 Live2D 化 Phase 1: See-through で PSD パーツ分け
+
+**上から順に ▶ を押すだけ**で、秘書のイラストを Live2D 用の PSD(前髪/後ろ髪/眉/白目/瞳/まつ毛/口/顔/首/服…)に分解します。
+
+- 対応環境: **Kaggle**(推奨・GPU T4 x2・週30時間無料)/ **Google Colab**(無料 T4)
+- 所要時間の目安: インストール 10〜15分 + 分解 10〜20分(初回はモデル約15GBのダウンロード込み)
+- 必要なもの: `secretary_bust.png`(秘書ハブの `live2d_work/input/` にあります)
+- このノートブックは**パスワード等を一切使いません**(公開モデルのみ使用)
+
+### 事前設定
+- **Kaggle**: 右パネル Settings → Accelerator を **GPU T4 x2**、Internet を **ON**(電話番号認証済みアカウントが必要)。
+  右パネル「Add Input → Upload」で `secretary_bust.png` をアップロード(Dataset名は何でも可)。
+- **Colab**: メニュー「ランタイム → ランタイムのタイプを変更 → T4 GPU」。画像はセル3で選択します。
+"""),
+md("## 1. GPU 確認"),
+code("""
+!nvidia-smi --query-gpu=name,memory.total --format=csv
+import sys; print(sys.version)
+"""),
+md("## 2. See-through のインストール(10〜15分)"),
+code(f"""
+import os
+ROOT = "/kaggle/working" if os.path.exists("/kaggle") else "/content"
+os.chdir(ROOT)
+!git clone https://github.com/shitagaki-lab/see-through.git
+%cd see-through
+!git checkout {COMMIT}
+# 公式の固定バージョン(CUDA 12.8)
+!pip install -q torch==2.8.0+cu128 torchvision==0.23.0+cu128 torchaudio==2.8.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+!pip install -q -r requirements.txt
+!pip install -q -r requirements-inference-bnb.txt   # 8GB 量子化ルート(予備)用
+!ln -sf common/assets assets
+print("インストール完了。Colab で『セッションを再起動』と出たら、再起動してからセル3へ進んでください。")
+"""),
+md("## 3. 秘書の画像を用意"),
+code("""
+import glob, os, shutil
+os.chdir("/kaggle/working/see-through" if os.path.exists("/kaggle") else "/content/see-through")
+os.makedirs("input", exist_ok=True)
+found = glob.glob("/kaggle/input/**/secretary_bust.png", recursive=True)
+if found:
+    shutil.copy(found[0], "input/secretary_bust.png")
+else:
+    try:
+        from google.colab import files
+        up = files.upload()  # secretary_bust.png を選択
+        shutil.move(next(iter(up)), "input/secretary_bust.png")
+    except ImportError:
+        raise SystemExit("Kaggle: 右パネルの Add Input から secretary_bust.png をアップロードしてください")
+from PIL import Image
+Image.open("input/secretary_bust.png").resize((322, 640))
+"""),
+md("""
+## 4. パーツ分け実行(10〜20分)
+
+T4(VRAM 15GB)向けに `--group_offload`(約10GB)で実行。メモリ不足(OOM)で落ちたら自動で 8GB 量子化ルートに切り替えます。
+`--tblr_split` で左右の目・眉を別レイヤーにします(片目ウインク用)。
+"""),
+code("""
+import subprocess
+def run(script, extra=()):
+    cmd = ["python", f"inference/scripts/{script}", "--srcp", "input/secretary_bust.png",
+           "--save_to_psd", "--tblr_split", "--save_dir", "workspace/layerdiff_output", *extra]
+    print(" ".join(cmd)); return subprocess.run(cmd).returncode
+rc = run("inference_psd.py", ["--group_offload"])
+if rc != 0:
+    print("→ 量子化ルートで再実行します")
+    import torch; torch.cuda.empty_cache()
+    rc = run("inference_psd_quantized.py")
+assert rc == 0, "失敗しました。エラー表示をそのまま秘書に貼ってください"
+!ls -la workspace/layerdiff_output
+"""),
+md("## 5. 自動検収(レイヤー一覧画像 + 検収レポート)"),
+code("%%writefile psd_report.py\n" + report_src),
+code("""
+!mkdir -p secretary_psd
+!cp workspace/layerdiff_output/secretary_bust.psd workspace/layerdiff_output/secretary_bust_depth.psd secretary_psd/
+!python psd_report.py secretary_psd/secretary_bust.psd --ref input/secretary_bust.png --out secretary_psd
+from IPython.display import Image as IPImage, Markdown, display
+display(IPImage("secretary_psd/layers_overview.png"))
+display(Markdown(open("secretary_psd/qa_report.md", encoding="utf-8").read()))
+"""),
+md("""
+## 6. ダウンロード
+
+`secretary_psd.zip` を保存し、Mac の `secretary-hub/live2d_work/secretary_psd/` に展開してください。
+- Kaggle: 右パネル Output(`/kaggle/working`)から `secretary_psd.zip` をダウンロード
+- Colab: 下のセルで自動ダウンロード
+"""),
+code("""
+!cd secretary_psd && zip -q -r ../secretary_psd.zip . && cd .. && ls -la secretary_psd.zip
+try:
+    from google.colab import files; files.download("secretary_psd.zip")
+except ImportError:
+    import shutil; shutil.copy("secretary_psd.zip", "/kaggle/working/secretary_psd.zip")
+"""),
+]
+nb = {"cells": cells, "metadata": {"accelerator": "GPU", "kernelspec": {"name": "python3", "display_name": "Python 3"},
+      "language_info": {"name": "python"}}, "nbformat": 4, "nbformat_minor": 5}
+for c in nb["cells"]:
+    c["source"] = c["source"].splitlines(keepends=True)
+(WORK / "see_through_kaggle_colab.ipynb").write_text(json.dumps(nb, ensure_ascii=False, indent=1))
+print("ok")
