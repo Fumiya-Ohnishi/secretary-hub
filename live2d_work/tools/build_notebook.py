@@ -30,24 +30,45 @@ code("""
 import sys; print(sys.version)
 """),
 md("## 2. See-through のインストール(10〜15分)"),
-code(f"""
-import os
+code("""
+import os, subprocess, urllib.error, urllib.request
 ROOT = "/kaggle/working" if os.path.exists("/kaggle") else "/content"
-os.chdir(ROOT)
-!git clone https://github.com/shitagaki-lab/see-through.git
-%cd see-through
-!git checkout {COMMIT}
+REPO = ROOT + "/see-through"
+COMMIT = "__COMMIT__"
+
+# インターネット接続の確認(Kaggle は Settings → Internet を ON にする必要あり)
+try:
+    urllib.request.urlopen("https://github.com", timeout=15)
+except urllib.error.HTTPError:
+    pass  # 応答が返ってくれば接続はできている
+except Exception as e:
+    raise SystemExit("インターネットに繋がっていません。Kaggle の右パネル Settings → Internet を ON にしてから"
+                     "(電話番号認証が必要)、このセルをもう一度実行してください。詳細: " + repr(e))
+
+def sh(cmd, cwd=REPO):
+    print("$", cmd)
+    rc = subprocess.run(cmd, shell=True, cwd=cwd).returncode
+    if rc != 0:
+        raise SystemExit("失敗しました: " + cmd + "  ← この上のエラー表示を秘書に貼ってください")
+
+if not os.path.exists(REPO + "/.git"):
+    sh("git clone https://github.com/shitagaki-lab/see-through.git " + REPO, cwd=ROOT)
+sh("git checkout -q " + COMMIT)
 # 公式の固定バージョン(CUDA 12.8)
-!pip install -q torch==2.8.0+cu128 torchvision==0.23.0+cu128 torchaudio==2.8.0+cu128 --index-url https://download.pytorch.org/whl/cu128
-!pip install -q -r requirements.txt
-!pip install -q -r requirements-inference-bnb.txt   # 8GB 量子化ルート(予備)用
-!ln -sf common/assets assets
+sh("pip install -q torch==2.8.0+cu128 torchvision==0.23.0+cu128 torchaudio==2.8.0+cu128 --index-url https://download.pytorch.org/whl/cu128")
+sh("pip install -q -r requirements.txt")
+sh("pip install -q -r requirements-inference-bnb.txt")  # 8GB 量子化ルート(予備)用
+sh("ln -sfn common/assets assets")
+os.chdir(REPO)
 print("インストール完了。Colab で『セッションを再起動』と出たら、再起動してからセル3へ進んでください。")
-"""),
+""".replace("__COMMIT__", COMMIT)),
 md("## 3. 秘書の画像を用意"),
 code("""
 import glob, os, shutil
-os.chdir("/kaggle/working/see-through" if os.path.exists("/kaggle") else "/content/see-through")
+REPO = "/kaggle/working/see-through" if os.path.exists("/kaggle") else "/content/see-through"
+if not os.path.exists(REPO + "/inference"):
+    raise SystemExit("See-through がまだインストールされていません。セル2を実行し、最後に『インストール完了』と出るのを確認してください。")
+os.chdir(REPO)
 os.makedirs("input", exist_ok=True)
 found = glob.glob("/kaggle/input/**/secretary_bust.png", recursive=True)
 if found:
