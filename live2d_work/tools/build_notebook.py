@@ -65,8 +65,15 @@ def sh(cmd, cwd=REPO):
 if not os.path.exists(REPO + "/.git"):
     sh("git clone https://github.com/shitagaki-lab/see-through.git " + REPO, cwd=ROOT)
 sh("git checkout -q " + COMMIT)
-# 公式の固定バージョン(CUDA 12.8)
-sh("pip install -q torch==2.8.0+cu128 torchvision==0.23.0+cu128 torchaudio==2.8.0+cu128 --index-url https://download.pytorch.org/whl/cu128")
+# PyTorch: Kaggle/Colab に最初から入っている CUDA 版(2.8以上)があればそれを使う。
+# 入れ替えると環境の CUDA ライブラリと食い違い、CUBLAS_STATUS_NOT_INITIALIZED で落ちることがあるため
+pre = subprocess.run(["python", "-c", "import torch;print(torch.__version__, torch.version.cuda)"],
+                     capture_output=True, text=True).stdout.split()
+ver = tuple(int(x) for x in pre[0].split("+")[0].split(".")[:2]) if pre else (0, 0)
+if ver >= (2, 8) and pre[1] != "None":
+    print("PyTorch はプリインストール版を使います:", " ".join(pre))
+else:
+    sh("pip install -q torch==2.8.0+cu128 torchvision==0.23.0+cu128 torchaudio==2.8.0+cu128 --index-url https://download.pytorch.org/whl/cu128")
 # 推論に不要な開発用・UI用ライブラリは入れない
 # (ipykernel 等を入れ替えると Colab/Kaggle 本体が不安定になるため)
 SKIP = ("ipykernel", "pytest", "pyqt6", "qtpy", "lpips", "convnext_perceptual_loss")
