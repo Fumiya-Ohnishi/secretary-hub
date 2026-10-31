@@ -1,6 +1,7 @@
 # 簡易リギング仕様書(ルートA: Live2D Cubism Editor FREE版)
 
 > 対象: Live2D 初心者の社長。所要 3〜6時間(セッション1: 手順0〜5 / セッション2: 手順6〜10)。
+> **2時間やって手順5まで進まなければ、無理せずルートB(外注)に切り替えます**(途中のデータも外注先に渡せます)。
 > 詰まったら画面のスクリーンショットを秘書に渡してください。Claude が次の操作を指示します。
 > メニュー名は Cubism Editor のバージョンで多少異なります。見つからない時もスクショを送ってください。
 > 用語: **パラメータ** = 動きのつまみ / **デフォーマ** = パーツをまとめて変形させる枠 / **キーフォーム** = つまみの位置ごとの形
@@ -10,7 +11,7 @@
 1. Live2D 公式サイトから Cubism Editor(最新版)をダウンロード・インストール。起動時に「FREE版を使う」を選ぶ
    (アカウント作成やログインは社長が直接行う。Claude はログイン情報を扱いません)
 2. 公式比較ページで FREE版の上限(パラメータ数・デフォーマ数・アートメッシュ数・テクスチャサイズ)を確認し、下の設計値以内であることを確認
-3. Phase 1 で承認済みの `live2d_work/secretary_psd/secretary_bust.psd` と、Claude が追加した口内レイヤー入り PSD(`secretary_bust_l2d.psd`)を用意
+3. `live2d_work/secretary_psd/secretary_bust_l2d.psd` を用意(Phase 1 で承認済みの PSD に、Claude が口の中・頬染めを追加し、三つ編みを分けた24レイヤー版)
 
 ## 1. 設計(FREE版の制限内に収める)
 
@@ -60,6 +61,28 @@ IDは Live2D 標準ID。**名前を変えないこと**(Phase 3 のアプリが�
         └ 口(ワープ) ← ParamMouthForm, ParamMouthOpenY
 ```
 
+### レイヤーとデフォーマの対応表(`secretary_bust_l2d.psd` の24レイヤー)
+
+レイヤー名の `-l` / `-r` は**キャラクターから見た左/右**(画面では `-l` が右側、`-r` が左側)。Live2D の「左目」= ParamEyeLOpen も同じくキャラクターから見た左なので、`-l` のレイヤーを「左目」に入れる。
+
+| デフォーマ | 入れるレイヤー |
+|---|---|
+| 体のワープ | `topwear`, `handwear-r`, `handwear-l`, `neckwear` |
+| 首 | `neck` |
+| 顔のワープ(直下) | `face`, `cheek`, `nose`, `ears-r`, `ears-l`, `earwear` |
+| 前髪 | `front hair` |
+| 後ろ髪 | `back hair` |
+| 三つ編み | `braid` |
+| 左目(画面右) | `eyewhite-l`, `irides-l`, `eyelash-l` |
+| 右目(画面左) | `eyewhite-r`, `irides-r`, `eyelash-r` |
+| 左眉(画面右) | `eyebrow-l` |
+| 右眉(画面左) | `eyebrow-r` |
+| 口 | `mouth`, `mouth_inner` |
+
+注意:
+- **ヘッドセットのマイク(棒の部分)は `front hair` に含まれている**(髪と重なっていて分けられなかった)。前髪を揺らすときは、マイク付近(画面右の耳から口元にかけて)の制御点はあまり動かさない
+- 三つ編みの付け根(`braid` の上端)は前髪と切れ目になっているので、三つ編みのワープは**上端の制御点を動かさず**、下に行くほど大きく揺らす
+
 ## 2. PSD 読み込みとメッシュ(30分)
 
 1. `secretary_bust_l2d.psd` を Cubism Editor のモデリング画面にドラッグ&ドロップ
@@ -84,7 +107,7 @@ IDは Live2D 標準ID。**名前を変えないこと**(Phase 3 のアプリが�
 
 ## 5. 口パク(40分)— ParamMouthOpenY / ParamMouthForm
 
-1. Claude が追加した **口内レイヤー**(`mouth_inner`)を口レイヤーの下に置く。口内は口の形でクリッピング(「クリッピング」欄に口のIDを入れる)
+1. 口内レイヤー `mouth_inner` は PSD の時点で `mouth` の直下に入っている。`mouth_inner` を選び、インスペクタの「クリッピング」欄に `mouth` のアートメッシュIDを入れる(口の形の内側だけに見えるようにする)
 2. ParamMouthOpenY と ParamMouthForm で「キーの結合」(2×3 = 6つのキーフォーム)
 3. 開き 1: 下唇を下げて口内を見せる / 形 1: 口角を上げる / 形 -1: 口角を下げる(への字)
 4. 6か所すべて形を作る(開き×形の組み合わせ)
@@ -126,14 +149,14 @@ IDは Live2D 標準ID。**名前を変えないこと**(Phase 3 のアプリが�
    - テクスチャ: 2048×2048 / 1枚
 2. まばたき・リップシンクの設定: 「モデル設定」→ まばたき = ParamEyeLOpen, ParamEyeROpen、リップシンク = ParamMouthOpenY
    (これで `model3.json` の Groups に EyeBlink / LipSync が入る。**設定画面が見つからなければ飛ばしてOK** — Claude が `model3.json` に直接書き足します)
-3. 表情は Claude が下表の値で `expressions/*.exp3.json` を作成するので**作業不要**(Cubism で作っても良い)
+3. 表情は Claude が作成済み(`frontend/public/live2d/secretary/expressions/*.exp3.json`)なので**作業不要**。書き出し時に `expressions` フォルダを消さないこと
 
-| 表情 | 中身(パラメータの上書き) |
+| 表情 | 中身(既定の顔への加算。目の開きだけは掛け算) |
 |---|---|
 | normal | なし(既定の顔) |
-| pleased | EyeSmile 0.8 / MouthForm 1 / Cheek 0.6 / BrowY 0.3 |
-| thinking | EyeBallX -0.5, EyeBallY 0.6 / BrowLY 0.4 / BrowRAngle 0.5 / MouthForm -0.3 / AngleZ 6 |
-| pouty | BrowAngle -0.8 / BrowY -0.4 / MouthForm -1 / Cheek 0.4 / EyeOpen 0.85 |
+| pleased | EyeSmile +0.8 / MouthForm +1 / Cheek +0.6 / BrowY +0.3 |
+| thinking | EyeBallX -0.5, EyeBallY +0.6 / BrowLY +0.4 / BrowRAngle +0.5 / MouthForm -0.3 / AngleZ +6 |
+| pouty | BrowAngle -0.8 / BrowY -0.4 / MouthForm -1 / Cheek +0.4 / EyeOpen ×0.85 |
 
 ## 11. 完了確認(Phase 2 完了基準)
 
