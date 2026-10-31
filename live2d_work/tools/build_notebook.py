@@ -155,10 +155,27 @@ if rc != 0:
 md("## 5. 自動検収(レイヤー一覧画像 + 検収レポート)"),
 code("%%writefile psd_report.py\n" + report_src),
 code("""
-!mkdir -p secretary_psd
-!cp workspace/layerdiff_output/secretary_bust.psd workspace/layerdiff_output/secretary_bust_depth.psd secretary_psd/
-!python psd_report.py secretary_psd/secretary_bust.psd --ref input/secretary_bust.png --out secretary_psd
+import glob, os, shutil, subprocess
 from IPython.display import Image as IPImage, Markdown, display
+psds = sorted(p for p in glob.glob("workspace/layerdiff_output/**/*.psd", recursive=True) if not p.endswith("_depth.psd"))
+if not psds:
+    print("workspace/layerdiff_output の中身:")
+    subprocess.run("ls -laR workspace/layerdiff_output | head -60", shell=True)
+    if os.path.exists("run_main.log"):
+        print("\\n===== セル4のログ末尾 =====\\n" + "".join(open("run_main.log").readlines()[-30:]))
+    raise SystemExit("PSD ができていません。セル4が最後まで終わっていない可能性があります。上の表示を秘書に貼ってください")
+psd = psds[0]
+os.makedirs("secretary_psd", exist_ok=True)
+shutil.copy(psd, "secretary_psd/secretary_bust.psd")
+depth = psd[:-4] + "_depth.psd"
+if os.path.exists(depth):
+    shutil.copy(depth, "secretary_psd/secretary_bust_depth.psd")
+print("PSD:", psd)
+r = subprocess.run(["python", "psd_report.py", "secretary_psd/secretary_bust.psd", "--ref", "input/secretary_bust.png",
+                    "--out", "secretary_psd"], capture_output=True, text=True)
+print(r.stdout + r.stderr)
+if r.returncode != 0:
+    raise SystemExit("検収スクリプトが失敗しました。上の表示を秘書に貼ってください(PSD 自体はできています。セル6でダウンロードできます)")
 display(IPImage("secretary_psd/layers_overview.png"))
 display(Markdown(open("secretary_psd/qa_report.md", encoding="utf-8").read()))
 """),
