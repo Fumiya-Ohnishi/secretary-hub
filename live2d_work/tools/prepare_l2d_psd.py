@@ -3,6 +3,7 @@
 See-through は「今見えている絵」しか分けないため、リギングに足りない差分を描き足す:
 1. 口の中レイヤー `mouth_inner` を口の下に追加(口パク用。Cubism で口レイヤーにクリッピングして使う)
 2. 頬染めレイヤー `cheek` を顔の上に追加(上機嫌の表情用。Cubism で不透明度を 0→70% に動かす)
+3. 前髪レイヤーから三つ編みを `braid` として切り離す(前髪と別に揺らすため)
 
 使い方:
   python live2d_work/tools/prepare_l2d_psd.py [入力PSD] [出力PSD]
@@ -44,6 +45,20 @@ def get(layers, name):
 def centroid(rgba):
     ys, xs = np.nonzero(rgba[..., 3] > ALPHA_ON)
     return xs.mean(), ys.mean(), xs.min(), ys.min(), xs.max(), ys.max()
+
+
+# 三つ編みの切り離し位置(キャンバス座標)。あごより下・画面中央より右の前髪を三つ編みとみなす
+BRAID_TOP = 540
+BRAID_LEFT = 600
+
+
+def split_braid(layers):
+    names = [n for n, _ in layers]
+    hair = get(layers, "front hair")
+    braid = np.zeros_like(hair)
+    braid[BRAID_TOP:, BRAID_LEFT:] = hair[BRAID_TOP:, BRAID_LEFT:]
+    hair[BRAID_TOP:, BRAID_LEFT:] = 0
+    layers.insert(names.index("front hair"), ["braid", braid])
 
 
 def shape_layer(size, draw_fn, blur=0):
@@ -130,9 +145,10 @@ def main():
     names = [n for n, _ in layers]
     layers.insert(names.index("face") + 1, ["cheek", cheek(size, layers)])
 
+    split_braid(layers)
     save(dst, size, layers)
     check_image(size, layers, dst.with_name("l2d_check.png"))
-    print(f"{src.name} -> {dst.name}: mouth_inner・cheek を追加({len(layers)}レイヤー)")
+    print(f"{src.name} -> {dst.name}: mouth_inner・cheek を追加、braid を分離({len(layers)}レイヤー)")
 
 
 if __name__ == "__main__":

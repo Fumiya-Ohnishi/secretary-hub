@@ -32,9 +32,10 @@ back hair / handwear-r / neckwear / handwear-l / neck / topwear / ears-r / ears-
 
 ## Live2D 用の仕上げ(`secretary_bust_l2d.psd`)
 
-リギングにはこちらを使う。元の21レイヤーは無修正のまま、次の2枚を追加した(`tools/prepare_l2d_psd.py`、確認画像 `l2d_check.png`)。
+リギングにはこちらを使う。元の21レイヤーは無修正のまま、次の2枚を追加し、前髪から三つ編みを分けた(`tools/prepare_l2d_psd.py`、確認画像 `l2d_check.png`)。
 
 | 追加レイヤー | 位置 | 用途 |
 |---|---|---|
 | `mouth_inner` | `mouth` の直下 | 口の中(暗い赤+舌)。Cubism で `mouth` にクリッピングし、ParamMouthOpenY で見せる |
 | `cheek` | `face` の直上 | 頬染め。ParamCheek で不透明度 0→70% |
+| `braid` | `front hair` の直下 | 前髪から切り離した三つ編み(前髪と別に揺らすため)。前髪と合わせると元の前髪と画素単位で一致 |
