@@ -117,6 +117,18 @@ def font(size):
         return ImageFont.load_default()
 
 
+def fit_to_canvas(ref, size):
+    """元画像をキャンバスに合わせる。See-through は縦長画像を左右に余白を足して正方形にするため、
+    引き伸ばさず縦横比を保って中央に置く。"""
+    W, H = size
+    ref = ref.convert("RGB")
+    scale = min(W / ref.width, H / ref.height)
+    ref = ref.resize((round(ref.width * scale), round(ref.height * scale)), Image.LANCZOS)
+    canvas = Image.new("RGB", size, "white")
+    canvas.paste(ref, ((W - ref.width) // 2, (H - ref.height) // 2))
+    return canvas
+
+
 def overview(layers, comp, ref, size, out_png, thumb=220):
     W, H = size
     tw, th = thumb, round(thumb * H / W)
@@ -129,7 +141,7 @@ def overview(layers, comp, ref, size, out_png, thumb=220):
     full.alpha_composite(comp)
     tiles.append(("== composite", full))
     if ref is not None:
-        tiles.append(("== input", ref.convert("RGBA").resize((W, H))))
+        tiles.append(("== input", fit_to_canvas(ref, (W, H)).convert("RGBA")))
     cols = 6
     rows = math.ceil(len(tiles) / cols)
     pad, label_h = 8, 22
@@ -141,6 +153,39 @@ def overview(layers, comp, ref, size, out_png, thumb=220):
         y = pad + (i // cols) * (th + label_h + pad)
         sheet.paste(t.resize((tw, th), Image.LANCZOS).convert("RGB"), (x, y + label_h))
         draw.text((x, y + 2), name, fill="black", font=f)
+    sheet.save(out_png)
+
+
+def head_check(layers, size, out_png):
+    """顔まわりを拡大し「全体 / 前髪なし / 目なし / 顔だけ」を並べた目視確認用の画像。"""
+    W, H = size
+    face = find(layers, ("face",))
+    if not face:
+        return
+    ys, xs = np.nonzero(face[0]["rgba"][..., 3] > ALPHA_ON)
+    box = (max(0, xs.min() - 120), max(0, ys.min() - 120), min(W, xs.max() + 120), min(H, ys.max() + 80))
+
+    def comp_without(keys=None, only=None):
+        bg = Image.new("RGBA", (W, H), (200, 200, 210, 255))
+        for l in layers:
+            name = l["name"].lower()
+            if only is not None and name not in only:
+                continue
+            if keys and any(k in name for k in keys):
+                continue
+            bg.alpha_composite(Image.fromarray(l["rgba"]))
+        return bg.crop(box).convert("RGB")
+
+    views = [("all", comp_without()),
+             ("no front hair", comp_without(("hairf", "front hair"))),
+             ("no eyes", comp_without(("eyewhite", "irid", "lash"))),
+             ("face only", comp_without(only=[l["name"].lower() for l in face]))]
+    w, h = box[2] - box[0], box[3] - box[1]
+    sheet = Image.new("RGB", (len(views) * w, h + 30), "white")
+    draw = ImageDraw.Draw(sheet)
+    for i, (name, img) in enumerate(views):
+        sheet.paste(img, (i * w, 30))
+        draw.text((i * w + 8, 6), name, fill="black", font=font(20))
     sheet.save(out_png)
 
 
@@ -162,10 +207,12 @@ def main():
     comp = composite(layers, size)
     ref = Image.open(args.ref) if args.ref else None
     overview(layers, comp, ref, size, out / "layers_overview.png")
+    head_check(layers, size, out / "head_check.png")
 
     lines = [f"# PSD 検収レポート: `{psd_path.name}`", "",
              f"- キャンバス: {size[0]}×{size[1]} px / レイヤー数: {len(layers)}",
-             "- レイヤー一覧画像: `layers_overview.png`(番号が小さいほど奥)", ""]
+             "- レイヤー一覧画像: `layers_overview.png`(番号が小さいほど奥)",
+             "- 顔まわりの目視確認画像: `head_check.png`(全体 / 前髪なし / 目なし / 顔だけ)", ""]
 
     # 1. 縁の欠け
     lines += ["## 1. 各パーツの縁に欠けがない", "",
@@ -209,7 +256,7 @@ def main():
 
     # 4. 再構成
     if ref is not None:
-        r = np.asarray(ref.convert("RGB").resize(size, Image.LANCZOS))
+        r = np.asarray(fit_to_canvas(ref, size))
         c = np.asarray(comp)
         m = c[..., 3] > 200
         p = psnr(c[..., :3], r, m)
@@ -227,7 +274,7 @@ def main():
               "- [ ] 全体を表示すると元のイラストと同じに見える", "",
               "OKなら秘書に「PSD OK」と伝えてください(=Phase 1 承認)。"]
     (out / "qa_report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"wrote {out / 'layers_overview.png'} and {out / 'qa_report.md'}")
+    print(f"wrote {out / 'layers_overview.png'}, {out / 'head_check.png'} and {out / 'qa_report.md'}")
 
 
 if __name__ == "__main__":

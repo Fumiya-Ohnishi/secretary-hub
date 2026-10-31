@@ -6,7 +6,7 @@
 
 | Phase | 内容 | 状態 | 次にやること |
 |---|---|---|---|
-| 1 | 素材分け(See-through で PSD 化) | **社長の実行待ち** | `PHASE1_SEE_THROUGH.md` の「3. 実行手順」(Kaggle で ▶ を押すだけ・約30分) |
+| 1 | 素材分け(See-through で PSD 化) | **PSD 完成・社長の目視確認待ち** | `secretary_psd/REVIEW.md` と `head_check.png` を見て、OK なら「PSD OK」 |
 | 2 | リギング | 資料準備済み・選択待ち | Phase 1 承認後、`PHASE2_ROUTES.md` でルートA/Bを選ぶ |
 | 3 | 秘書ハブへの組み込み | 未着手 | Phase 2 のモデル納品後に Claude が実装 |
 | 4 | 仕上げ(任意) | 未着手 | - |

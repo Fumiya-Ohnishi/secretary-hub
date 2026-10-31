@@ -189,14 +189,21 @@ md("""
 ## 6. ダウンロード
 
 `secretary_psd.zip` を保存し、Mac の `secretary-hub/live2d_work/secretary_psd/` に展開してください。
-- Kaggle: 右パネル Output(`/kaggle/working`)から `secretary_psd.zip` をダウンロード
+- Kaggle: 下のセルに出るリンクをクリック(または右パネル Output の ↻ を押して `secretary_psd.zip` をダウンロード)
 - Colab: 下のセルで自動ダウンロード
 """),
-code(GOTO_REPO + """!cd secretary_psd && zip -q -r ../secretary_psd.zip . && cd .. && ls -la secretary_psd.zip
+code(GOTO_REPO + """import shutil
+ROOT = os.path.dirname(os.getcwd())  # /kaggle/working または /content
+zip_path = shutil.make_archive(ROOT + "/secretary_psd", "zip", "secretary_psd")
+print("作成:", zip_path, os.path.getsize(zip_path) // 1024, "KB")
 try:
-    from google.colab import files; files.download("secretary_psd.zip")
+    from google.colab import files
+    files.download(zip_path)
 except ImportError:
-    import shutil; shutil.copy("secretary_psd.zip", "/kaggle/working/secretary_psd.zip")
+    # Kaggle: 下に出るリンクをクリックしてダウンロード(右パネル Output の ↻ でも表示される)
+    os.chdir(ROOT)
+    from IPython.display import FileLink, display
+    display(FileLink("secretary_psd.zip"))
 """),
 ]
 nb = {"cells": cells, "metadata": {"accelerator": "GPU", "kernelspec": {"name": "python3", "display_name": "Python 3"},
