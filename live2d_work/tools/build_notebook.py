@@ -4,6 +4,14 @@ from pathlib import Path
 WORK = Path(__file__).resolve().parent.parent
 report_src = (WORK / "tools" / "psd_report.py").read_text()
 lowmem_src = (WORK / "tools" / "run_lowmem.py").read_text()
+# セル4以降の先頭に置く。カーネル再起動後にどのセルから実行しても See-through のフォルダで動くようにする
+GOTO_REPO = """import os
+os.chdir(("/kaggle/working" if os.environ.get("KAGGLE_KERNEL_RUN_TYPE") else "/content") + "/see-through")
+"""
+
+
+def write_file_cell(name, src):
+    return code(GOTO_REPO + f"open({name!r}, 'w', encoding='utf-8').write({src!r})\nprint({name!r}, 'を作成しました')")
 COMMIT = "df019de5129d6c4b406587a14c3501669441a783"
 
 def md(s): return {"cell_type": "markdown", "metadata": {}, "source": s.strip("\n")}
@@ -115,9 +123,8 @@ md("""
 T4(VRAM 15GB)向けに `--group_offload`(約10GB)で実行。T4 は省メモリ版の注意計算(bf16)に対応していないため、`run_lowmem.py` で注意計算を小分けにして実行します(結果は同じ)。失敗したら自動で 8GB 量子化ルートに切り替えます。\n両方失敗した場合は、それぞれのエラーの末尾をまとめて表示します。
 `--tblr_split` で左右の目・眉を別レイヤーにします(片目ウインク用)。
 """),
-code("%%writefile run_lowmem.py\n" + lowmem_src),
-code("""
-import os, subprocess
+write_file_cell("run_lowmem.py", lowmem_src),
+code(GOTO_REPO + """import os, subprocess
 env = dict(os.environ, CUDA_VISIBLE_DEVICES="0")  # T4 x2 でも1枚目だけを使う
 
 # まず GPU 計算が動くかを確認(ここで落ちる場合はGPUの種類かドライバの問題)
@@ -153,9 +160,8 @@ if rc != 0:
 !ls -la workspace/layerdiff_output
 """),
 md("## 5. 自動検収(レイヤー一覧画像 + 検収レポート)"),
-code("%%writefile psd_report.py\n" + report_src),
-code("""
-import glob, os, shutil, subprocess
+write_file_cell("psd_report.py", report_src),
+code(GOTO_REPO + """import glob, os, shutil, subprocess
 from IPython.display import Image as IPImage, Markdown, display
 psds = sorted(p for p in glob.glob("workspace/layerdiff_output/**/*.psd", recursive=True) if not p.endswith("_depth.psd"))
 if not psds:
@@ -186,8 +192,7 @@ md("""
 - Kaggle: 右パネル Output(`/kaggle/working`)から `secretary_psd.zip` をダウンロード
 - Colab: 下のセルで自動ダウンロード
 """),
-code("""
-!cd secretary_psd && zip -q -r ../secretary_psd.zip . && cd .. && ls -la secretary_psd.zip
+code(GOTO_REPO + """!cd secretary_psd && zip -q -r ../secretary_psd.zip . && cd .. && ls -la secretary_psd.zip
 try:
     from google.colab import files; files.download("secretary_psd.zip")
 except ImportError:
