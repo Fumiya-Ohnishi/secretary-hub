@@ -3,6 +3,8 @@
 | ファイル | 内容 |
 |---|---|
 | `secretary_bust.psd` | Live2D 用パーツ分け PSD(本体・21レイヤー) |
+| `secretary_bust_l2d.psd` | **リギング用**。上に `mouth_inner`(口の中)・`cheek`(頬染め)を追加した23レイヤー |
+| `l2d_check.png` | 追加レイヤーの確認画像 |
 | `secretary_bust_depth.psd` | 各パーツの深度マップ |
 | `layers_overview.png` | レイヤー一覧画像 |
 | `head_check.png` | 顔まわりの目視確認画像(全体 / 前髪なし / 目なし / 顔だけ) |

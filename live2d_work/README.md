@@ -6,8 +6,8 @@
 
 | Phase | 内容 | 状態 | 次にやること |
 |---|---|---|---|
-| 1 | 素材分け(See-through で PSD 化) | **PSD 完成・社長の目視確認待ち** | `secretary_psd/REVIEW.md` と `head_check.png` を見て、OK なら「PSD OK」 |
-| 2 | リギング | 資料準備済み・選択待ち | Phase 1 承認後、`PHASE2_ROUTES.md` でルートA/Bを選ぶ |
+| 1 | 素材分け(See-through で PSD 化) | **完了**(2026-10-31 社長承認) | - |
+| 2 | リギング | **社長の選択待ち**(承認ポイント②) | `PHASE2_ROUTES.md` でルートA/Bを選ぶ。素材は `secretary_psd/secretary_bust_l2d.psd` |
 | 3 | 秘書ハブへの組み込み | 未着手 | Phase 2 のモデル納品後に Claude が実装 |
 | 4 | 仕上げ(任意) | 未着手 | - |
 
@@ -30,6 +30,7 @@
 | `RIGGING_SPEC_FREE.md` | ルートA の簡易リギング仕様書(パラメータ21個・ステップ解説) |
 | `tools/prepare_input.py` | 入力画像の切り出し |
 | `tools/run_lowmem.py` | T4 向けに注意計算を小分けにして See-through を実行するラッパー(ノートブックに埋め込み) |
+| `tools/prepare_l2d_psd.py` | PSD に口の中・頬染めレイヤーを追加してリギング用 PSD を作る |
 | `tools/psd_report.py` | PSD 自動検収(レイヤー一覧画像 + `qa_report.md`) |
 | `tools/build_notebook.py` | ノートブック再生成(`psd_report.py`・`run_lowmem.py` を直したら実行) |
 
