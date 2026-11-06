@@ -14,7 +14,7 @@ if [ ! -f backend/.env ]; then
 fi
 # 画面(frontend)をビルド。初回と、frontend の中身が更新されたときだけ実行する
 if command -v npm >/dev/null 2>&1; then
-  if [ ! -f frontend/dist/index.html ] || [ -n "$(find frontend/src frontend/public frontend/package.json -newer frontend/dist/index.html 2>/dev/null | head -1)" ]; then
+  if [ ! -f frontend/dist/index.html ] || [ -n "$(find frontend/src frontend/public frontend/package.json frontend/index.html frontend/reel.html -newer frontend/dist/index.html 2>/dev/null | head -1)" ]; then
     echo "→ 画面をビルドしています(初回は1〜2分)..."
     (cd frontend && npm install --silent && npm run build --silent) || echo "⚠ 画面のビルドに失敗しました。上のエラーを秘書に見せてください"
   fi

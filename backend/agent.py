@@ -129,6 +129,9 @@ def _job_prompt(job: dict) -> str:
     lines += ["", "## 守ること",
               "- CLAUDE.md(就業規則)と playbooks/learned_rules.md に従う。成果物は所定のフォルダに保存する(投稿セットは playbooks/post_format.md の形式)",
               "- 外部への投稿・申請・購入・ログインはしない。承認済み・差し戻しにはしない(承認は社長だけ)",
+              f"- カルーセル画像は `node tools/render/render_carousel.mjs <JSON> content/output/YYYY-WW/` で、"
+              f"リールは `node {HUB_ROOT}/tools/reel/render_reel.mjs <台本.json> content/output/YYYY-WW/NN_reel.mp4` で書き出す"
+              "(形式は brand/guide.md・playbooks/reel_format.md。リールは秘書ハブと VOICEVOX の起動が必要)",
               "- 上司・品質管理部のチェックは、作った担当とは別のサブエージェントにさせる(自分で作ったものを自分で合格にしない)",
               "- 最後に、誰が何をして、どのファイルに保存したか、チェックの結果を日本語で3行以内でまとめる"]
     return "\n".join(lines)
@@ -173,6 +176,13 @@ def _run_job(job_id: str):
 
 
 SUBAGENT_TOOLS = ("Task", "Agent")  # Claude Code がサブエージェントを呼ぶ道具の名前(版によって違う)
+HUB_ROOT = Path(__file__).resolve().parent.parent
+# 部署が使ってよいコマンド(画像・リールの書き出しだけ。それ以外のコマンドは許可しない)
+ALLOWED_TOOLS = [
+    "Bash(node tools/render/render_carousel.mjs:*)",
+    f"Bash(node {HUB_ROOT}/tools/reel/render_reel.mjs:*)",
+    "Bash(mkdir -p content/output/:*)",
+]
 
 
 def _run_claude_streaming(job: dict, prompt: str):
@@ -180,7 +190,7 @@ def _run_claude_streaming(job: dict, prompt: str):
     job.setdefault("activity", [])
     job.setdefault("log", [])
     proc = subprocess.Popen(["claude", "-p", prompt, "--permission-mode", "acceptEdits",
-                             "--output-format", "stream-json", "--verbose"],
+                             "--output-format", "stream-json", "--verbose", "--allowedTools", *ALLOWED_TOOLS],
                             cwd=str(company.COMPANY_DIR), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             text=True, encoding="utf-8", errors="replace")
     timer = threading.Timer(1800, proc.kill)

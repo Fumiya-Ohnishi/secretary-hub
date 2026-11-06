@@ -1,0 +1,7 @@
+{
+  "name": "secretary-reel",
+  "private": true,
+  "type": "module",
+  "description": "Live2D の秘書 + VOICEVOX の声 + テロップでリール動画を作る",
+  "dependencies": { "playwright-core": "1.48.2" }
+}
