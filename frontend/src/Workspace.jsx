@@ -38,7 +38,7 @@ function Ring({ pct }) {
   );
 }
 
-function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask }) {
+function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, notify }) {
   const { revenue, tasks } = summary;
   const approvals = tasks.filter((t) => t.status === "承認待ち");
   const doing = tasks.filter((t) => ["進行中", "未着手", "差し戻し"].includes(t.status));
@@ -83,8 +83,9 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask }) {
           <div className="card-head"><h3>進めている仕事</h3><button className="link" onClick={() => onTab("tasks", "未完了")}>すべて</button></div>
           {doing.slice(0, 6).map((t) => (
             <div key={t.key} className="mini-row" onClick={() => onOpenTask(t)}>
-              <StatusBadge status={t.status} /><span className="ttl">{t.title}</span>
-              <span className={`due ${overdue(t) ? "over" : ""}`}>{fmtDate(t.due)}</span>
+              <StatusSelect task={t} onApprove={onApprove} onChanged={onChanged} notify={notify} />
+              <span className="ttl" title="クリックでタスクの詳細へ">{t.title}</span>
+              <DueButton task={t} onChanged={onChanged} notify={notify} />
             </div>
           ))}
           {doing.length === 0 && <div className="empty">未完了のタスクはありません。</div>}
@@ -105,7 +106,7 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask }) {
         <h3>こう話しかけてみてください</h3>
         <div className="chips">
           {["今日の報告をして", "承認待ちを見せて", "企画書を開いて要約して", "T-015 を進行中にして",
-            "戦略部に来週の投稿企画を頼んで", "VOICEVOXの規約確認をタスクに追加して"].map((s) => (
+            "戦略部に来週の投稿企画を頼んで", "T-014 の期限を来週金曜にして"].map((s) => (
             <button key={s} className="chip" onClick={() => onSay(s)}>「{s}」</button>
           ))}
         </div>
@@ -116,6 +117,72 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask }) {
 
 /* ---------------- タスク ---------------- */
 const FILTERS = ["未完了", "承認待ち", "完了", "すべて"];
+
+/** 期限の変更(日付を選んで「変更」。「期限なし」で消す) */
+function DueEditor({ task, onChanged, notify, onDone, autoFocus }) {
+  const current = (task.due || "").slice(0, 10);
+  const [value, setValue] = useState(current);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setValue(current), [current]);
+  const save = async (due) => {
+    setSaving(true);
+    try {
+      const t = await patchTask(task.key, { due });
+      notify(due ? `${t.id} の期限を ${fmtDate(due)} にしました` : `${t.id} の期限をなしにしました`, "ok");
+      onChanged();
+      onDone?.();
+    } catch (err) { notify(err.message, "error"); setValue(current); }
+    setSaving(false);
+  };
+  return (
+    <div className="due-editor" onClick={(e) => e.stopPropagation()}>
+      <span className="muted small">期限</span>
+      <input type="date" value={value} autoFocus={autoFocus} onChange={(e) => setValue(e.target.value)}
+             onKeyDown={(e) => { if (e.key === "Enter" && value && value !== current) save(value); if (e.key === "Escape") onDone?.(); }} />
+      <button className="btn primary sm" disabled={saving || !value || value === current} onClick={() => save(value)}>変更</button>
+      {current && <button className="btn ghost sm" disabled={saving} onClick={() => save("")}>期限なし</button>}
+    </div>
+  );
+}
+
+/** 状態の選択。承認済み・差し戻しは承認カードで確定する */
+function StatusSelect({ task, onApprove, onChanged, notify }) {
+  const change = async (status) => {
+    if (status === "承認済み" || status === "差し戻し") return onApprove(task);
+    try { await patchTask(task.key, { status }); notify(`${task.id} を「${status}」にしました`, "ok"); onChanged(); }
+    catch (err) { notify(err.message, "error"); }
+  };
+  return (
+    <select className={`status-sel ${STATUS_CLASS[task.status] || ""}`} value={task.status} title="クリックで状態を変更"
+            onClick={(e) => e.stopPropagation()} onChange={(e) => change(e.target.value)}>
+      {STATUSES.map((st) => <option key={st}>{st}</option>)}
+    </select>
+  );
+}
+
+/** 期限の表示。クリックするとその場で変更できる */
+function DueButton({ task, onChanged, notify }) {
+  const [open, setOpen] = useState(false);
+  const ref = React.useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [open]);
+  return (
+    <span className="due-wrap" ref={ref} onClick={(e) => e.stopPropagation()}>
+      <button className={`due due-btn ${overdue(task) ? "over" : ""}`} title="クリックで期限を変更" onClick={() => setOpen(!open)}>
+        {task.due ? fmtDate(task.due) : "期限なし"}
+      </button>
+      {open && (
+        <div className="due-pop">
+          <DueEditor task={task} onChanged={onChanged} notify={notify} onDone={() => setOpen(false)} autoFocus />
+        </div>
+      )}
+    </span>
+  );
+}
 
 function Tasks({ summary, filter, setFilter, onApprove, onChanged, onOpenDoc, focusKey, notify }) {
   const [form, setForm] = useState({ title: "", assignee: "秘書", due: "" });
@@ -137,12 +204,6 @@ function Tasks({ summary, filter, setFilter, onApprove, onChanged, onOpenDoc, fo
       onChanged();
     } catch (err) { notify(err.message, "error"); }
     setSaving(false);
-  };
-
-  const change = async (t, status) => {
-    if (status === "承認済み" || status === "差し戻し") return onApprove(t);
-    try { await patchTask(t.key, { status }); notify(`${t.id} を「${status}」にしました`); onChanged(); }
-    catch (err) { notify(err.message, "error"); }
   };
 
   return (
@@ -167,14 +228,12 @@ function Tasks({ summary, filter, setFilter, onApprove, onChanged, onOpenDoc, fo
               <span className="tid">{t.id}</span>
               <span className="ttl">{t.title}</span>
               <span className="who">{t.assignee}</span>
-              <span className={`due ${overdue(t) ? "over" : ""}`}>{fmtDate(t.due)}</span>
-              <select className={`status-sel ${STATUS_CLASS[t.status]}`} value={t.status}
-                      onClick={(e) => e.stopPropagation()} onChange={(e) => change(t, e.target.value)}>
-                {STATUSES.map((s) => <option key={s}>{s}</option>)}
-              </select>
+              <DueButton task={t} onChanged={onChanged} notify={notify} />
+              <StatusSelect task={t} onApprove={onApprove} onChanged={onChanged} notify={notify} />
             </div>
             {open === t.key && (
               <div className="task-detail">
+                <DueEditor task={t} onChanged={onChanged} notify={notify} />
                 {t.note ? <p>{t.note}</p> : <p className="muted">備考なし</p>}
                 <div className="row-actions">
                   {t.status === "承認待ち" && <button className="btn primary sm" onClick={() => onApprove(t)}>承認 / 差し戻し</button>}
@@ -341,7 +400,8 @@ export default function Workspace(props) {
         {summary && !summary.company_found && tab !== "docs" && (
           <div className="warnbox">会社リポジトリ(ai-company)が見つかりません。backend/.env の AI_COMPANY_DIR を確認してください。</div>
         )}
-        {summary && tab === "home" && <Home summary={summary} jobs={jobs} onApprove={onApprove} onSay={onSay} onTab={goTab} onOpenTask={openTask} />}
+        {summary && tab === "home" && <Home summary={summary} jobs={jobs} onApprove={onApprove} onSay={onSay} onTab={goTab} onOpenTask={openTask}
+                                            onChanged={refresh} notify={notify} />}
         {summary && tab === "tasks" && <Tasks summary={summary} filter={taskFilter} setFilter={setTaskFilter} onApprove={onApprove}
                                               onChanged={refresh} onOpenDoc={(id) => { setDocId(id); setTab("docs"); }}
                                               focusKey={focusTask} notify={notify} />}

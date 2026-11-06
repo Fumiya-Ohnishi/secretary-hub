@@ -60,13 +60,14 @@ def _file_tasks() -> List[dict]:
     return out
 
 
-def _file_update(key: str, status: Optional[str], append_note: Optional[str]) -> dict:
+def _file_update(key: str, status: Optional[str], append_note: Optional[str], due: Optional[str] = None) -> dict:
     lines = TASKS_MD.read_text().splitlines()
     for i, line in enumerate(lines):
         m = ROW.match(line)
         if m and m.group(1) == key:
             title = m.group(2) + (f"({append_note})" if append_note else "")
-            lines[i] = f"| {key} | {title} | {m.group(3)} | {m.group(4)} | {status or m.group(5)} |"
+            new_due = m.group(4) if due is None else (due or "-")
+            lines[i] = f"| {key} | {title} | {m.group(3)} | {new_due} | {status or m.group(5)} |"
             TASKS_MD.write_text("\n".join(lines) + "\n")
             return next(t for t in _file_tasks() if t["key"] == key)
     raise KeyError(key)
@@ -110,12 +111,18 @@ async def find_task(ref: str) -> dict:
 
 
 async def update_task(key: str, status: Optional[str] = None, note: Optional[str] = None,
-                      append_note: Optional[str] = None) -> dict:
+                      append_note: Optional[str] = None, due: Optional[str] = None) -> dict:
+    """due: None=変更しない / "" =期限を消す / "YYYY-MM-DD"=その日に変える"""
     if status and status not in STATUSES:
         raise ValueError(f"ステータスは {' / '.join(STATUSES)} のどれかです")
+    if due is not None:
+        try:
+            due = notion.valid_date(due)
+        except ValueError:
+            raise ValueError("期限は YYYY-MM-DD の形で指定してください")
     if notion.configured():
-        return await notion.update_task(key, status=status, note=note, append_note=append_note)
-    return _file_update(key, status, append_note or note)
+        return await notion.update_task(key, status=status, note=note, append_note=append_note, due=due)
+    return _file_update(key, status, append_note or note, due)
 
 
 async def create_task(title: str, assignee: str = "秘書", due: Optional[str] = None,
@@ -142,7 +149,7 @@ def summary_text(data: dict) -> str:
     open_t = [t for t in tasks if t["status"] != "完了"]
     approval = [t for t in tasks if t["status"] == "承認待ち"]
     lines = [
-        f"【会社データ(自動取得 {datetime.date.today().isoformat()})】",
+        f"【会社データ(自動取得 今日は {datetime.date.today().isoformat()}({'月火水木金土日'[datetime.date.today().weekday()]}))】",
         f"- 今月の収益: {rev['month_total']:,}円(目標{GOAL:,}円・達成率 {rev['progress']}%)",
         f"- タスク({'Notion' if data['task_source'] == 'notion' else '控えファイル'}): "
         f"全{len(tasks)}件/未完了{len(open_t)}件/承認待ち{len(approval)}件",
