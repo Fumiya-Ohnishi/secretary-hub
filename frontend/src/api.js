@@ -1,34 +1,25 @@
-const BASE = "";
-
-export async function getHealth() {
-  const r = await fetch(`${BASE}/api/health`);
-  return r.json();
-}
-
-export async function getSummary() {
-  const r = await fetch(`${BASE}/api/company/summary`);
-  return r.json();
-}
-
-export async function addTask(title, assignee) {
-  const r = await fetch(`${BASE}/api/company/task`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ title, assignee }),
+async function call(method, path, body) {
+  const r = await fetch(path, {
+    method,
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
   });
-  return r.json();
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `通信エラー(${r.status})`);
+  return data;
 }
 
-export async function sendChat(message) {
-  const r = await fetch(`${BASE}/api/chat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message }),
-  });
-  return r.json();
-}
+export const getHealth = () => call("GET", "/api/health");
+export const getSummary = () => call("GET", "/api/company/summary");
+export const sendChat = (message, history) => call("POST", "/api/chat", { message, history });
 
-export async function claudeStatus(jobId) {
-  const r = await fetch(`${BASE}/api/claude/status/${jobId}`);
-  return r.json();
-}
+export const createTask = (task) => call("POST", "/api/tasks", task);
+export const patchTask = (key, patch) => call("PATCH", `/api/tasks/${encodeURIComponent(key)}`, patch);
+export const decideTask = (key, decision, comment = "") =>
+  call("POST", `/api/tasks/${encodeURIComponent(key)}/decision`, { decision, comment });
+
+export const getDocs = () => call("GET", "/api/docs");
+export const getDoc = (id) => call("GET", `/api/docs/${encodeURIComponent(id)}`);
+
+export const getJobs = () => call("GET", "/api/jobs");
+export const createJob = (job) => call("POST", "/api/jobs", job);
