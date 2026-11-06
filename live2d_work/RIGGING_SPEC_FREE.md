@@ -1,5 +1,6 @@
 # 簡易リギング仕様書(ルートA: Live2D Cubism Editor FREE版)
 
+> **2026-11-06 実施メモ**: PRO版の42日無料試用で作業。顔の向き(角度X/Y/Z)と目玉は省略。口の中は切り抜きではなく不透明度で出し入れ、閉じ目は瞳・白目の不透明度を0にする方式に変更。
 > 対象: Live2D 初心者の社長。所要 3〜6時間(セッション1: 手順0〜5 / セッション2: 手順6〜10)。
 > **2時間やって手順5まで進まなければ、無理せずルートB(外注)に切り替えます**(途中のデータも外注先に渡せます)。
 > 詰まったら画面のスクリーンショットを秘書に渡してください。Claude が次の操作を指示します。
@@ -155,7 +156,7 @@ IDは Live2D 標準ID。**名前を変えないこと**(Phase 3 のアプリが�
 |---|---|
 | normal | なし(既定の顔) |
 | pleased | EyeSmile +0.8 / MouthForm +1 / Cheek +0.6 / BrowY +0.3 |
-| thinking | EyeBallX -0.5, EyeBallY +0.6 / BrowLY +0.4 / BrowRAngle +0.5 / MouthForm -0.3 / AngleZ +6 |
+| thinking | BrowLY +0.4, BrowRY -0.2(左右非対称)/ BrowAngle +0.5(困り眉)/ MouthForm -0.3 |
 | pouty | BrowAngle -0.8 / BrowY -0.4 / MouthForm -1 / Cheek +0.4 / EyeOpen ×0.85 |
 
 ## 11. 完了確認(Phase 2 完了基準)
