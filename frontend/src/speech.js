@@ -91,7 +91,16 @@ export function useSpeechOutput() {
   const [engine, setEngine] = useState("browser");
   const engineRef = useRef("browser");
   const [voices, setVoices] = useState([]); // [{ value, label }]
-  const [voiceValue, setVoiceValue] = useState("");
+  const [voiceValue, setVoiceValueState] = useState("");
+  // 話す処理は古い画面の状態から呼ばれることがあるので、声の設定は常に ref から読む
+  const voiceRef = useRef("");
+  const setVoiceValue = (v) => {
+    setVoiceValueState((prev) => {
+      const next = typeof v === "function" ? v(prev) : v;
+      voiceRef.current = next;
+      return next;
+    });
+  };
   const [speaking, setSpeaking] = useState(false);
   const levelRef = useRef(null);
   const audioRef = useRef({ ctx: null, source: null });
@@ -116,16 +125,19 @@ export function useSpeechOutput() {
       // ブラウザの声の一覧は後から届くことがある
       speechSynthesis.onvoiceschanged = () => { if (!cancelled && engineRef.current === "browser") useBrowser(); };
     }
-    fetch("/api/tts/speakers").then((r) => r.json()).then((d) => {
-      if (cancelled) return;
-      if (!d.available) return useBrowser();
+    // VOICEVOX があればその声に。後から VOICEVOX を起動しても、20秒以内に自動で切り替わる
+    const detect = (first) => fetch("/api/tts/speakers").then((r) => r.json()).then((d) => {
+      if (cancelled || engineRef.current === "voicevox") return;
+      if (!d.available) return first ? useBrowser() : undefined;
       engineRef.current = "voicevox";
       setEngine("voicevox");
       setVoices(d.speakers.map((sp) => ({ value: String(sp.id), label: sp.name })));
       const saved = loadSaved(VV_VOICE_KEY);
       setVoiceValue(d.speakers.some((sp) => String(sp.id) === saved) ? saved : String(d.default));
       loadBrowserVoices(); // VOICEVOX が落ちたときの予備
-    }).catch(() => { if (!cancelled) useBrowser(); });
+    }).catch(() => { if (!cancelled && first) useBrowser(); });
+    detect(true);
+    const recheck = setInterval(() => { if (engineRef.current === "browser") detect(false); }, 20000);
 
     // ブラウザは「ユーザー操作の後」でないと音を鳴らせないので、最初の操作で音声の準備をしておく
     const unlock = () => {
@@ -137,6 +149,7 @@ export function useSpeechOutput() {
     window.addEventListener("keydown", unlock);
     return () => {
       cancelled = true;
+      clearInterval(recheck);
       window.removeEventListener("pointerdown", unlock);
       window.removeEventListener("keydown", unlock);
     };
@@ -168,7 +181,7 @@ export function useSpeechOutput() {
     const r = await fetch("/api/tts", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, speaker: Number(voiceValue) }),
+      body: JSON.stringify({ text, speaker: Number(voiceRef.current) }),
     });
     if (!r.ok) throw new Error(await r.text());
     const a = audioRef.current;
@@ -206,20 +219,20 @@ export function useSpeechOutput() {
   const speak = (text) => {
     if (!text) return;
     stop();
-    if (engine === "voicevox") {
+    if (engineRef.current === "voicevox") {
       speakVoicevox(text).catch((e) => {
         console.warn("VOICEVOX で話せないため、ブラウザの声で話します:", e);
         levelRef.current = null;
         speakBrowser(text, "");
       });
     } else {
-      speakBrowser(text, voiceValue);
+      speakBrowser(text, voiceRef.current);
     }
   };
 
   const chooseVoice = (value) => {
     setVoiceValue(value);
-    save(engine === "voicevox" ? VV_VOICE_KEY : VOICE_KEY, value);
+    save(engineRef.current === "voicevox" ? VV_VOICE_KEY : VOICE_KEY, value);
   };
 
   return { engine, voices, voiceValue, setVoice: chooseVoice, speak, stop, speaking, levelRef };
