@@ -53,6 +53,7 @@ export default function Live2DStage({ mood, speaking, levelRef, onError }) {
   useEffect(() => {
     let app = null;
     let disposed = false;
+    let onMove = null;
 
     (async () => {
       await loadCore();
@@ -82,6 +83,13 @@ export default function Live2DStage({ mood, speaking, levelRef, onError }) {
       };
       fit();
       app.renderer.on("resize", fit);
+
+      // 目線: マウスの方を見る(画面の外ならゆっくり正面に戻る)
+      onMove = (e) => {
+        const r = app.view.getBoundingClientRect();
+        model.focus(e.clientX - r.left, e.clientY - r.top);
+      };
+      window.addEventListener("pointermove", onMove);
 
       // 口パク: VOICEVOX の声なら実際の音量(levelRef)に合わせて開く。
       // ブラウザの声は音量が取れないため、「1音ずつ開いて閉じる」動きを作る
@@ -129,6 +137,7 @@ export default function Live2DStage({ mood, speaking, levelRef, onError }) {
 
     return () => {
       disposed = true;
+      if (onMove) window.removeEventListener("pointermove", onMove);
       modelRef.current = null;
       if (app) app.destroy(true, { children: true });
     };

@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { chatStream } from "./api.js";
 import { getHealth, getSummary, sendChat, decideTask, getBriefing, approveWeek, setScheduler, runCheckNow,
          readNotifications, decideRule } from "./api.js";
 import { useSpeechInput, useSpeechOutput } from "./speech.js";
 import Live2DStage from "./Live2DStage.jsx";
 import Workspace from "./Workspace.jsx";
 import ApprovalCard from "./ApprovalCard.jsx";
+import { PostingAssistant, SearchPalette, Diagnostics, useHotkeys } from "./Extras.jsx";
 
 const FACES = { normal: "faces/normal.jpg", pleased: "faces/pleased.jpg", thinking: "faces/thinking.jpg", pouty: "faces/pouty.jpg" };
 const FATAL_MIC = ["not-allowed", "service-not-allowed", "network", "audio-capture"];
@@ -19,11 +21,11 @@ function save(key, value) {
 }
 
 /** 秘書のセリフを1文字ずつ表示する */
-function Typewriter({ text }) {
+function Typewriter({ text, instant }) {
   const [n, setN] = useState(0);
   useEffect(() => {
-    setN(0);
-    if (!text) return;
+    setN(instant ? text.length : 0);
+    if (!text || instant) return;
     const id = setInterval(() => setN((v) => (v >= text.length ? (clearInterval(id), v) : v + 1)), 28);
     return () => clearInterval(id);
   }, [text]);
@@ -84,6 +86,14 @@ function RuleCard({ proposal, busy, onDecide, onClose }) {
 
 export default function App() {
   const [ruleCard, setRuleCard] = useState(null);
+  const [streamText, setStreamText] = useState(null);
+  const [posting, setPosting] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [wakeWord, setWakeWord] = useState(() => load("hub-wake", false));
+  const lastActivity = useRef(Date.now());
+  const nudges = useRef(0);
+  const [instantLine, setInstantLine] = useState(false);
   const seenNotes = useRef(new Set());
   const [log, setLog] = useState(() => load(LOG_KEY, []));
   const [week, setWeek] = useState(null);
@@ -122,6 +132,10 @@ export default function App() {
 
   const tts = useSpeechOutput();
   const name = health?.secretary || "セナ";
+  const wakeNames = [name, "セナ", "せな", "瀬名", "SENA"];
+  const wakeRef = useRef(wakeWord); wakeRef.current = wakeWord;
+  const handsFreeRef = useRef(false);
+  const anyCardRef = useRef(false);
 
   const notify = useCallback((text, kind = "info") => {
     const id = Math.random();
@@ -130,6 +144,7 @@ export default function App() {
   }, []);
 
   const say = useCallback((text, m = "normal", speakIt = true) => {
+    setInstantLine(false);
     setLine(text);
     setMood(m);
     setLog((l) => [...l, { role: "ai", text }]);
@@ -138,8 +153,17 @@ export default function App() {
 
   const { recording, supported, unsupportedReason, start: startRec, stop: stopRec } = useSpeechInput(
     (final, interim) => {
-      if (final) { setHeard(""); submitRef.current?.(final); }
-      else setHeard(interim || "");
+      if (final) {
+        setHeard("");
+        lastActivity.current = Date.now();
+        // 呼びかけモード: ハンズフリー中は「セナ」と呼ばれたときだけ反応する
+        if (wakeRef.current && handsFreeRef.current && !anyCardRef.current) {
+          const re = new RegExp(`(${wakeNames.join("|")})[、,。\\s]*`, "i");
+          if (!re.test(final)) return;
+          final = final.replace(re, "").trim() || "はい";
+        }
+        submitRef.current?.(final);
+      } else setHeard(interim || "");
     },
     (msg, code) => {
       setHeard("");
@@ -276,6 +300,7 @@ export default function App() {
       if (a.type === "content") { setWeek(a.week); setTab("content"); }
       if (a.type === "content_approval") setContentApproval(a);
       if (a.type === "rule_approval") setRuleCard(a.proposal);
+      if (a.type === "posting") setPosting(true);
     }
     if (actions.some((a) => ["refresh", "job", "approval"].includes(a.type))) refresh();
   };
@@ -283,6 +308,7 @@ export default function App() {
   const submit = async (raw) => {
     const text = (raw || "").trim();
     if (!text || busy) return;
+    lastActivity.current = Date.now(); nudges.current = 0;
     setInput("");
     pendingSpeech.current = null;
     if (ruleCard) {
@@ -312,12 +338,33 @@ export default function App() {
     setLog((l) => [...l, { role: "user", text }]);
     setBusy(true);
     setMood("thinking");
+    // 返事は届いた先から表示し、1文ずつ読み上げる
+    const muted = load("hub-muted", false);
+    let got = "", seen = 0;
+    setStreamText("");
+    if (!muted) tts.streamStart();
     try {
-      const res = await sendChat(text, history);
-      say(res.reply, res.mood || "normal");
-      handleActions(res.actions);
+      const res = await chatStream(text, history, (ev) => {
+        if (ev.t === "text") { got += ev.v; setStreamText(got); if (!muted) tts.streamPush(ev.v); }
+        if (ev.t === "actions") { handleActions(ev.v.slice(seen)); seen = ev.v.length; }
+      });
+      if (!muted) tts.streamEnd();
+      setStreamText(null);
+      setInstantLine(true);
+      setLine(res.reply);
+      setMood(res.mood || "normal");
+      setLog((l) => [...l, { role: "ai", text: res.reply }]);
+      handleActions((res.actions || []).slice(seen));
     } catch (e) {
-      say("サーバーに接続できません。秘書ハブ(run_mac.command)が起動しているか確認してください。", "normal", false);
+      tts.stop();
+      setStreamText(null);
+      try {
+        const res = await sendChat(text, history);
+        say(res.reply, res.mood || "normal");
+        handleActions(res.actions);
+      } catch (e2) {
+        say("サーバーに接続できません。秘書ハブ(run_mac.command)が起動しているか確認してください。", "normal", false);
+      }
     }
     setBusy(false);
   };
@@ -343,6 +390,53 @@ export default function App() {
     if (recording) stopRec(); else startRec();
   };
 
+  handsFreeRef.current = handsFree;
+  anyCardRef.current = !!(approval || contentApproval || ruleCard);
+
+  const pickSearch = (r) => {
+    setSearchOpen(false);
+    if (r.kind === "task") { setFocusTask(r.key); setTaskFilter(["完了", "承認済み"].includes(r.status) ? "すべて" : "未完了"); setTab("tasks"); }
+    if (r.kind === "post") { setWeek(r.week); setTab("content"); }
+    if (r.kind === "doc") { setDocId(r.id); setTab("docs"); }
+    if (r.kind === "job") setTab("jobs");
+    if (r.kind === "chat") setTab("chat");
+  };
+
+  // キーボード: スペース長押しで聞き取り、⌘K で検索
+  useHotkeys({
+    onTalkStart: useCallback(() => { if (tts.speaking) tts.stop(); startRec(); }, [tts, startRec]),
+    onTalkEnd: useCallback(() => stopRec(), [stopRec]),
+    onSearch: useCallback(() => setSearchOpen(true), []),
+    enabled: supported,
+  });
+
+  // しばらく操作がないと、判断待ちがあるときだけ秘書から声をかける(15分ごと・最大3回)
+  useEffect(() => {
+    const touch = () => { lastActivity.current = Date.now(); nudges.current = 0; };
+    window.addEventListener("pointerdown", touch);
+    window.addEventListener("keydown", touch);
+    const id = setInterval(() => {
+      if (document.hidden || busy || tts.speaking || nudges.current >= 3) return;
+      if (Date.now() - lastActivity.current < 15 * 60 * 1000) return;
+      const s = summary;
+      if (!s) return;
+      const appr = s.tasks.filter((t) => t.status === "承認待ち").length
+        + (s.content_weeks || []).reduce((n, w) => n + (w.counts["承認待ち"] || 0), 0) + (s.rule_proposals || []).length;
+      const posts = (s.content_weeks || []).reduce((n, w) => n + (w.counts["承認済み"] || 0), 0);
+      const lines = [];
+      if (appr) lines.push(`社長、判断待ちが${appr}件あります。お手すきのときにお願いします。`);
+      if (posts) lines.push(`投稿待ちが${posts}件あります。「投稿を始める」でご案内しますね。`);
+      if (!lines.length) return;
+      nudges.current += 1;
+      lastActivity.current = Date.now();
+      say(lines[nudges.current % lines.length], "normal");
+    }, 60 * 1000);
+    return () => { clearInterval(id); window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); };
+  }, [summary, busy, tts.speaking, say]);
+
+  const hour = new Date().getHours();
+  const timeOfDay = hour < 5 ? "night" : hour < 10 ? "morning" : hour < 16 ? "day" : hour < 19 ? "evening" : "night";
+
   const appr = summary ? summary.tasks.filter((t) => t.status === "承認待ち").length : 0;
   const pills = [
     { label: health?.api_key_set ? "頭脳 OK" : "簡易モード", ok: !!health?.api_key_set, title: health?.api_key_set ? `Claude API(${health.model})` : "backend/.env に ANTHROPIC_API_KEY を入れると何でも頼めます" },
@@ -364,7 +458,7 @@ export default function App() {
         <div className="pills">
           {pills.map((p, i) => i === pills.length - 1
             ? <button key={p.label} className={`pill pill-btn ${p.ok ? "ok" : ""}`} title="声を変える" onClick={() => setSettingsOpen(true)}><i />{p.label} ▾</button>
-            : <span key={p.label} className={`pill ${p.ok ? "ok" : ""}`} title={p.title}><i />{p.label}</span>)}
+            : <button key={p.label} className={`pill pill-btn ${p.ok ? "ok" : ""}`} title={`${p.title}(押すと接続の診断)`} onClick={() => setDiagOpen(true)}><i />{p.label}</button>)}
         </div>
         <div className="settings-wrap" ref={settingsRef}>
           <button className="icon-btn wide" onClick={() => setSettingsOpen(!settingsOpen)} aria-label="声と設定">⚙ 声・設定</button>
@@ -385,6 +479,10 @@ export default function App() {
                 <input type="checkbox" checked={!!summary?.scheduler?.auto} onChange={toggleAuto} /></label>
               <button className="btn sm" onClick={checkNow}>今すぐ確認してもらう</button>
               <label className="set-row"><span>ハンズフリー</span><input type="checkbox" checked={handsFree} onChange={toggleHandsFree} disabled={!supported} /></label>
+              <label className="set-row"><span>呼びかけモード(「{name}、〜」のときだけ反応)</span>
+                <input type="checkbox" checked={wakeWord} onChange={(e) => { setWakeWord(e.target.checked); save("hub-wake", e.target.checked); }} /></label>
+              <button className="btn sm ghost" onClick={() => { setSettingsOpen(false); setDiagOpen(true); }}>接続の診断</button>
+              <p className="muted small">キー操作: スペースを押している間だけ聞き取り / ⌘K(Ctrl+K)で検索 / Esc で閉じる</p>
               {!supported && <p className="muted small">{unsupportedReason}</p>}
             </div>
           )}
@@ -394,7 +492,7 @@ export default function App() {
       <main className="layout">
         <section className={`stage-col ${status}`}>
           <div className="stage">
-            <div className="stage-bg" />
+            <div className={`stage-bg ${timeOfDay}`} />
             {live2dFailed
               ? <img className="still" src={FACES[mood]} alt={name} draggable="false" />
               : <Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef} onError={() => setLive2dFailed(true)} />}
@@ -402,8 +500,9 @@ export default function App() {
             {statusText && <div className={`state-chip ${status}`}><i />{statusText}</div>}
             <div className="dialogue" onClick={() => setTab("chat")}>
               {heard ? <div className="heard">「{heard}」</div>
+                : streamText ? <>{streamText}<span className="caret" /></>
                 : busy ? <div className="dots"><span /><span /><span /></div>
-                : <Typewriter text={line} />}
+                : <Typewriter text={line} instant={instantLine} />}
             </div>
           </div>
 
@@ -422,7 +521,9 @@ export default function App() {
           <div className="quick">
             <button onClick={() => submit("今日の報告をして")}>今日の報告</button>
             <button onClick={() => submit("承認待ちを見せて")}>承認待ち{appr ? `(${appr})` : ""}</button>
+            <button onClick={() => setPosting(true)}>投稿を始める</button>
             <button onClick={() => submit("今週の投稿を見せて")}>投稿</button>
+            <button onClick={() => setSearchOpen(true)}>検索 ⌘K</button>
             <button onClick={() => submit("資料の一覧を見せて")}>資料</button>
           </div>
         </section>
@@ -433,6 +534,9 @@ export default function App() {
                    refresh={refresh} notify={notify} week={week} setWeek={setWeek} onRule={setRuleCard} />
       </main>
 
+      {posting && <PostingAssistant onClose={() => setPosting(false)} notify={notify} onDone={refresh} say={say} />}
+      {searchOpen && <SearchPalette log={log} onClose={() => setSearchOpen(false)} onPick={pickSearch} />}
+      {diagOpen && <Diagnostics onClose={() => setDiagOpen(false)} />}
       {ruleCard && <RuleCard proposal={ruleCard} busy={deciding} onDecide={(a) => decideRuleCard(a)} onClose={() => setRuleCard(null)} />}
       {contentApproval && (
         <ContentApprovalCard info={contentApproval} busy={deciding} onApproveAll={approveContent}

@@ -26,11 +26,18 @@ from pydantic import BaseModel
 
 import asyncio
 
+import json
+import subprocess
+import sys
+
+from fastapi.responses import StreamingResponse
+
 import agent
 import company
 import content
 import corrections
 import notion
+import org
 import scheduler
 
 COMPANY_DIR = company.COMPANY_DIR
@@ -201,6 +208,29 @@ async def content_decision(body: PostDecision):
         return err(e, 400)
     except Exception as e:
         return err(e)
+
+
+class ScheduleIn(BaseModel):
+    path: str
+    date: str
+
+
+@app.get("/api/content/to_post")
+def content_to_post():
+    return {"posts": content.to_post(), "today": datetime.date.today().isoformat()}
+
+
+@app.get("/api/content/posts")
+def content_all_posts():
+    return {"posts": content.all_posts()}
+
+
+@app.post("/api/content/schedule")
+def content_schedule(body: ScheduleIn):
+    try:
+        return content.set_scheduled(body.path, body.date)
+    except (PermissionError, ValueError) as e:
+        return err(e, 400)
 
 
 @app.post("/api/content/weeks/{week}/approve")
@@ -388,6 +418,95 @@ async def tts(body: TtsIn):
     return Response(content=wav.content, media_type="audio/wav")
 
 
+# ---------- 組織図・検索・診断 ----------
+@app.get("/api/org")
+def get_org():
+    running = {j["department"] for j in agent.job_list() if j["status"] == "running"}
+    return {"departments": org.chart(), "running_departments": sorted(running), "jobs": agent.job_list()[:30]}
+
+
+@app.get("/api/search")
+async def search(q: str):
+    q = q.strip().lower()
+    if not q:
+        return {"results": []}
+    hits = []
+    try:
+        for t in await company.list_tasks():
+            if q in (t["title"] + " " + (t.get("note") or "") + " " + t["id"]).lower():
+                hits.append({"kind": "task", "title": f"{t['id']} {t['title']}", "sub": f"{t['status']}・{t['assignee']}", "key": t["key"],
+                             "status": t["status"]})
+    except Exception:
+        pass
+    for p in content.all_posts():
+        if q in (p["title"] + " " + p["caption"] + " " + p["id"]).lower():
+            hits.append({"kind": "post", "title": p["title"], "sub": f"{p['week']}・{p['platform_ja']}・{p['status']}", "week": p["week"]})
+    if notion.configured():
+        try:
+            for d in await notion.list_documents():
+                if q in d["title"].lower():
+                    hits.append({"kind": "doc", "title": d["title"], "sub": "Notion の資料", "id": d["id"]})
+        except Exception:
+            pass
+    for j in agent.job_list():
+        if q in (j["title"] + " " + j["instruction"]).lower():
+            hits.append({"kind": "job", "title": f"{j['department']}部:{j['title']}", "sub": j["status"]})
+    return {"results": hits[:40]}
+
+
+@app.get("/api/diagnostics")
+async def diagnostics():
+    """接続の診断。各項目に ok と、ダメなときの直し方を返す"""
+    checks = []
+
+    def add(key, label, ok, detail, fix=""):
+        checks.append({"key": key, "label": label, "ok": ok, "detail": detail, "fix": "" if ok else fix})
+
+    add("company", "会社リポジトリ(ai-company)", COMPANY_DIR.exists(), str(COMPANY_DIR),
+        "secretary-hub と同じ階層に ai-company を置くか、backend/.env の AI_COMPANY_DIR にフルパスを書く")
+    if agent.API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.get("https://api.anthropic.com/v1/models", headers={"x-api-key": agent.API_KEY, "anthropic-version": "2023-06-01"})
+            add("api", "頭脳(Claude API)", r.status_code == 200, f"モデル {agent.MODEL}" if r.status_code == 200 else f"エラー {r.status_code}",
+                "backend/.env の ANTHROPIC_API_KEY を確認(console.anthropic.com で発行)" if r.status_code in (401, 403) else "少し待って再確認")
+        except Exception as e:
+            add("api", "頭脳(Claude API)", False, f"接続できません: {str(e)[:80]}", "インターネット接続を確認")
+    else:
+        add("api", "頭脳(Claude API)", False, "APIキーが未設定(簡易モード)", "backend/.env に ANTHROPIC_API_KEY=... を書いて再起動")
+    if notion.configured():
+        try:
+            await notion._req("GET", "/users/me")
+            await notion._req("POST", f"/databases/{notion.TASK_DB}/query", json={"page_size": 1})
+            add("notion", "Notion", True, "タスクDBに接続できています")
+        except Exception as e:
+            add("notion", "Notion", False, str(e)[:120], "「AI会社」ページの「•••」→「接続」に「秘書ハブ」を追加。NOTION_TOKEN も確認")
+    else:
+        add("notion", "Notion", False, "NOTION_TOKEN が未設定(タスクは控えファイルで管理中)", "README「Notion をつなぐ」の手順")
+    speakers = await voicevox_speakers()
+    add("voicevox", "声(VOICEVOX)", bool(speakers), f"{len(speakers)}種類の声" if speakers else "起動していません",
+        "VOICEVOX アプリを起動する(起動後20秒で自動で切り替わります)")
+    cli = shutil.which("claude")
+    version = ""
+    if cli:
+        try:
+            version = subprocess.run([cli, "--version"], capture_output=True, text=True, timeout=15).stdout.strip()
+        except Exception:
+            pass
+    add("claude", "部署(Claude Code)", bool(cli), version or ("見つかりました" if cli else "claude コマンドがありません"),
+        "ターミナルで npm install -g @anthropic-ai/claude-code → claude で一度ログイン")
+    agents_dir = COMPANY_DIR / ".claude" / "agents"
+    n = len(list(agents_dir.glob("*.md"))) if agents_dir.exists() else 0
+    add("agents", "部署の人材定義", n > 0, f"{n}名", "ai-company で git pull(.claude/agents/ が必要)")
+    core = BASE.parent / "frontend" / "public" / "live2d" / "core" / "live2dcubismcore.js"
+    add("live2d", "Live2D(Cubism Core)", core.exists(), "配置済み" if core.exists() else "未配置(静止画で表示中)",
+        "README「Live2D の秘書」の手順で live2dcubismcore.js を置く")
+    s = scheduler.summary()
+    add("scheduler", "定時チェック", s["auto"], f"{'・'.join(s['times'])}(次 {s['next']})" if s["auto"] else "オフ",
+        "⚙ 声・設定 で「定時チェック」をオン")
+    return {"checks": checks, "python": sys.version.split()[0]}
+
+
 # ---------- 会話 ----------
 class ChatIn(BaseModel):
     message: str
@@ -433,6 +552,26 @@ async def chat(body: ChatIn):
     if not agent.API_KEY:
         return await simple_reply(msg)
     return await agent.chat(msg, body.history)
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(body: ChatIn):
+    """返事を1行ずつ(NDJSON)で返す。画面は届いた文から順に読み上げる"""
+    msg = body.message.strip()
+
+    async def gen():
+        if not msg:
+            yield json.dumps({"t": "done", "reply": "", "mood": "normal", "actions": []}, ensure_ascii=False) + "\n"
+            return
+        if not agent.API_KEY:
+            r = await simple_reply(msg)
+            yield json.dumps({"t": "text", "v": r["reply"]}, ensure_ascii=False) + "\n"
+            yield json.dumps({"t": "done", **r}, ensure_ascii=False) + "\n"
+            return
+        async for ev in agent.chat_stream(msg, body.history):
+            yield json.dumps(ev, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
 
 
 # ---------- フロント配信(ビルド済み) ----------
