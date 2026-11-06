@@ -326,3 +326,11 @@ button.kpi:hover { border-color: var(--line2); }
 .due-editor { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .due-editor input { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; color-scheme: dark; }
 .due-editor input:focus { border-color: var(--accent); outline: none; }
+
+.due-wrap { position: relative; display: inline-flex; }
+.due-btn { background: none; border: 1px dashed transparent; border-radius: 6px; padding: 1px 6px; }
+.due-btn:hover { border-color: var(--line2); color: var(--accent2); }
+.due-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; padding: 10px 12px 2px;
+  background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px; box-shadow: var(--shadow); white-space: nowrap;
+}
