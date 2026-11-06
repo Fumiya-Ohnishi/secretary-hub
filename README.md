@@ -96,6 +96,30 @@
 - サーバーはこの Mac の中だけで開きます(localhost)。同じ Wi-Fi の他の端末からは見えません
 - パスワード類はこのシステムでは一切扱いません(投稿は社長が実行)
 
+
+## リールの自動制作
+
+Live2D の秘書 + VOICEVOX の声 + テロップで、縦長のリール(1080×1920・MP4)を自動で作る。
+
+### 初回だけ(Mac)
+```bash
+brew install ffmpeg
+```
+```bash
+cd ~/secretary-hub/tools/reel && npm install
+```
+(Google Chrome を使うので、ブラウザの追加ダウンロードは不要)
+
+### 作り方
+秘書ハブと VOICEVOX を起動した状態で:
+```bash
+node ~/secretary-hub/tools/reel/render_reel.mjs <台本.json> <出力.mp4>
+```
+- 台本の形式: ai-company の `playbooks/reel_format.md`(見本: `brand/samples/reel_sample_B.json`)
+- 映像制作部に頼めば、部署が台本を書いて書き出しまで行う(秘書ハブが部署にこのコマンドだけを許可している)
+- 見た目は3テーマ(A ライト / B ダーク / C ノート)。安全範囲・「※AIの秘書キャラクターです」・VOICEVOX のクレジットは自動で入る
+- 仕組み: `frontend/reel.html`(リール制作スタジオ)を Chrome で開き、1コマずつ描いて録画 → ffmpeg で声と合わせる
+
 ## Live2D の秘書
 
 左の秘書は Live2D モデルで動きます(自動まばたき・呼吸、話すと口パク、気分で表情が変わる)。

@@ -1,0 +1,53 @@
+/* リール(1080×1920)。文字を置かない範囲: 上220px・下420px・右120px(brand/guide.md §4) */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+.reel { position: relative; width: 1080px; height: 1920px; overflow: hidden; font-family: "Noto Sans JP", sans-serif; }
+.bg { position: absolute; inset: 0; }
+.progress { position: absolute; top: 230px; left: 80px; right: 140px; height: 8px; border-radius: 8px; overflow: hidden; }
+.progress span { display: block; height: 100%; width: 0; }
+.tag { position: absolute; top: 262px; left: 80px; right: 140px; font-size: 30px; font-weight: 800; }
+.title { position: absolute; top: 318px; left: 80px; right: 140px; font-size: 76px; font-weight: 900; line-height: 1.25; }
+.stage { position: absolute; left: 0; right: 0; top: 560px; height: 1360px; }
+.stage canvas { display: block; }
+.panel { position: absolute; left: 80px; right: 140px; top: 640px; padding: 30px 36px; border-radius: 28px; font-size: 44px; font-weight: 800; line-height: 1.5; display: none; }
+.caption { position: absolute; left: 70px; right: 130px; bottom: 440px; min-height: 150px; display: flex; align-items: center; justify-content: center; text-align: center;
+           padding: 22px 30px; border-radius: 24px; font-size: 50px; font-weight: 900; line-height: 1.4; }
+.foot { position: absolute; left: 80px; right: 140px; bottom: 380px; display: flex; justify-content: space-between; font-size: 24px; font-weight: 700; text-shadow: 0 0 8px rgba(0,0,0,.35); }
+.num { font-family: Inter, "Noto Sans JP", sans-serif; }
+
+/* A ライト×マーカー */
+.A { color: #161A35; }
+.A .bg { background: #F6F5F1; background-image: radial-gradient(#d9d8e6 2px, transparent 2px); background-size: 36px 36px; }
+.A .progress { background: #e4e3ee; } .A .progress span { background: #5B5FE0; }
+.A .tag { color: #5B5FE0; }
+.A .em { background: linear-gradient(transparent 58%, #FFE066 58%, #FFE066 92%, transparent 92%); padding: 0 6px; }
+.A .num { color: #5B5FE0; }
+.A .panel { background: #fff; border: 4px solid #161A35; box-shadow: 10px 10px 0 #161A35; }
+.A .caption { background: #fff; border: 4px solid #161A35; color: #161A35; box-shadow: 0 10px 0 #161A35; }
+.A .foot { color: #fff; }
+
+/* B ダーク×ネオンUI */
+.B { color: #fff; }
+.B .bg { background: radial-gradient(circle at 85% 18%, rgba(122,108,255,.45), transparent 40%), radial-gradient(circle at 10% 80%, rgba(56,189,248,.28), transparent 45%), linear-gradient(160deg, #0A0D1F, #141938 60%, #0B0E22); }
+.B .bg::after { content: ""; position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px); background-size: 60px 60px; }
+.B .progress { background: rgba(255,255,255,.12); } .B .progress span { background: linear-gradient(90deg, #8B7CFF, #38BDF8); }
+.B .tag { color: #a9b0ff; font-family: "JetBrains Mono", monospace; font-weight: 500; letter-spacing: .1em; font-size: 26px; }
+.B .em, .B .num { background: linear-gradient(90deg, #B4A7FF, #7DD3FC); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.B .panel { background: rgba(12,15,35,.82); border: 1px solid rgba(180,167,255,.45); box-shadow: 0 0 50px rgba(122,108,255,.3); }
+.B .caption { background: rgba(10,13,31,.85); border: 1px solid rgba(180,167,255,.5); color: #fff; }
+.B .foot { color: #8f96bd; }
+
+/* C ノート×付箋 */
+.C { color: #22274A; font-family: "M PLUS Rounded 1c", sans-serif; }
+.C .bg { background: #FFF9EE; background-image: linear-gradient(#f1e6cf 2px, transparent 2px); background-size: 100% 72px; }
+.C .progress { background: #efe4cc; } .C .progress span { background: #5B5FE0; }
+.C .tag { color: #22274A; background: rgba(155,165,255,.55); display: inline-block; right: auto; padding: 6px 24px; transform: rotate(-2deg); }
+.C .em { text-decoration: underline wavy #FF8A9A 8px; text-underline-offset: 12px; }
+.C .num { color: #5B5FE0; }
+.C .panel { background: #FFF3A8; transform: rotate(-1deg); box-shadow: 0 16px 28px rgba(80,60,20,.15); border-radius: 6px; }
+.C .caption { background: #fff; border: 5px solid #22274A; border-radius: 60px; color: #22274A; }
+.C .foot { color: #fff; }
+
+/* 注記・クレジットは、秘書の服の上でも読めるように小さな帯をつける */
+.foot span { background: rgba(16, 19, 40, .62); color: #fff; padding: 4px 14px; border-radius: 10px; }
+.foot span:empty { display: none; }
