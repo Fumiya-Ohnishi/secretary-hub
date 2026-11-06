@@ -334,3 +334,45 @@ button.kpi:hover { border-color: var(--line2); }
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; padding: 10px 12px 2px;
   background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px; box-shadow: var(--shadow); white-space: nowrap;
 }
+
+/* グラフ */
+.chart { position: relative; margin: 4px 0 8px; }
+.chart svg { display: block; touch-action: none; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .axis { fill: var(--mute); font-size: 10px; font-variant-numeric: tabular-nums; }
+.chart .end-label { fill: var(--sub); font-size: 10px; }
+.chart .crosshair { stroke: var(--line2); stroke-width: 1; stroke-dasharray: 3 3; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--sub); margin-bottom: 4px; }
+.legend span, .tip-row { display: inline-flex; align-items: center; gap: 5px; }
+.legend i, .tip-row i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+.tip {
+  position: absolute; top: 18px; pointer-events: none; background: var(--panel3); border: 1px solid var(--line2);
+  border-radius: 8px; padding: 6px 10px; font-size: 11px; box-shadow: var(--shadow); min-width: 120px;
+}
+.tip-date { color: var(--mute); margin-bottom: 2px; }
+.tip-row { display: flex; color: var(--sub); }
+.tip-row b { margin-left: auto; padding-left: 10px; color: var(--text); font-variant-numeric: tabular-nums; }
+.rec-form { display: flex; gap: 6px; margin-top: 6px; }
+.rec-form select, .rec-form input { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; min-width: 0; }
+.rec-form input { flex: 1; }
+
+/* 投稿セット */
+.week-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.week-theme { font-size: 16px !important; color: var(--text) !important; margin: 2px 0; }
+.post { padding: 0; }
+.post-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; }
+.post-body { padding: 0 14px 14px; }
+.plat { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--panel3); white-space: nowrap; }
+.plat-instagram { color: #8fb8f2; } .plat-x { color: #f0a07e; } .plat-threads { color: #7fd1b0; } .plat-note { color: #e8c06a; }
+.assets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.assets img, .assets video { height: 180px; max-width: 100%; border-radius: 10px; border: 1px solid var(--line); object-fit: cover; background: var(--bg2); }
+.post-sec { margin-bottom: 10px; }
+.sec-title { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--accent2); margin-bottom: 4px; }
+.sec-text { white-space: pre-wrap; background: var(--bg2); border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.8; }
+.post-sec.comment .sec-text { border-left: 3px solid var(--ng); }
+@media (max-width: 900px) {
+  .week-head { flex-direction: column; align-items: stretch; }
+  .post-head { flex-wrap: wrap; }
+}
+
+select.status-sel { color-scheme: dark; }

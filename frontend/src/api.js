@@ -23,3 +23,11 @@ export const getDoc = (id) => call("GET", `/api/docs/${encodeURIComponent(id)}`)
 
 export const getJobs = () => call("GET", "/api/jobs");
 export const createJob = (job) => call("POST", "/api/jobs", job);
+
+export const getBriefing = () => call("GET", "/api/briefing");
+export const getContentWeeks = () => call("GET", "/api/content/weeks");
+export const getContentWeek = (week) => call("GET", `/api/content/weeks/${encodeURIComponent(week)}`);
+export const decidePost = (path, decision, comment = "") => call("POST", "/api/content/decision", { path, decision, comment });
+export const approveWeek = (week) => call("POST", `/api/content/weeks/${encodeURIComponent(week)}/approve`);
+export const recordRevenue = (r) => call("POST", "/api/metrics/revenue", r);
+export const recordFollowers = (r) => call("POST", "/api/metrics/followers", r);

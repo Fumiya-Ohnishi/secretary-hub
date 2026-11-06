@@ -6,3 +6,4 @@ frontend/dist/
 .DS_Store
 live2d_work/**/*.zip
 frontend/public/live2d/core/
+backend/data/

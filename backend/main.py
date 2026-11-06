@@ -21,11 +21,12 @@ import httpx
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 import agent
 import company
+import content
 import notion
 
 COMPANY_DIR = company.COMPANY_DIR
@@ -46,14 +47,29 @@ def err(e: Exception, code: int = 502):
 def health():
     return {"ok": True, "secretary": SECRETARY_NAME, "company_dir": str(COMPANY_DIR),
             "company_found": COMPANY_DIR.exists(), "api_key_set": bool(agent.API_KEY), "model": agent.MODEL,
-            "notion": notion.configured(), "claude_cli": bool(shutil.which("claude"))}
+            "notion": notion.configured(), "claude_cli": bool(shutil.which("claude")),
+            "agents": (COMPANY_DIR / ".claude" / "agents").exists()}
 
 
 @app.get("/api/company/summary")
 async def summary():
     data = await company.summary()
     data["jobs"] = agent.job_list()[:10]
+    data["metrics"] = company.metrics()
+    data["usage"] = agent.usage_summary()
+    data["content_weeks"] = content.list_weeks()[:6]
     return data
+
+
+@app.get("/api/briefing")
+async def briefing():
+    """起動時の報告。APIキーが無いときは text なし(画面側で簡易の挨拶を出す)"""
+    if not agent.API_KEY:
+        return {"text": None}
+    try:
+        return await agent.briefing()
+    except Exception as e:
+        return {"text": None, "error": str(e)}
 
 
 # ---------- タスク ----------
@@ -126,6 +142,109 @@ async def docs():
 async def doc(page_id: str):
     try:
         return await notion.read_page(notion.page_id_from(page_id) or page_id)
+    except Exception as e:
+        return err(e)
+
+
+# ---------- 投稿セット ----------
+class PostDecision(BaseModel):
+    path: str
+    decision: str  # approve / reject / posted
+    comment: str = ""
+
+
+@app.get("/api/content/weeks")
+def content_weeks():
+    return {"weeks": content.list_weeks(), "current": content.current_week()}
+
+
+@app.get("/api/content/weeks/{week}")
+def content_week(week: str):
+    try:
+        return content.get_week(week)
+    except (KeyError, ValueError) as e:
+        return err(e, 404)
+
+
+@app.get("/api/content/file")
+def content_file(path: str):
+    try:
+        return FileResponse(content.safe_path(path))
+    except PermissionError as e:
+        return err(e, 403)
+    except FileNotFoundError as e:
+        return err(e, 404)
+
+
+@app.post("/api/content/decision")
+async def content_decision(body: PostDecision):
+    """社長が投稿を承認・差し戻し・投稿済みにする(ボタンか声の返事から)"""
+    try:
+        return await content.decide(body.path, body.decision, body.comment)
+    except (PermissionError, ValueError) as e:
+        return err(e, 400)
+    except Exception as e:
+        return err(e)
+
+
+@app.post("/api/content/weeks/{week}/approve")
+async def content_approve_week(week: str):
+    try:
+        return await content.approve_week(week)
+    except Exception as e:
+        return err(e, 400)
+
+
+# ---------- 数字・アカウント・レポート ----------
+class RevenueIn(BaseModel):
+    amount: int
+    source: str = "other"
+    date: Optional[str] = None
+    memo: str = ""
+
+
+class FollowersIn(BaseModel):
+    platform: str
+    followers: int
+    date: Optional[str] = None
+
+
+class AccountIn(BaseModel):
+    platform: str
+    url: str
+    opened: Optional[str] = None
+
+
+@app.post("/api/metrics/revenue")
+async def add_revenue(body: RevenueIn):
+    try:
+        return await company.record_revenue(body.amount, body.source, body.date, body.memo)
+    except ValueError as e:
+        return err(e, 400)
+
+
+@app.post("/api/metrics/followers")
+def add_followers(body: FollowersIn):
+    try:
+        return company.record_followers(body.platform, body.followers, body.date)
+    except ValueError as e:
+        return err(e, 400)
+
+
+@app.post("/api/accounts")
+async def add_account(body: AccountIn):
+    try:
+        return await company.register_account(body.platform, body.url, body.opened)
+    except ValueError as e:
+        return err(e, 400)
+
+
+@app.post("/api/reports/weekly")
+async def make_report(week: Optional[str] = None):
+    if not agent.API_KEY:
+        return err(ValueError("週次レポートの作成には ANTHROPIC_API_KEY が必要です"), 400)
+    try:
+        return await agent.weekly_report(week)
     except Exception as e:
         return err(e)
 
@@ -226,6 +345,8 @@ async def simple_reply(msg: str) -> dict:
     if "タスク" in msg:
         return {"reply": f"未完了のタスクは{len(open_t)}件です。タスク画面を開きます。", "mood": "normal",
                 "actions": [{"type": "show_panel", "panel": "tasks"}]}
+    if "投稿" in msg:
+        return {"reply": "投稿セットを開きます。", "mood": "normal", "actions": [{"type": "show_panel", "panel": "content"}]}
     if "資料" in msg or "企画書" in msg or "ノーション" in msg or "Notion" in msg:
         return {"reply": "資料の一覧を開きます。", "mood": "normal", "actions": [{"type": "show_panel", "panel": "docs"}]}
     if any(w in msg for w in PRAISE_WORDS):
