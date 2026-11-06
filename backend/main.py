@@ -17,7 +17,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # ---------- 設定 ----------
@@ -168,7 +168,14 @@ PERSONA = f"""あなたは「{SECRETARY_NAME}」という名のAI秘書。アニ
 会社データが与えられたら、それに基づいて正確に報告する。数値は創作しない。
 - 社長が「〜を作って/企画して/分析して」など作業を求めた場合: 自分では作業せず、
   「[RUN_CLAUDE] <会社への具体的な指示文>」という1行だけを返す(他の言葉を付けない)。
-- それ以外(雑談・報告・質問への回答)は通常の秘書として返答する。"""
+- それ以外(雑談・報告・質問への回答)は通常の秘書として返答する。
+- 返答の最後に、そのときの気分を [mood:normal] / [mood:pleased] / [mood:thinking] / [mood:pouty] のどれか1つで付ける
+  (画面の表情に使う。読み上げはしない)。褒められた・感謝された=pleased、考えている・調べている=thinking、
+  社長が無理を言う・からかう=pouty(軽く)、それ以外=normal。"""
+
+# 褒め言葉(APIキー無しの簡易モードで表情を変えるため)
+PRAISE_WORDS = ("ありがとう", "ありがと", "助かる", "助かった", "えらい", "偉い", "さすが", "すごい", "すばらしい",
+                "素晴らしい", "かわいい", "可愛い", "いいね", "よくやった", "天才", "最高")
 
 @app.post("/api/chat")
 async def chat(body: ChatIn):
@@ -182,6 +189,8 @@ async def chat(body: ChatIn):
             reply = f"今月の収益は{rev['month_total']:,}円です。目標5万円に対して{round(rev['month_total']/50000*100)}%。"
         elif "承認" in msg:
             reply = f"承認待ちは{len(appr)}件です。" + ("タスク" + "、".join(t['id'] for t in appr[:3]) + "をお願いします。" if appr else "ありません。")
+        elif any(w in msg for w in PRAISE_WORDS):
+            return {"reply": "……ありがとうございます。そう言っていただけると、少し嬉しいです。", "mood": "pleased", "ran_claude": None}
         else:
             reply = "APIキーが未設定のため、簡易報告のみです。設定からキーを入れると本格対話ができます。"
         return {"reply": reply, "mood": "normal", "ran_claude": None}
@@ -210,19 +219,16 @@ async def chat(body: ChatIn):
         reply = reply or f"{SECRETARY_NAME}から部署に指示を出しました。完了したら報告しますね。"
         return {"reply": reply, "mood": "thinking", "ran_claude": job_id}
 
-    mood_m = re.search(r"\[mood:(normal|pleased|thinking|pouty)\]", text)
+    mood_m = re.search(r"\[mood:\s*(normal|pleased|thinking|pouty)\s*\]", text)
     mood = mood_m.group(1) if mood_m else "normal"
-    reply = re.sub(r"\[mood:\w+\]", "", text).strip()
+    reply = re.sub(r"\[mood:[^\]]*\]", "", text).strip()
     return {"reply": reply, "mood": mood, "ran_claude": None}
 
 # ---------- フロント配信(ビルド済み) ----------
 DIST = BASE.parent / "frontend" / "dist"
 if DIST.exists():
-    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
-
-    @app.get("/")
-    def index():
-        return FileResponse(DIST / "index.html")
+    # dist 全体を配信する(assets だけでなく faces/・live2d/ も)。API は上で先に登録済みなので優先される
+    app.mount("/", StaticFiles(directory=DIST, html=True), name="frontend")
 
 if __name__ == "__main__":
     print(f"\n  AI秘書ハブ起動: http://localhost:8000")

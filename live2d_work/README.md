@@ -7,8 +7,8 @@
 | Phase | 内容 | 状態 | 次にやること |
 |---|---|---|---|
 | 1 | 素材分け(See-through で PSD 化) | **完了**(2026-10-31 社長承認) | - |
-| 2 | リギング(ルートA: FREE版で自作) | **社長の作業待ち** | `RIGGING_SPEC_FREE.md` の手順0から。素材は `secretary_psd/secretary_bust_l2d.psd`、表情ファイルは作成済み |
-| 3 | 秘書ハブへの組み込み | 未着手 | Phase 2 のモデル納品後に Claude が実装 |
+| 2 | リギング(ルートA: PRO版42日無料試用で自作) | **完了**(2026-11-06) | モデル一式は `frontend/public/live2d/secretary/`。顔の向き・目玉・髪揺れは省略 |
+| 3 | 秘書ハブへの組み込み | **実装済み・社長の動作確認待ち**(承認ポイント③) | Cubism Core を `frontend/public/live2d/core/` に置き、`run_mac.command` で起動して確認 |
 | 4 | 仕上げ(任意) | 未着手 | - |
 
 ## 社長の承認ポイント
