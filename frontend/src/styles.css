@@ -458,3 +458,28 @@ select.status-sel { color-scheme: dark; }
   .cal-grid { grid-template-columns: 1fr; }
   .cal-day { min-height: 0; }
 }
+
+/* 組織図: 状況と部署の詳細 */
+.org-dept.clickable { cursor: pointer; transition: border-color .15s, transform .15s; }
+.org-dept.clickable:hover { border-color: var(--accent); transform: translateY(-1px); }
+.org-dept .link { margin-top: 6px; font-size: 12px; }
+.avatar.on { background: rgba(124, 196, 247, .2) !important; color: var(--info) !important; box-shadow: 0 0 0 2px rgba(124, 196, 247, .35); }
+.ms { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; margin-top: 2px; }
+.ms.working { color: var(--info); }
+.ms.working i { width: 7px; height: 7px; border-radius: 50%; background: var(--info); animation: pulse 1s infinite; }
+.ms.idle { color: var(--mute); }
+.now-working .mini-row { cursor: default; }
+.dd-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.dd-head h2 { font-size: 18px; }
+.dd-member { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.dd-member:first-of-type { border-top: none; }
+.dd-member .avatar { flex: 0 0 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--panel3); font-size: 12px; color: var(--sub); }
+.dd-member.boss .avatar { background: rgba(243, 181, 98, .18); color: var(--warn); }
+.dd-job { padding: 10px 0; border-top: 1px solid var(--line); }
+.dd-job:first-of-type { border-top: none; }
+.job-form input { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; outline: none; }
+.activity { list-style: none; margin: 8px 0 0; padding: 0 0 0 4px; font-size: 12px; display: flex; flex-direction: column; gap: 3px; }
+.activity li { display: flex; gap: 6px; align-items: baseline; color: var(--sub); }
+.activity li.running { color: var(--info); }
+.activity li.error { color: var(--ng); }
+.act-mark { width: 12px; text-align: center; }

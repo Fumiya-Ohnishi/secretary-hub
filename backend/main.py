@@ -421,8 +421,10 @@ async def tts(body: TtsIn):
 # ---------- 組織図・検索・診断 ----------
 @app.get("/api/org")
 def get_org():
-    running = {j["department"] for j in agent.job_list() if j["status"] == "running"}
-    return {"departments": org.chart(), "running_departments": sorted(running), "jobs": agent.job_list()[:30]}
+    running = {j.get("department_full") or agent.DEPT_FULL.get(j["department"], j["department"])
+               for j in agent.job_list() if j["status"] == "running"}
+    return {"departments": org.chart(), "running_departments": sorted(running), "jobs": agent.job_list()[:30],
+            "members": agent.member_status()}
 
 
 @app.get("/api/search")

@@ -151,13 +151,9 @@ def _run_job(job_id: str):
     try:
         if not shutil.which("claude"):
             raise RuntimeError("Claude Code CLI が見つかりません。ターミナルで `npm install -g @anthropic-ai/claude-code` → `claude` で一度ログインしてください。")
-        proc = subprocess.run(["claude", "-p", prompt, "--permission-mode", "acceptEdits"],
-                              cwd=str(company.COMPANY_DIR), capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=1800)
-        out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
-        job.update(status="done" if proc.returncode == 0 else "error", output=out[-6000:])
+        _run_claude_streaming(job, prompt)
     except Exception as e:
-        job.update(status="error", output=str(e))
+        job.update(status="error", output=(job.get("output") or "") + f"\n{e}")
     job["finished"] = datetime.datetime.now().isoformat(timespec="seconds")
     _save_jobs()
     if job.get("task_key"):
@@ -176,11 +172,87 @@ def _run_job(job_id: str):
             pass
 
 
+SUBAGENT_TOOLS = ("Task", "Agent")  # Claude Code がサブエージェントを呼ぶ道具の名前(版によって違う)
+
+
+def _run_claude_streaming(job: dict, prompt: str):
+    """Claude Code を実行し、誰(どのサブエージェント)が何をしているかを job["activity"] に逐次記録する"""
+    job.setdefault("activity", [])
+    job.setdefault("log", [])
+    proc = subprocess.Popen(["claude", "-p", prompt, "--permission-mode", "acceptEdits",
+                             "--output-format", "stream-json", "--verbose"],
+                            cwd=str(company.COMPANY_DIR), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, encoding="utf-8", errors="replace")
+    timer = threading.Timer(1800, proc.kill)
+    timer.start()
+    result_text, is_error, plain = None, False, []
+    by_id = {}
+    last_save = 0.0
+    try:
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                plain.append(line)  # 古い版などで JSON でない出力
+                continue
+            kind = ev.get("type")
+            content_items = ((ev.get("message") or {}).get("content") or []) if kind in ("assistant", "user") else []
+            for c in content_items if isinstance(content_items, list) else []:
+                if kind == "assistant" and c.get("type") == "tool_use" and c.get("name") in SUBAGENT_TOOLS:
+                    inp = c.get("input") or {}
+                    act = {"id": c.get("id"), "agent": inp.get("subagent_type") or "general-purpose",
+                           "desc": inp.get("description") or (inp.get("prompt") or "")[:60], "status": "running",
+                           "started": datetime.datetime.now().isoformat(timespec="seconds"), "finished": None}
+                    by_id[act["id"]] = act
+                    job["activity"].append(act)
+                elif kind == "assistant" and c.get("type") == "text" and c.get("text", "").strip():
+                    job["log"] = (job["log"] + [c["text"].strip()[:300]])[-30:]
+                elif kind == "user" and c.get("type") == "tool_result" and c.get("tool_use_id") in by_id:
+                    act = by_id[c["tool_use_id"]]
+                    act["status"] = "error" if c.get("is_error") else "done"
+                    act["finished"] = datetime.datetime.now().isoformat(timespec="seconds")
+            if kind == "result":
+                result_text = ev.get("result") or ""
+                is_error = bool(ev.get("is_error"))
+            now = datetime.datetime.now().timestamp()
+            if now - last_save > 2:
+                _save_jobs()
+                last_save = now
+        proc.wait()
+    finally:
+        timer.cancel()
+    err = (proc.stderr.read() or "").strip() if proc.stderr else ""
+    for act in job["activity"]:
+        if act["status"] == "running":
+            act.update(status="error" if proc.returncode else "done", finished=datetime.datetime.now().isoformat(timespec="seconds"))
+    out = result_text if result_text is not None else "\n".join(plain) or err
+    ok = proc.returncode == 0 and not is_error
+    job.update(status="done" if ok else "error", output=(out or "")[-6000:] + ("" if ok or not err else f"\n{err[-1000:]}"))
+
+
+def member_status() -> Dict[str, dict]:
+    """社員(サブエージェント)ごとの今の状況: {name: {state, desc, job, at}}"""
+    status: Dict[str, dict] = {}
+    for j in sorted(jobs.values(), key=lambda j: j["started"]):
+        for a in j.get("activity", []):
+            cur = status.get(a["agent"])
+            at = a.get("finished") or a.get("started")
+            if a["status"] == "running" and j["status"] == "running":
+                status[a["agent"]] = {"state": "working", "desc": a["desc"], "job": j["title"], "at": a["started"]}
+            elif not cur or cur["state"] != "working":
+                status[a["agent"]] = {"state": "idle", "desc": a["desc"], "job": j["title"], "at": at,
+                                      "result": a["status"]}
+    return status
+
+
 def start_job(department: str, instruction: str, title: str, task_key: Optional[str] = None) -> dict:
     job_id = datetime.datetime.now().strftime("%m%d%H%M%S%f")
     jobs[job_id] = {"id": job_id, "title": title, "department": department,
                     "department_full": DEPT_FULL.get(department, f"{department}部"), "instruction": instruction,
-                    "status": "running", "output": "", "task_key": task_key,
+                    "status": "running", "output": "", "task_key": task_key, "activity": [], "log": [],
                     "started": datetime.datetime.now().isoformat(timespec="seconds"), "finished": None}
     _save_jobs()
     threading.Thread(target=_run_job, args=(job_id,), daemon=True).start()
