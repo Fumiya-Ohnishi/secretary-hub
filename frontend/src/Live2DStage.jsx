@@ -83,16 +83,21 @@ export default function Live2DStage({ mood, speaking, onError }) {
       fit();
       app.renderer.on("resize", fit);
 
-      // 口パク: 話している間、口の開き具合を滑らかにランダムに動かす(ブラウザ TTS は音量が取れないため)
-      let mouth = 0, target = 0, nextChange = 0;
+      // 口パク: ブラウザ TTS は音量が取れないため、話している間は「1音ずつ開いて閉じる」動きを作る。
+      // 1音 = 130〜220ms。開き具合は音ごとに少し変え、ときどき短い間(ま)を入れる
+      let mouth = 0, sylStart = 0, sylLen = 0, sylAmp = 0;
       model.internalModel.on("beforeModelUpdate", () => {
         const now = performance.now();
+        let target = 0;
         if (speakingRef.current) {
-          if (now > nextChange) { target = 0.2 + Math.random() * 0.8; nextChange = now + 70 + Math.random() * 90; }
-        } else {
-          target = 0;
+          if (now - sylStart >= sylLen) {
+            sylStart = now;
+            sylLen = 130 + Math.random() * 90;
+            sylAmp = Math.random() < 0.12 ? 0.15 : 0.55 + Math.random() * 0.45;
+          }
+          target = sylAmp * Math.sin(Math.PI * Math.min(1, (now - sylStart) / sylLen));
         }
-        mouth += (target - mouth) * 0.35;
+        mouth += (target - mouth) * 0.5;
         model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", mouth);
       });
 
