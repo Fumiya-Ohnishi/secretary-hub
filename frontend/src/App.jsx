@@ -75,10 +75,10 @@ export default function App() {
   const logRef = useRef(null);
 
   const tts = useSpeechOutput();
-  const { recording, supported, start: startRec } = useSpeechInput((final, interim) => {
+  const { recording, supported, unsupportedReason, start: startRec } = useSpeechInput((final, interim) => {
     if (final) submit(final);
     else setInput(interim || "");
-  });
+  }, (msg) => setLog((l) => [...l, { role: "sys", text: "🎙 " + msg }]));
 
   const refresh = async () => {
     try { setSummary(await getSummary()); } catch (e) {}
@@ -144,7 +144,7 @@ export default function App() {
             <button
               className={`mic ${recording ? "rec" : ""}`}
               onClick={startRec}
-              title={supported ? "話しかける" : "このブラウザは音声認識非対応"}
+              title={supported ? "話しかける" : unsupportedReason}
               disabled={!supported}
             >🎙</button>
             <textarea
