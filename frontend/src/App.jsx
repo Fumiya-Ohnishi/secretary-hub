@@ -131,7 +131,8 @@ export default function App() {
         <div className="stage">
           {live2dFailed
             ? <img src={FACES[mood]} alt="秘書" draggable="false" />
-            : <Live2DStage mood={mood} speaking={tts.speaking} onError={() => setLive2dFailed(true)} />}
+            : <Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef}
+                           onError={() => setLive2dFailed(true)} />}
           <span className="moodtag">{MOOD_JA[mood]}</span>
           {tts.speaking && <span className="speaking">speaking…</span>}
         </div>
@@ -160,8 +161,9 @@ export default function App() {
             <button className="hint-chip" onClick={() => submit("承認待ちのタスクを教えて")}>承認待ちは?</button>
             <button className="hint-chip" onClick={() => submit("戦略部に今週の企画を頼んで")}>企画を頼む</button>
             {tts.voices.length > 0 && (
-              <select value={tts.voiceName} onChange={(e) => tts.setVoiceName(e.target.value)} className="voice-sel">
-                {tts.voices.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
+              <select value={tts.voiceValue} onChange={(e) => tts.setVoice(e.target.value)} className="voice-sel"
+                      title={tts.engine === "voicevox" ? "VOICEVOX の声" : "ブラウザの声(VOICEVOX を起動すると自然な声になります)"}>
+                {tts.voices.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
               </select>
             )}
           </div>

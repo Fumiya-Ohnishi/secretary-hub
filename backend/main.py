@@ -12,12 +12,13 @@ import subprocess
 import threading
 import datetime
 from pathlib import Path
+from typing import Optional
 
 import httpx
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 # ---------- 設定 ----------
@@ -34,6 +35,9 @@ COMPANY_DIR = Path(os.getenv("AI_COMPANY_DIR", "").strip() or BASE.parent.parent
 API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
 SECRETARY_NAME = os.getenv("SECRETARY_NAME", "セナ")
+# 声: VOICEVOX(無料の読み上げソフト)が起動していればその声を使う。無ければブラウザの声
+VOICEVOX_URL = os.getenv("VOICEVOX_URL", "http://127.0.0.1:50021").rstrip("/")
+VOICEVOX_SPEAKER = os.getenv("VOICEVOX_SPEAKER", "冥鳴ひまり").strip()
 
 app = FastAPI(title="AI-Secretary Hub")
 
@@ -148,6 +152,55 @@ def add_task(t: TaskIn):
             txt += f"\n{line}"
         p.write_text(txt)
     return {"ok": True, "id": new_id}
+
+# ---------- 声(VOICEVOX) ----------
+class TtsIn(BaseModel):
+    text: str
+    speaker: Optional[int] = None
+
+async def voicevox_speakers():
+    """VOICEVOX の声の一覧 [{id, name}]。起動していなければ []"""
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            r = await client.get(f"{VOICEVOX_URL}/speakers")
+            r.raise_for_status()
+    except Exception:
+        return []
+    return [{"id": st["id"], "name": f"{sp['name']}({st['name']})"}
+            for sp in r.json() for st in sp.get("styles", [])]
+
+def default_speaker(speakers):
+    """VOICEVOX_SPEAKER(名前の一部 or 数字のID)に合う声。ノーマルを優先"""
+    if VOICEVOX_SPEAKER.isdigit():
+        return int(VOICEVOX_SPEAKER)
+    hits = [s for s in speakers if VOICEVOX_SPEAKER and VOICEVOX_SPEAKER in s["name"]]
+    best = next((s for s in hits if "ノーマル" in s["name"]), hits[0] if hits else None)
+    return (best or speakers[0])["id"] if speakers else None
+
+@app.get("/api/tts/speakers")
+async def tts_speakers():
+    speakers = await voicevox_speakers()
+    return {"available": bool(speakers), "speakers": speakers, "default": default_speaker(speakers)}
+
+@app.post("/api/tts")
+async def tts(body: TtsIn):
+    text = body.text.strip()[:500]
+    if not text:
+        return JSONResponse({"error": "text required"}, status_code=400)
+    speaker = body.speaker if body.speaker is not None else default_speaker(await voicevox_speakers())
+    if speaker is None:
+        return JSONResponse({"error": "VOICEVOX が起動していません"}, status_code=503)
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            q = await client.post(f"{VOICEVOX_URL}/audio_query", params={"text": text, "speaker": speaker})
+            q.raise_for_status()
+            query = q.json()
+            query["speedScale"] = 1.1
+            wav = await client.post(f"{VOICEVOX_URL}/synthesis", params={"speaker": speaker}, json=query)
+            wav.raise_for_status()
+    except Exception as e:
+        return JSONResponse({"error": f"VOICEVOX で音声を作れませんでした: {e}"}, status_code=502)
+    return Response(content=wav.content, media_type="audio/wav")
 
 @app.post("/api/claude/run")
 def claude_run(body: dict):

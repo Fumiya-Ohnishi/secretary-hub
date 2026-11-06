@@ -42,7 +42,7 @@ function patchCoreForPixiLive2D() {
  * 自動まばたき・呼吸はモデルの設定(EyeBlink / ParamBreath)で動く。
  * Core やモデルが読み込めなければ onError を呼ぶ(呼び出し側で静止画に戻す)。
  */
-export default function Live2DStage({ mood, speaking, onError }) {
+export default function Live2DStage({ mood, speaking, levelRef, onError }) {
   const boxRef = useRef(null);
   const modelRef = useRef(null);
   const speakingRef = useRef(speaking);
@@ -83,13 +83,33 @@ export default function Live2DStage({ mood, speaking, onError }) {
       fit();
       app.renderer.on("resize", fit);
 
-      // 口パク: ブラウザ TTS は音量が取れないため、話している間は「1音ずつ開いて閉じる」動きを作る。
-      // 1音 = 130〜220ms。開き具合は音ごとに少し変え、ときどき短い間(ま)を入れる
+      // 口パク: VOICEVOX の声なら実際の音量(levelRef)に合わせて開く。
+      // ブラウザの声は音量が取れないため、「1音ずつ開いて閉じる」動きを作る
+      // (1音 = 130〜220ms。開き具合は音ごとに少し変え、ときどき短い間(ま)を入れる)
       let mouth = 0, sylStart = 0, sylLen = 0, sylAmp = 0;
+      const core = model.internalModel.coreModel;
+
+      // 口の見え方の補正(リギングの作りに合わせる):
+      // ・閉じた唇の線(mouth)は、口が開くほど薄くする(開いた口の真ん中に線が残らないように)
+      // ・口の中(mouth_inner)は少し開いた時点で濃くする(半透明で透けて見えないように)
+      const drawableIds = core.getModel().drawables.ids;
+      const lineIdx = drawableIds.indexOf("mouth");
+      const innerIdx = drawableIds.indexOf("mouth_inner");
+      const getOpacity = core.getDrawableOpacity.bind(core);
+      core.getDrawableOpacity = (i) => {
+        const o = getOpacity(i);
+        if (i === lineIdx) return o * Math.max(0, 1 - mouth * 3.5);
+        if (i === innerIdx) return Math.min(1, o * 5);
+        return o;
+      };
+
       model.internalModel.on("beforeModelUpdate", () => {
         const now = performance.now();
+        const level = levelRef?.current;
         let target = 0;
-        if (speakingRef.current) {
+        if (speakingRef.current && level != null) {
+          target = level < 0.02 ? 0 : Math.min(1, (level - 0.02) * 6);
+        } else if (speakingRef.current) {
           if (now - sylStart >= sylLen) {
             sylStart = now;
             sylLen = 130 + Math.random() * 90;
