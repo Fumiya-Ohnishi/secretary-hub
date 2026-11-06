@@ -3,7 +3,9 @@
 承認済み・差し戻し・投稿済みは、社長の操作(秘書ハブのボタンか声の返事)からだけ書き込む。
 """
 import datetime
+import os
 import re
+import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -111,10 +113,50 @@ def get_week(week: str) -> dict:
             "posts": [_post(p) for p in sorted(wd.glob("[0-9]*.md"))]}
 
 
+MEDIA_EXT = {".png", ".jpg", ".jpeg", ".mp4", ".mov", ".webp", ".gif", ".mp3", ".wav"}
+
+
+def media_dir() -> Optional[Path]:
+    """完成した画像・動画の置き場所(Google ドライブ)。
+    .env の MEDIA_DIR、無ければ Mac の Google ドライブ アプリの同期フォルダ(マイドライブ/AI会社/投稿素材)を探す"""
+    env = os.getenv("MEDIA_DIR", "").strip()
+    if env:
+        return Path(env).expanduser()
+    cloud = Path.home() / "Library" / "CloudStorage"
+    for drive in sorted(cloud.glob("GoogleDrive-*")) if cloud.is_dir() else []:
+        for my in ("マイドライブ", "My Drive"):
+            if (drive / my).is_dir():
+                return drive / my / "AI会社" / "投稿素材"
+    return None
+
+
+def sync_media() -> int:
+    """content/output/ にある画像・動画を Google ドライブへ写す(同じ大きさのものは飛ばす)。写した数を返す"""
+    dst_root = media_dir()
+    src_root = company.COMPANY_DIR / "content" / "output"
+    if not dst_root or not src_root.is_dir():
+        return 0
+    n = 0
+    for src in src_root.rglob("*"):
+        if src.is_file() and src.suffix.lower() in MEDIA_EXT:
+            dst = dst_root / src.relative_to(src_root)
+            if dst.exists() and dst.stat().st_size == src.stat().st_size:
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            n += 1
+    return n
+
+
 def safe_path(rel: str) -> Path:
     """content/ の下のファイルだけを許可する(../ などで外に出さない)"""
     root = (company.COMPANY_DIR / "content").resolve()
     p = (company.COMPANY_DIR / rel).resolve()
+    md = media_dir()
+    if md and rel.startswith("content/output/"):  # 画像・動画は Google ドライブを先に見る
+        m = (md / rel[len("content/output/"):]).resolve()
+        if md.resolve() in m.parents and m.is_file():
+            return m
     if root != p and root not in p.parents:
         raise PermissionError("content/ の外のファイルは開けません")
     if not p.is_file():
