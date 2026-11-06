@@ -22,13 +22,14 @@ from pydantic import BaseModel
 
 # ---------- 設定 ----------
 BASE = Path(__file__).resolve().parent
-# 会社リポジトリの場所(環境変数 or 既定: 同階層の ai-company)
-COMPANY_DIR = Path(os.getenv("AI_COMPANY_DIR", BASE.parent / "ai-company"))
-# .env を簡易読み込み
+# .env を簡易読み込み(以下の設定より先に読む)
 for line in (BASE / ".env").read_text().splitlines() if (BASE / ".env").exists() else []:
     if "=" in line and not line.strip().startswith("#"):
         k, v = line.split("=", 1)
         os.environ.setdefault(k.strip(), v.strip())
+
+# 会社リポジトリの場所(環境変数 or 既定: secretary-hub と同じ階層の ai-company)
+COMPANY_DIR = Path(os.getenv("AI_COMPANY_DIR", "").strip() or BASE.parent.parent / "ai-company").expanduser()
 
 API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
