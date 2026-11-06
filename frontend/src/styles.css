@@ -376,3 +376,9 @@ button.kpi:hover { border-color: var(--line2); }
 }
 
 select.status-sel { color-scheme: dark; }
+
+.icon-btn.wide { width: auto; padding: 0 12px; font-size: 13px; white-space: nowrap; }
+.pill-btn { cursor: pointer; }
+.pill-btn:hover { border-color: var(--accent); color: var(--text); }
+.set-sep { border: none; border-top: 1px solid var(--line); margin: 2px 0; }
+@media (max-width: 900px) { .pills { display: flex; } .pills .pill:not(.pill-btn) { display: none; } }

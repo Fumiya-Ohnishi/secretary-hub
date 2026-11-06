@@ -106,6 +106,14 @@ export default function App() {
   const [handsFree, setHandsFree] = useState(() => load("hub-handsfree", false));
   const [muted, setMuted] = useState(() => load("hub-muted", false));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef(null);
+  // 設定は、外をクリックしたときだけ閉じる(声の一覧を開いている間に閉じないように)
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const close = (e) => { if (settingsRef.current && !settingsRef.current.contains(e.target)) setSettingsOpen(false); };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [settingsOpen]);
   const [toasts, setToasts] = useState([]);
   const [live2dFailed, setLive2dFailed] = useState(false);
   const logRef = useRef(null);
@@ -354,24 +362,29 @@ export default function App() {
           <div><div className="brand-name">AI会社 秘書室</div><div className="brand-sub">{new Date().toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "short" })}</div></div>
         </div>
         <div className="pills">
-          {pills.map((p) => <span key={p.label} className={`pill ${p.ok ? "ok" : ""}`} title={p.title}><i />{p.label}</span>)}
+          {pills.map((p, i) => i === pills.length - 1
+            ? <button key={p.label} className={`pill pill-btn ${p.ok ? "ok" : ""}`} title="声を変える" onClick={() => setSettingsOpen(true)}><i />{p.label} ▾</button>
+            : <span key={p.label} className={`pill ${p.ok ? "ok" : ""}`} title={p.title}><i />{p.label}</span>)}
         </div>
-        <div className="settings-wrap">
-          <button className="icon-btn" onClick={() => setSettingsOpen(!settingsOpen)} aria-label="設定">⚙</button>
+        <div className="settings-wrap" ref={settingsRef}>
+          <button className="icon-btn wide" onClick={() => setSettingsOpen(!settingsOpen)} aria-label="声と設定">⚙ 声・設定</button>
           {settingsOpen && (
-            <div className="settings" onMouseLeave={() => setSettingsOpen(false)}>
+            <div className="settings">
+              <div className="set-col">
+                <span>声({tts.engine === "voicevox" ? "VOICEVOX" : "ブラウザの声 ・ VOICEVOX を起動すると自然な声になります"})</span>
+                {tts.voices.length > 0 ? (
+                  <select value={tts.voiceValue} onChange={(e) => tts.setVoice(e.target.value)}>
+                    {tts.voices.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+                  </select>
+                ) : <span className="muted small">声の一覧を読み込み中…</span>}
+                <button className="btn sm" onClick={() => tts.speak(`${name}です。この声でよろしいでしょうか。`)}>試しに話す</button>
+              </div>
+              <hr className="set-sep" />
               <label className="set-row"><span>読み上げ</span><input type="checkbox" checked={!muted} onChange={toggleMute} /></label>
               <label className="set-row"><span>定時チェック{summary?.scheduler ? `(${summary.scheduler.times.join("・")})` : ""}</span>
                 <input type="checkbox" checked={!!summary?.scheduler?.auto} onChange={toggleAuto} /></label>
               <button className="btn sm" onClick={checkNow}>今すぐ確認してもらう</button>
               <label className="set-row"><span>ハンズフリー</span><input type="checkbox" checked={handsFree} onChange={toggleHandsFree} disabled={!supported} /></label>
-              {tts.voices.length > 0 && (
-                <label className="set-col"><span>声({tts.engine === "voicevox" ? "VOICEVOX" : "ブラウザ"})</span>
-                  <select value={tts.voiceValue} onChange={(e) => tts.setVoice(e.target.value)}>
-                    {tts.voices.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
-                  </select>
-                </label>
-              )}
               {!supported && <p className="muted small">{unsupportedReason}</p>}
             </div>
           )}
