@@ -1,18 +1,21 @@
 """
 AI秘書ハブ — 中継サーバー
-- 顔(Reactフロント)と脳(Anthropic API)・会社(Claude Code リポジトリ)を繋ぐ
+- 顔(React の画面)と、頭脳(Anthropic API)・会社(Notion / ai-company リポジトリ / Claude Code)を繋ぐ
 - 起動: python3 main.py  (http://localhost:8000)
 """
 import os
 import re
-import csv
-import json
 import shutil
-import subprocess
-import threading
 import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
+
+# .env を最初に読む(以下のモジュールは読み込み時に設定を見る)
+BASE = Path(__file__).resolve().parent
+for line in (BASE / ".env").read_text().splitlines() if (BASE / ".env").exists() else []:
+    if "=" in line and not line.strip().startswith("#"):
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip())
 
 import httpx
 import uvicorn
@@ -21,137 +24,127 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-# ---------- 設定 ----------
-BASE = Path(__file__).resolve().parent
-# .env を簡易読み込み(以下の設定より先に読む)
-for line in (BASE / ".env").read_text().splitlines() if (BASE / ".env").exists() else []:
-    if "=" in line and not line.strip().startswith("#"):
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip())
+import agent
+import company
+import notion
 
-# 会社リポジトリの場所(環境変数 or 既定: secretary-hub と同じ階層の ai-company)
-COMPANY_DIR = Path(os.getenv("AI_COMPANY_DIR", "").strip() or BASE.parent.parent / "ai-company").expanduser()
-
-API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
-MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
-SECRETARY_NAME = os.getenv("SECRETARY_NAME", "セナ")
+COMPANY_DIR = company.COMPANY_DIR
+SECRETARY_NAME = agent.SECRETARY_NAME
 # 声: VOICEVOX(無料の読み上げソフト)が起動していればその声を使う。無ければブラウザの声
 VOICEVOX_URL = os.getenv("VOICEVOX_URL", "http://127.0.0.1:50021").rstrip("/")
 VOICEVOX_SPEAKER = os.getenv("VOICEVOX_SPEAKER", "冥鳴ひまり").strip()
 
 app = FastAPI(title="AI-Secretary Hub")
 
-# ---------- 会社データの読み取り ----------
-def company_paths():
-    return {
-        "revenue": COMPANY_DIR / "data" / "revenue.csv",
-        "tasks": COMPANY_DIR / "data" / "tasks.md",
-        "insights_ig": COMPANY_DIR / "data" / "insights_ig.csv",
-        "insights_note": COMPANY_DIR / "data" / "insights_note.csv",
-        "roadmap": COMPANY_DIR / "strategy" / "roadmap.md",
-        "concept": COMPANY_DIR / "strategy" / "concept.md",
-        "reports": COMPANY_DIR / "reports",
-    }
 
-def read_revenue():
-    p = company_paths()["revenue"]
-    rows = []
-    if p.exists():
-        with p.open() as f:
-            for r in csv.DictReader(f):
-                try:
-                    rows.append({"date": r.get("date",""), "source": r.get("source",""),
-                                 "amount": int(float(r.get("amount", 0) or 0)),
-                                 "memo": r.get("memo","")})
-                except ValueError:
-                    pass
-    month = datetime.date.today().strftime("%Y-%m")
-    m_total = sum(r["amount"] for r in rows if r["date"].startswith(month))
-    return {"month": month, "month_total": m_total, "all_total": sum(r["amount"] for r in rows), "rows": rows[-20:]}
+def err(e: Exception, code: int = 502):
+    return JSONResponse({"error": str(e)}, status_code=code)
 
-def read_tasks():
-    """tasks.md のテーブル行を緩くパース(Notion未設定時の正)"""
-    p = company_paths()["tasks"]
-    tasks = []
-    if p.exists():
-        for line in p.read_text().splitlines():
-            m = re.match(r"\|\s*(T-\d+)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(未着手|進行中|承認待ち|承認済み|完了|差し戻し)\s*\|", line)
-            if m:
-                tasks.append({"id": m.group(1), "title": m.group(2), "assignee": m.group(3),
-                              "due": m.group(4), "status": m.group(5)})
-    return tasks
 
-def company_summary_text():
-    rev = read_revenue()
-    tasks = read_tasks()
-    open_t = [t for t in tasks if t["status"] not in ("完了",)]
-    approval = [t for t in tasks if t["status"] == "承認待ち"]
-    lines = [
-        f"【会社データ(自動取得)】",
-        f"- 今月の収益: {rev['month_total']:,}円(目標50,000円に対する進捗 {round(rev['month_total']/50000*100)}%)",
-        f"- タスク: 全{len(tasks)}件/未完了{len(open_t)}件/承認待ち{len(approval)}件",
-    ]
-    for t in open_t[:5]:
-        lines.append(f"  - {t['id']} {t['title']}({t['assignee']}) 状態:{t['status']}")
-    if not open_t:
-        lines.append("  - 未完了タスクなし")
-    return "\n".join(lines)
+# ---------- 状態 ----------
+@app.get("/api/health")
+def health():
+    return {"ok": True, "secretary": SECRETARY_NAME, "company_dir": str(COMPANY_DIR),
+            "company_found": COMPANY_DIR.exists(), "api_key_set": bool(agent.API_KEY), "model": agent.MODEL,
+            "notion": notion.configured(), "claude_cli": bool(shutil.which("claude"))}
 
-# ---------- Claude Code 実行 ----------
-claude_jobs = {}  # id -> {status, output}
 
-def run_claude_job(job_id, prompt):
-    try:
-        if not shutil.which("claude"):
-            claude_jobs[job_id] = {"status": "error",
-                "output": "Claude Code CLI が見つかりません。ターミナルで `npm install -g @anthropic-ai/claude-code` を実行し、`claude` で一度ログインしてください。"}
-            return
-        proc = subprocess.run(
-            ["claude", "-p", prompt, "--permission-mode", "acceptEdits"],
-            cwd=str(COMPANY_DIR), capture_output=True, text=True, timeout=1800,
-        )
-        out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
-        claude_jobs[job_id] = {"status": "done" if proc.returncode == 0 else "error", "output": out[:4000]}
-    except Exception as e:
-        claude_jobs[job_id] = {"status": "error", "output": str(e)}
+@app.get("/api/company/summary")
+async def summary():
+    data = await company.summary()
+    data["jobs"] = agent.job_list()[:10]
+    return data
 
-# ---------- API ----------
-class ChatIn(BaseModel):
-    message: str
 
+# ---------- タスク ----------
 class TaskIn(BaseModel):
     title: str
     assignee: str = "秘書"
+    due: Optional[str] = None
+    note: str = ""
 
-@app.get("/api/health")
-def health():
-    return {"ok": True, "company_dir": str(COMPANY_DIR), "company_found": COMPANY_DIR.exists(),
-            "api_key_set": bool(API_KEY), "claude_cli": bool(shutil.which("claude"))}
 
-@app.get("/api/company/summary")
-def summary():
-    return {"revenue": read_revenue(), "tasks": read_tasks(),
-            "company_found": COMPANY_DIR.exists()}
+class TaskPatch(BaseModel):
+    status: Optional[str] = None
+    note: Optional[str] = None
 
-@app.post("/api/company/task")
-def add_task(t: TaskIn):
-    p = company_paths()["tasks"]
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    ids = [int(m.group(1)) for m in re.finditer(r"T-(\d+)", p.read_text())] if p.exists() else []
-    new_id = f"T-{(max(ids) + 1) if ids else 1:03d}"
-    line = f"| {new_id} | {t.title} | {t.assignee} | {today} | 未着手 |"
-    if p.exists():
-        txt = p.read_text()
-        txt = txt.replace("## アーカイブ", f"{line}\n\n## アーカイブ") if "| " not in txt.split("## アーカイブ")[0].split("\n")[-2] else txt + f"\n{line}"
-        # シンプルに「今週」セクション末尾へ
-        if "## 今週" in txt:
-            parts = txt.split("## アーカイブ")
-            head = parts[0].rstrip() + f"\n{line}\n"
-            txt = head + ("\n## アーカイブ" + parts[1] if len(parts) > 1 else "")
-        else:
-            txt += f"\n{line}"
-        p.write_text(txt)
-    return {"ok": True, "id": new_id}
+
+class Decision(BaseModel):
+    decision: str  # approve / reject
+    comment: str = ""
+
+
+@app.post("/api/tasks")
+async def create_task(t: TaskIn):
+    try:
+        return await company.create_task(t.title, t.assignee, t.due or None, t.note)
+    except Exception as e:
+        return err(e)
+
+
+@app.patch("/api/tasks/{key}")
+async def patch_task(key: str, body: TaskPatch):
+    """社長が画面で状態を変える(社長の操作なので承認済みも可)"""
+    try:
+        note = body.note and f"{body.note}({datetime.date.today():%m/%d} 社長)"
+        return await company.update_task(key, status=body.status, append_note=note)
+    except Exception as e:
+        return err(e)
+
+
+@app.post("/api/tasks/{key}/decision")
+async def decide(key: str, body: Decision):
+    """承認カードのボタン(または社長の「はい」)から呼ばれる。承認・差し戻しの確定はここだけ"""
+    today = f"{datetime.date.today():%m/%d}"
+    try:
+        if body.decision == "approve":
+            note = f"{today} 社長が秘書ハブで承認" + (f":{body.comment}" if body.comment else "")
+            return await company.update_task(key, status="承認済み", append_note=note)
+        if body.decision == "reject":
+            note = f"{today} 差し戻し:{body.comment or '(理由なし)'}"
+            return await company.update_task(key, status="差し戻し", append_note=note)
+        return err(ValueError("decision は approve か reject"), 400)
+    except Exception as e:
+        return err(e)
+
+
+# ---------- 資料(Notion) ----------
+@app.get("/api/docs")
+async def docs():
+    if not notion.configured():
+        return {"configured": False, "docs": []}
+    try:
+        return {"configured": True, "docs": await notion.list_documents()}
+    except Exception as e:
+        return err(e)
+
+
+@app.get("/api/docs/{page_id}")
+async def doc(page_id: str):
+    try:
+        return await notion.read_page(notion.page_id_from(page_id) or page_id)
+    except Exception as e:
+        return err(e)
+
+
+# ---------- 部署の作業(Claude Code) ----------
+class JobIn(BaseModel):
+    department: str
+    title: str
+    instruction: str
+
+
+@app.get("/api/jobs")
+def jobs():
+    return {"jobs": agent.job_list(), "claude_cli": bool(shutil.which("claude"))}
+
+
+@app.post("/api/jobs")
+async def new_job(body: JobIn):
+    actions: list = []
+    await agent.run_tool("delegate_work", body.dict(), actions)
+    return next((a["job"] for a in actions if a["type"] == "job"), {})
+
 
 # ---------- 声(VOICEVOX) ----------
 class TtsIn(BaseModel):
@@ -202,81 +195,51 @@ async def tts(body: TtsIn):
         return JSONResponse({"error": f"VOICEVOX で音声を作れませんでした: {e}"}, status_code=502)
     return Response(content=wav.content, media_type="audio/wav")
 
-@app.post("/api/claude/run")
-def claude_run(body: dict):
-    prompt = (body.get("prompt") or "").strip()
-    if not prompt:
-        return JSONResponse({"error": "prompt required"}, status_code=400)
-    job_id = datetime.datetime.now().strftime("%H%M%S%f")
-    threading.Thread(target=run_claude_job, args=(job_id, prompt), daemon=True).start()
-    claude_jobs[job_id] = {"status": "running", "output": ""}
-    return {"job_id": job_id}
 
-@app.get("/api/claude/status/{job_id}")
-def claude_status(job_id: str):
-    return claude_jobs.get(job_id, {"status": "unknown"})
+# ---------- 会話 ----------
+class ChatIn(BaseModel):
+    message: str
+    history: List[dict] = []
 
-PERSONA = f"""あなたは「{SECRETARY_NAME}」という名のAI秘書。アニメ調の女性キャラとして画面に表示され、社長に仕える。
-人格: 落ち着いた敬語。クールだが仕事は丁寧。数字に強く、報告は結論→根拠→次の一手の順。褒められたら少し照れる。返答は3文まで(音声読み上げのため)。
-あなたの背後には「AI会社」(Claude Code リポジトリ)があり、部署(戦略/企画/制作/メディア/分析)が作業する。
-会社データが与えられたら、それに基づいて正確に報告する。数値は創作しない。
-- 社長が「〜を作って/企画して/分析して」など作業を求めた場合: 自分では作業せず、
-  「[RUN_CLAUDE] <会社への具体的な指示文>」という1行だけを返す(他の言葉を付けない)。
-- それ以外(雑談・報告・質問への回答)は通常の秘書として返答する。
-- 返答の最後に、そのときの気分を [mood:normal] / [mood:pleased] / [mood:thinking] / [mood:pouty] のどれか1つで付ける
-  (画面の表情に使う。読み上げはしない)。褒められた・感謝された=pleased、考えている・調べている=thinking、
-  社長が無理を言う・からかう=pouty(軽く)、それ以外=normal。"""
 
 # 褒め言葉(APIキー無しの簡易モードで表情を変えるため)
 PRAISE_WORDS = ("ありがとう", "ありがと", "助かる", "助かった", "えらい", "偉い", "さすが", "すごい", "すばらしい",
                 "素晴らしい", "かわいい", "可愛い", "いいね", "よくやった", "天才", "最高")
 
+
+async def simple_reply(msg: str) -> dict:
+    """APIキーが無いときの簡易応答(決まった言葉にだけ反応)"""
+    data = await company.summary()
+    rev, tasks = data["revenue"], data["tasks"]
+    appr = [t for t in tasks if t["status"] == "承認待ち"]
+    open_t = [t for t in tasks if t["status"] != "完了"]
+    if "収益" in msg or "売上" in msg:
+        return {"reply": f"今月の収益は{rev['month_total']:,}円です。目標5万円に対して{rev['progress']}%です。",
+                "mood": "normal", "actions": [{"type": "show_panel", "panel": "home"}]}
+    if "承認" in msg:
+        acts = [{"type": "approval", "task": appr[0]}] if appr else [{"type": "show_panel", "panel": "tasks"}]
+        return {"reply": f"承認待ちは{len(appr)}件です。" + (f"{appr[0]['id']}を表示します。" if appr else ""),
+                "mood": "normal", "actions": acts}
+    if "タスク" in msg:
+        return {"reply": f"未完了のタスクは{len(open_t)}件です。タスク画面を開きます。", "mood": "normal",
+                "actions": [{"type": "show_panel", "panel": "tasks"}]}
+    if "資料" in msg or "企画書" in msg or "ノーション" in msg or "Notion" in msg:
+        return {"reply": "資料の一覧を開きます。", "mood": "normal", "actions": [{"type": "show_panel", "panel": "docs"}]}
+    if any(w in msg for w in PRAISE_WORDS):
+        return {"reply": "……ありがとうございます。そう言っていただけると、少し嬉しいです。", "mood": "pleased", "actions": []}
+    return {"reply": "APIキーが未設定のため、収益・タスク・承認・資料の確認だけできます。キーを入れると何でも頼めます。",
+            "mood": "normal", "actions": []}
+
+
 @app.post("/api/chat")
 async def chat(body: ChatIn):
     msg = body.message.strip()
-    if not API_KEY:
-        # APIキー無し: 会社データの直接読み上げだけで応答
-        rev = read_revenue()
-        tasks = read_tasks()
-        appr = [t for t in tasks if t["status"] == "承認待ち"]
-        if "収益" in msg or "売上" in msg:
-            reply = f"今月の収益は{rev['month_total']:,}円です。目標5万円に対して{round(rev['month_total']/50000*100)}%。"
-        elif "承認" in msg:
-            reply = f"承認待ちは{len(appr)}件です。" + ("タスク" + "、".join(t['id'] for t in appr[:3]) + "をお願いします。" if appr else "ありません。")
-        elif any(w in msg for w in PRAISE_WORDS):
-            return {"reply": "……ありがとうございます。そう言っていただけると、少し嬉しいです。", "mood": "pleased", "ran_claude": None}
-        else:
-            reply = "APIキーが未設定のため、簡易報告のみです。設定からキーを入れると本格対話ができます。"
-        return {"reply": reply, "mood": "normal", "ran_claude": None}
+    if not msg:
+        return JSONResponse({"error": "message required"}, status_code=400)
+    if not agent.API_KEY:
+        return await simple_reply(msg)
+    return await agent.chat(msg, body.history)
 
-    # 会社データを文脈に含める
-    context = company_summary_text()
-    headers = {"content-type": "application/json", "x-api-key": API_KEY, "anthropic-version": "2023-06-01"}
-    payload = {
-        "model": MODEL, "max_tokens": 400,
-        "system": PERSONA + "\n\n" + context,
-        "messages": [{"role": "user", "content": msg}],
-    }
-    async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
-        if r.status_code != 200:
-            return {"reply": f"API エラー({r.status_code}): {r.text[:120]}", "mood": "normal", "ran_claude": None}
-        text = r.json()["content"][0]["text"]
-
-    # 会社への作業指示なら Claude Code を起動
-    m = re.search(r"\[RUN_CLAUDE\]\s*(.+)", text)
-    if m:
-        job_id = datetime.datetime.now().strftime("%H%M%S%f")
-        threading.Thread(target=run_claude_job, args=(job_id, m.group(1).strip()), daemon=True).start()
-        claude_jobs[job_id] = {"status": "running", "output": ""}
-        reply = re.sub(r"\[RUN_CLAUDE\].*", "", text).strip()
-        reply = reply or f"{SECRETARY_NAME}から部署に指示を出しました。完了したら報告しますね。"
-        return {"reply": reply, "mood": "thinking", "ran_claude": job_id}
-
-    mood_m = re.search(r"\[mood:\s*(normal|pleased|thinking|pouty)\s*\]", text)
-    mood = mood_m.group(1) if mood_m else "normal"
-    reply = re.sub(r"\[mood:[^\]]*\]", "", text).strip()
-    return {"reply": reply, "mood": mood, "ran_claude": None}
 
 # ---------- フロント配信(ビルド済み) ----------
 DIST = BASE.parent / "frontend" / "dist"
@@ -287,5 +250,6 @@ if DIST.exists():
 if __name__ == "__main__":
     print(f"\n  AI秘書ハブ起動: http://localhost:8000")
     print(f"  会社ディレクトリ: {COMPANY_DIR} ({'OK' if COMPANY_DIR.exists() else '見つかりません'})")
-    print(f"  APIキー: {'設定済み' if API_KEY else '未設定(.env に ANTHROPIC_API_KEY=...)'}\n")
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
+    print(f"  APIキー: {'設定済み(' + agent.MODEL + ')' if agent.API_KEY else '未設定(.env に ANTHROPIC_API_KEY=...)'}")
+    print(f"  Notion: {'接続設定あり' if notion.configured() else '未設定(.env に NOTION_TOKEN=... ・タスクは控えファイルで管理)'}\n")
+    uvicorn.run(app, host=os.getenv("HUB_HOST", "127.0.0.1"), port=8000, log_level="warning")

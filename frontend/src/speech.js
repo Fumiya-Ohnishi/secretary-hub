@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-/** 音声入力(ブラウザ音声認識, push-to-talk) */
+/** 音声入力(ブラウザ音声認識)。1回の発話ごとに認識する。ハンズフリーは呼び出し側が start を繰り返す */
 // 音声認識のエラーを社長向けの説明に直す
 const RECOGNITION_ERRORS = {
   "not-allowed": "マイクの使用が許可されていません。アドレスバーの鍵アイコンからマイクを「許可」にしてください。",
@@ -45,15 +45,15 @@ export function useSpeechInput(onFinal, onError) {
     rec.onend = () => { setRecording(false); if (finalText.trim()) onFinalRef.current(finalText.trim()); };
     rec.onerror = (e) => {
       setRecording(false);
-      const msg = RECOGNITION_ERRORS[e.error];
-      if (msg) onErrorRef.current?.(msg);
+      onErrorRef.current?.(RECOGNITION_ERRORS[e.error] || "", e.error);
     };
     recRef.current = rec;
     return () => rec.abort();
   }, []);
 
   const start = () => { try { recRef.current?.start(); } catch (e) {} };
-  return { recording, supported, unsupportedReason, start };
+  const stop = () => { try { recRef.current?.stop(); } catch (e) {} };
+  return { recording, supported, unsupportedReason, start, stop };
 }
 
 // 女性の声を優先して選ぶ(上ほど優先)。前回選んだ声があればそれを使う
@@ -222,5 +222,5 @@ export function useSpeechOutput() {
     save(engine === "voicevox" ? VV_VOICE_KEY : VOICE_KEY, value);
   };
 
-  return { engine, voices, voiceValue, setVoice: chooseVoice, speak, speaking, levelRef };
+  return { engine, voices, voiceValue, setVoice: chooseVoice, speak, stop, speaking, levelRef };
 }

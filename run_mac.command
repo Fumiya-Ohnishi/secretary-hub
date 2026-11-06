@@ -3,8 +3,9 @@
 cd "$(dirname "$0")"
 if [ ! -d backend/venv ]; then
   python3 -m venv backend/venv
-  backend/venv/bin/pip install -q -r backend/requirements.txt
 fi
+# 必要な部品を入れる(入っていれば数秒で終わる)
+backend/venv/bin/pip install -q -r backend/requirements.txt || echo "⚠ 部品のインストールに失敗しました。上のエラーを秘書に見せてください"
 if [ ! -f backend/.env ]; then
   cp backend/.env.example backend/.env
   echo "→ backend/.env に ANTHROPIC_API_KEY を入力してから、このファイルをもう一度ダブルクリックしてください"
