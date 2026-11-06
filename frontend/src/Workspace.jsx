@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { createTask, patchTask, getDocs, getDoc, createJob, recordRevenue, recordFollowers } from "./api.js";
+import { createTask, patchTask, getDocs, getDoc, createJob, recordRevenue, recordFollowers, getOrg } from "./api.js";
 import { Blocks } from "./DocView.jsx";
 import Content from "./Content.jsx";
-import { Calendar, OrgChart } from "./Extras.jsx";
+import { Calendar, OrgChart, Activity } from "./Extras.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
 export const STATUSES = ["未着手", "進行中", "承認待ち", "承認済み", "完了", "差し戻し"];
@@ -399,6 +399,10 @@ function Docs({ docId, setDocId, notify }) {
 
 /* ---------------- 部署の作業 ---------------- */
 function Jobs({ jobs, claudeCli, onChanged, notify }) {
+  const [titles, setTitles] = useState({});
+  useEffect(() => {
+    getOrg().then((d) => setTitles(Object.fromEntries(Object.values(d.departments).flat().map((m) => [m.name, m.title])))).catch(() => {});
+  }, []);
   const [form, setForm] = useState({ department: "戦略", title: "", instruction: "" });
   const [open, setOpen] = useState(null);
   const submit = async (e) => {
@@ -432,6 +436,7 @@ function Jobs({ jobs, claudeCli, onChanged, notify }) {
             <strong>{j.department_full || j.department + "部"}</strong><span className="ttl">{j.title}</span>
             <span className="muted small">{j.started.slice(11, 16)}{j.finished ? `〜${j.finished.slice(11, 16)}` : " 作業中…"}</span>
           </div>
+          <Activity job={j} titles={titles} />
           {(open === j.id || j.status !== "running") && j.output && (
             <pre className={`job-out ${open === j.id ? "full" : ""}`}>{j.output}</pre>
           )}
@@ -486,7 +491,7 @@ export default function Workspace(props) {
                                             onChanged={refresh} notify={notify} onOpenWeek={(w) => { setWeek(w); setTab("content"); }} onRule={onRule} />}
         {summary && tab === "calendar" && <Calendar summary={summary} refresh={refresh} notify={notify} onOpenTask={openTask}
                                                     onOpenWeek={(w) => { setWeek(w); setTab("content"); }} />}
-        {tab === "org" && <OrgChart onSay={onSay} />}
+        {tab === "org" && <OrgChart onSay={onSay} notify={notify} />}
         {tab === "content" && <Content week={week} setWeek={setWeek} onChanged={refresh} notify={notify} onSay={onSay} />}
         {summary && tab === "tasks" && <Tasks summary={summary} filter={taskFilter} setFilter={setTaskFilter} onApprove={onApprove}
                                               onChanged={refresh} onOpenDoc={(id) => { setDocId(id); setTab("docs"); }}
