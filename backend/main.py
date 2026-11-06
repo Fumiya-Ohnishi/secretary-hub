@@ -24,10 +24,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
+import asyncio
+
 import agent
 import company
 import content
+import corrections
 import notion
+import scheduler
 
 COMPANY_DIR = company.COMPANY_DIR
 SECRETARY_NAME = agent.SECRETARY_NAME
@@ -36,6 +40,11 @@ VOICEVOX_URL = os.getenv("VOICEVOX_URL", "http://127.0.0.1:50021").rstrip("/")
 VOICEVOX_SPEAKER = os.getenv("VOICEVOX_SPEAKER", "冥鳴ひまり").strip()
 
 app = FastAPI(title="AI-Secretary Hub")
+
+
+@app.on_event("startup")
+async def start_scheduler():
+    asyncio.create_task(scheduler.loop())  # 決まった時間に動く係
 
 
 def err(e: Exception, code: int = 502):
@@ -58,6 +67,8 @@ async def summary():
     data["metrics"] = company.metrics()
     data["usage"] = agent.usage_summary()
     data["content_weeks"] = content.list_weeks()[:6]
+    data["scheduler"] = scheduler.summary()
+    data["rule_proposals"] = corrections.proposals()
     return data
 
 
@@ -121,7 +132,9 @@ async def decide(key: str, body: Decision):
             return await company.update_task(key, status="承認済み", append_note=note)
         if body.decision == "reject":
             note = f"{today} 差し戻し:{body.comment or '(理由なし)'}"
-            return await company.update_task(key, status="差し戻し", append_note=note)
+            t = await company.update_task(key, status="差し戻し", append_note=note)
+            asyncio.create_task(agent.on_correction(f"タスク {t['id']} {t['title'][:40]}", body.comment or "(理由なし)"))
+            return t
         return err(ValueError("decision は approve か reject"), 400)
     except Exception as e:
         return err(e)
@@ -180,7 +193,10 @@ def content_file(path: str):
 async def content_decision(body: PostDecision):
     """社長が投稿を承認・差し戻し・投稿済みにする(ボタンか声の返事から)"""
     try:
-        return await content.decide(body.path, body.decision, body.comment)
+        post = await content.decide(body.path, body.decision, body.comment)
+        if body.decision == "reject":
+            asyncio.create_task(agent.on_correction(f"投稿 {post['id']} {post['title'][:40]}", body.comment or "(理由なし)"))
+        return post
     except (PermissionError, ValueError) as e:
         return err(e, 400)
     except Exception as e:
@@ -247,6 +263,60 @@ async def make_report(week: Optional[str] = None):
         return await agent.weekly_report(week)
     except Exception as e:
         return err(e)
+
+
+# ---------- 定時チェック・お知らせ・修正ログ ----------
+class SchedulerIn(BaseModel):
+    auto: Optional[bool] = None
+    times: Optional[List[str]] = None
+
+
+class RuleDecision(BaseModel):
+    approve: bool
+
+
+@app.get("/api/scheduler")
+def get_scheduler():
+    return scheduler.summary()
+
+
+@app.post("/api/scheduler")
+def set_scheduler(body: SchedulerIn):
+    try:
+        scheduler.update_settings(body.auto, body.times)
+        return scheduler.summary()
+    except ValueError as e:
+        return err(e, 400)
+
+
+@app.post("/api/scheduler/run")
+async def run_scheduler():
+    return await scheduler.run_check()
+
+
+@app.get("/api/notifications")
+def get_notifications():
+    return {"notifications": scheduler.notifications()}
+
+
+@app.post("/api/notifications/read")
+def read_notifications(body: dict):
+    scheduler.mark_read(body.get("ids") or [])
+    return {"ok": True}
+
+
+@app.get("/api/rules")
+def get_rules():
+    return {"proposals": corrections.proposals(), "rules": corrections.rules(), "corrections": corrections.recent(20)}
+
+
+@app.post("/api/rules/{pid}/decision")
+def decide_rule(pid: str, body: RuleDecision):
+    """ルール案の承認・却下(社長の操作だけ)"""
+    try:
+        return corrections.decide(pid, body.approve)
+    except KeyError as e:
+        return err(e, 404)
 
 
 # ---------- 部署の作業(Claude Code) ----------

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { getHealth, getSummary, sendChat, decideTask, getBriefing, approveWeek } from "./api.js";
+import { getHealth, getSummary, sendChat, decideTask, getBriefing, approveWeek, setScheduler, runCheckNow,
+         readNotifications, decideRule } from "./api.js";
 import { useSpeechInput, useSpeechOutput } from "./speech.js";
 import Live2DStage from "./Live2DStage.jsx";
 import Workspace from "./Workspace.jsx";
@@ -62,7 +63,28 @@ function ContentApprovalCard({ info, busy, onApproveAll, onOpen, onClose }) {
   );
 }
 
+/** ルール追加の提案(修正ログから)。承認すると learned_rules.md に1行追加 */
+function RuleCard({ proposal, busy, onDecide, onClose }) {
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal approval-card" role="dialog" aria-label="ルール追加の提案" onClick={(e) => e.stopPropagation()}>
+        <div className="ac-label">社長の判断 ・ ルール追加の提案</div>
+        <div className="ac-title">{proposal.rule}</div>
+        <p className="ac-note">理由:{proposal.reason}{"\n"}承認すると、全部署が作業前に読む「過去の失敗から学んだルール」に追加します。</p>
+        <div className="ac-actions">
+          <button className="btn ghost" onClick={onClose}>あとで</button>
+          <button className="btn" disabled={busy} onClick={() => onDecide(false)}>追加しない</button>
+          <button className="btn primary" disabled={busy} onClick={() => onDecide(true)}>ルールに追加する</button>
+        </div>
+        <div className="ac-voice">🎙 声でも決められます:「はい」で追加 /「いらない」/「あとで」</div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  const [ruleCard, setRuleCard] = useState(null);
+  const seenNotes = useRef(new Set());
   const [log, setLog] = useState(() => load(LOG_KEY, []));
   const [week, setWeek] = useState(null);
   const [contentApproval, setContentApproval] = useState(null);
@@ -135,6 +157,16 @@ export default function App() {
       }
       jobsRef.current = s.jobs || [];
       setJobs(s.jobs || []);
+      // 定時チェックのお知らせ: 吹き出し+読み上げ+ブラウザの通知
+      const fresh = (s.scheduler?.unread || []).filter((n) => !seenNotes.current.has(n.id));
+      if (fresh.length) {
+        fresh.forEach((n) => seenNotes.current.add(n.id));
+        const last = fresh[fresh.length - 1];
+        notify(`🔔 ${last.title}`, "info");
+        say(last.text, "normal");
+        try { if ("Notification" in window && Notification.permission === "granted" && document.hidden) new Notification(last.title, { body: last.text }); } catch (e) {}
+        readNotifications(fresh.map((n) => n.id)).catch(() => {});
+      }
       return s;
     } catch (e) { return null; }
   }, [notify, say]);
@@ -184,6 +216,34 @@ export default function App() {
     setDeciding(false);
   };
 
+  const decideRuleCard = async (approve, p = ruleCard) => {
+    if (!p) return;
+    setDeciding(true);
+    try {
+      await decideRule(p.id, approve);
+      setRuleCard(null);
+      notify(approve ? "ルールに追加しました" : "追加しないことにしました", "ok");
+      say(approve ? `「${p.rule}」を、全部署が守るルールに追加しました。` : "承知しました。このルールは追加しません。", approve ? "pleased" : "normal");
+      refresh();
+    } catch (e) { notify(e.message, "error"); }
+    setDeciding(false);
+  };
+
+  const toggleAuto = async () => {
+    try {
+      const r = await setScheduler({ auto: !summary?.scheduler?.auto });
+      notify(r.auto ? `定時チェックをオンにしました(${r.times.join("・")})` : "定時チェックをオフにしました");
+      if (r.auto && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
+      refresh();
+    } catch (e) { notify(e.message, "error"); }
+  };
+  const checkNow = async () => {
+    setSettingsOpen(false);
+    setBusy(true); setMood("thinking");
+    try { await runCheckNow(); await refresh(); } catch (e) { notify(e.message, "error"); }
+    setBusy(false);
+  };
+
   const approveContent = async () => {
     if (!contentApproval) return;
     setDeciding(true);
@@ -207,6 +267,7 @@ export default function App() {
       if (a.type === "job") setTab("jobs");
       if (a.type === "content") { setWeek(a.week); setTab("content"); }
       if (a.type === "content_approval") setContentApproval(a);
+      if (a.type === "rule_approval") setRuleCard(a.proposal);
     }
     if (actions.some((a) => ["refresh", "job", "approval"].includes(a.type))) refresh();
   };
@@ -216,6 +277,12 @@ export default function App() {
     if (!text || busy) return;
     setInput("");
     pendingSpeech.current = null;
+    if (ruleCard) {
+      setLog((l) => [...l, { role: "user", text }]);
+      if (/(いらない|不要|追加しない|却下|ダメ|だめ)/.test(text)) return decideRuleCard(false);
+      if (/^(はい|承認|追加|ok|オッケー|オーケー|お願いします|いいよ|いいです|大丈夫)/i.test(text)) return decideRuleCard(true);
+      if (/(あとで|後で|キャンセル|やめ|保留)/.test(text)) { setRuleCard(null); return say("承知しました。ホームに残しておきます。"); }
+    }
     // 投稿セットの承認カード: 声の返事で確定(AI は介さない)
     if (contentApproval) {
       setLog((l) => [...l, { role: "user", text }]);
@@ -294,6 +361,9 @@ export default function App() {
           {settingsOpen && (
             <div className="settings" onMouseLeave={() => setSettingsOpen(false)}>
               <label className="set-row"><span>読み上げ</span><input type="checkbox" checked={!muted} onChange={toggleMute} /></label>
+              <label className="set-row"><span>定時チェック{summary?.scheduler ? `(${summary.scheduler.times.join("・")})` : ""}</span>
+                <input type="checkbox" checked={!!summary?.scheduler?.auto} onChange={toggleAuto} /></label>
+              <button className="btn sm" onClick={checkNow}>今すぐ確認してもらう</button>
               <label className="set-row"><span>ハンズフリー</span><input type="checkbox" checked={handsFree} onChange={toggleHandsFree} disabled={!supported} /></label>
               {tts.voices.length > 0 && (
                 <label className="set-col"><span>声({tts.engine === "voicevox" ? "VOICEVOX" : "ブラウザ"})</span>
@@ -347,9 +417,10 @@ export default function App() {
         <Workspace tab={tab} setTab={setTab} summary={summary} jobs={jobs} health={health} log={log} logRef={logRef}
                    taskFilter={taskFilter} setTaskFilter={setTaskFilter} docId={docId} setDocId={setDocId}
                    focusTask={focusTask} setFocusTask={setFocusTask} onApprove={setApproval} onSay={submit}
-                   refresh={refresh} notify={notify} week={week} setWeek={setWeek} />
+                   refresh={refresh} notify={notify} week={week} setWeek={setWeek} onRule={setRuleCard} />
       </main>
 
+      {ruleCard && <RuleCard proposal={ruleCard} busy={deciding} onDecide={(a) => decideRuleCard(a)} onClose={() => setRuleCard(null)} />}
       {contentApproval && (
         <ContentApprovalCard info={contentApproval} busy={deciding} onApproveAll={approveContent}
                              onOpen={() => { setWeek(contentApproval.week); setTab("content"); setContentApproval(null); }}

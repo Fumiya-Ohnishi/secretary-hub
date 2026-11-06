@@ -1,0 +1,238 @@
+"""決まった時間に動く係。秘書ハブが起動している間、設定した時刻(既定 9:00 / 12:00 / 17:00)に秘書が自分で動く。
+
+1. タスクを見て、期限切れ・今日が期限・社長の判断待ちをまとめる
+2. 逆算プラン(備考に [自動 P..-n])の次の工程を、前の工程が終わっていれば部署に自動で依頼する
+3. 「今日やること」を通知する(秘書画面のお知らせ+読み上げ、Mac の通知センター)
+"""
+import asyncio
+import datetime
+import json
+import re
+import subprocess
+import sys
+import threading
+import uuid
+from pathlib import Path
+from typing import List, Optional
+
+import company
+import content
+import corrections
+
+DATA_DIR = Path(__file__).resolve().parent / "data"
+DATA_DIR.mkdir(exist_ok=True)
+SETTINGS_FILE = DATA_DIR / "settings.json"
+NOTES_FILE = DATA_DIR / "notifications.json"
+PLANS_FILE = DATA_DIR / "plans.json"
+_lock = threading.Lock()
+DEFAULT_SETTINGS = {"auto": True, "times": ["09:00", "12:00", "17:00"], "last_slot": ""}
+PLAN_RE = re.compile(r"\[自動 (P[0-9a-f]+)-(\d+)\]")
+DONE = ("完了", "承認済み", "承認待ち")
+LOOKAHEAD_DAYS = 3  # 最初の工程は、期限の3日前から動き始める
+
+
+def _load(path: Path, default):
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return default
+
+
+def _save(path: Path, data):
+    with _lock:
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+        tmp.replace(path)
+
+
+def settings() -> dict:
+    return {**DEFAULT_SETTINGS, **_load(SETTINGS_FILE, {})}
+
+
+def update_settings(auto: Optional[bool] = None, times: Optional[List[str]] = None) -> dict:
+    s = settings()
+    if auto is not None:
+        s["auto"] = bool(auto)
+    if times is not None:
+        clean = sorted({t for t in times if re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", t)})
+        if not clean:
+            raise ValueError("時刻は HH:MM の形で1つ以上指定してください")
+        s["times"] = clean
+    _save(SETTINGS_FILE, s)
+    return s
+
+
+# ---------- お知らせ ----------
+def notifications(unread_only: bool = False) -> List[dict]:
+    items = _load(NOTES_FILE, [])
+    return [n for n in items if not unread_only or not n.get("read")][-30:]
+
+
+def notify(title: str, text: str, kind: str = "info") -> dict:
+    items = _load(NOTES_FILE, [])
+    n = {"id": uuid.uuid4().hex[:8], "at": datetime.datetime.now().isoformat(timespec="seconds"),
+         "title": title, "text": text, "kind": kind, "read": False}
+    _save(NOTES_FILE, (items + [n])[-100:])
+    if sys.platform == "darwin":  # Mac の通知センターにも出す
+        try:
+            safe = lambda s: s.replace("\\", "").replace('"', "'")[:180]
+            subprocess.run(["osascript", "-e", f'display notification "{safe(text)}" with title "{safe(title)}"'],
+                           timeout=5, capture_output=True)
+        except Exception:
+            pass
+    return n
+
+
+def mark_read(ids: List[str]):
+    items = _load(NOTES_FILE, [])
+    for n in items:
+        if not ids or n["id"] in ids:
+            n["read"] = True
+    _save(NOTES_FILE, items)
+
+
+# ---------- 逆算プランの自動進行 ----------
+def save_plan(plan_id: str, title: str, steps: List[dict]):
+    """steps: [{n, key, instruction}](タスクの状態は Notion / tasks.md が正)"""
+    plans = _load(PLANS_FILE, {})
+    plans[plan_id] = {"title": title, "steps": steps, "created": datetime.datetime.now().isoformat(timespec="seconds")}
+    _save(PLANS_FILE, plans)
+
+
+def plan_for_task(key: str) -> Optional[dict]:
+    for pid, p in _load(PLANS_FILE, {}).items():
+        for st in p["steps"]:
+            if st["key"] == key:
+                return {"plan": pid, **st}
+    return None
+
+
+def plan_steps(tasks: List[dict]) -> dict:
+    by_key = {t["key"]: t for t in tasks}
+    out = {}
+    for pid, p in _load(PLANS_FILE, {}).items():
+        steps = [(st["n"], {**by_key[st["key"]], "instruction": st.get("instruction", "")})
+                 for st in p["steps"] if st["key"] in by_key]
+        if steps and any(t["status"] not in ("完了", "承認済み") for _, t in steps):
+            out[pid] = sorted(steps, key=lambda x: x[0])
+    return out
+
+
+async def advance() -> List[dict]:
+    """前の工程が終わったプランの、次の工程を部署に依頼する。依頼した工程を返す"""
+    import agent  # 循環 import を避ける
+    started = []
+    if not settings()["auto"]:
+        return started
+    tasks = await company.list_tasks()
+    today = datetime.date.today()
+    running_keys = {j.get("task_key") for j in agent.job_list() if j["status"] == "running"}
+    for plan, steps in plan_steps(tasks).items():
+        for n, t in steps:
+            if t["status"] in DONE:
+                continue
+            # この工程が未着手で、前の工程がすべて終わっていて、担当が部署なら依頼する
+            prev_done = all(pt["status"] in DONE for pn, pt in steps if pn < n)
+            due = t.get("due", "")[:10]
+            near = not due or datetime.date.fromisoformat(due) <= today + datetime.timedelta(days=LOOKAHEAD_DAYS)
+            if (t["status"] == "未着手" and prev_done and t["assignee"] in agent.SUBAGENTS
+                    and t["key"] not in running_keys and (n > 1 or near)):
+                instruction = t.get("instruction") or t["title"]
+                await company.update_task(t["key"], status="進行中",
+                                          append_note=f"{today:%m/%d} 秘書が自動で{t['assignee']}部に依頼")
+                job = agent.start_job(t["assignee"], f"{t['title']}。{instruction}(期限 {due or 'なし'})", t["title"], t["key"])
+                started.append({"task": t["id"], "title": t["title"], "department": t["assignee"], "job": job["id"]})
+            break  # 1つのプランは先頭の未完了工程だけを見る
+    return started
+
+
+def advance_sync():
+    try:
+        asyncio.run(advance())
+    except Exception:
+        pass
+
+
+# ---------- 定時チェック ----------
+async def run_check(slot: str = "") -> dict:
+    import agent
+    data = await company.summary()
+    tasks = data["tasks"]
+    today = datetime.date.today().isoformat()
+    open_t = [t for t in tasks if t["status"] not in ("完了", "承認済み")]
+    overdue = [t for t in open_t if t["due"] and t["due"][:10] < today]
+    due_today = [t for t in open_t if t["due"][:10] == today]
+    waiting = [t for t in tasks if t["status"] == "承認待ち"]
+    content_waiting = [w for w in content.list_weeks() if w["counts"].get("承認待ち")]
+    rule_props = corrections.proposals()
+    started = await advance()
+
+    facts = {
+        "time": slot or datetime.datetime.now().strftime("%H:%M"), "today": today,
+        "overdue": [f"{t['id']} {t['title']}(期限{t['due'][:10]}・{t['assignee']})" for t in overdue],
+        "due_today": [f"{t['id']} {t['title']}({t['assignee']})" for t in due_today],
+        "president_waiting": [f"{t['id']} {t['title']}" for t in waiting]
+        + [f"投稿セット {w['week']} 承認待ち{w['counts']['承認待ち']}件" for w in content_waiting]
+        + [f"ルール追加の提案「{p['rule']}」" for p in rule_props],
+        "auto_started": [f"{s['department']}部: {s['title']}" for s in started],
+        "running_jobs": [f"{j['department']}部: {j['title']}" for j in agent.job_list() if j["status"] == "running"],
+    }
+    text = None
+    if agent.API_KEY:
+        try:
+            raw = await agent._one_shot(
+                agent.persona(),
+                f"定時チェック({facts['time']})の結果です。\n{json.dumps(facts, ensure_ascii=False)}\n\n"
+                "社長への通知文を書いてください。「今日やること」を中心に、遅れていて間に合わないものは"
+                "「今日から動かないと間に合いません」のように先回りして伝え、自動で部署に依頼したものがあれば報告する。"
+                "社長にお願いすること(承認など)があれば最後に1つだけ。3文以内の話し言葉。", 1200)
+            text = agent.split_mood(raw)[0]
+        except Exception:
+            text = None
+    if not text:
+        parts = [f"{facts['time']}の確認です。"]
+        parts.append(f"期限切れが{len(overdue)}件、今日が期限のものが{len(due_today)}件です。" if overdue or due_today
+                     else "今日が期限のタスクはありません。")
+        if started:
+            parts.append("、".join(facts["auto_started"]) + "に自動で依頼しました。")
+        if facts["president_waiting"]:
+            parts.append(f"社長の判断待ちが{len(facts['president_waiting'])}件あります。")
+        text = "".join(parts)
+    n = notify(f"{SECRETARY_NAME()}の定時チェック({facts['time']})", text, "check")
+    return {"notification": n, "facts": facts}
+
+
+def SECRETARY_NAME():
+    import agent
+    return agent.SECRETARY_NAME
+
+
+def _slot_due(now: datetime.datetime, times: List[str], last: str) -> Optional[str]:
+    """今動くべき時刻。今日の過ぎた時刻のうち、まだ動いていない最後のもの(起動が遅れても1回だけ動く)"""
+    today = now.date().isoformat()
+    passed = [t for t in times if t <= now.strftime("%H:%M")]
+    if not passed:
+        return None
+    slot = f"{today} {passed[-1]}"
+    return slot if slot > (last or "") else None
+
+
+async def loop():
+    while True:
+        try:
+            s = settings()
+            slot = _slot_due(datetime.datetime.now(), s["times"], s.get("last_slot", ""))
+            if s["auto"] and slot:
+                s["last_slot"] = slot
+                _save(SETTINGS_FILE, s)
+                await run_check(slot[-5:])
+        except Exception as e:
+            print("定時チェックでエラー:", e)
+        await asyncio.sleep(30)
+
+
+def summary() -> dict:
+    s = settings()
+    now = datetime.datetime.now().strftime("%H:%M")
+    nxt = next((t for t in s["times"] if t > now), s["times"][0] if s["times"] else "")
+    return {"auto": s["auto"], "times": s["times"], "next": nxt, "unread": notifications(unread_only=True)}

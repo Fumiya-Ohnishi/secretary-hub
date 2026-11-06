@@ -92,7 +92,8 @@ function Ring({ pct }) {
   );
 }
 
-function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, notify, onOpenWeek }) {
+function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, notify, onOpenWeek, onRule }) {
+  const rules = summary.rule_proposals || [];
   const { revenue, tasks } = summary;
   const contentWaiting = (summary.content_weeks || []).filter((w) => w.counts["承認待ち"]);
   const approvals = tasks.filter((t) => t.status === "承認待ち");
@@ -121,8 +122,17 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, n
       </div>
 
       <section className="card">
-        <div className="card-head"><h3>社長の判断待ち</h3><span className="muted">{approvals.length + contentWaiting.length}件</span></div>
-        {approvals.length === 0 && contentWaiting.length === 0 && <div className="empty">いま判断が必要なものはありません。</div>}
+        <div className="card-head"><h3>社長の判断待ち</h3><span className="muted">{approvals.length + contentWaiting.length + rules.length}件
+          {summary.scheduler && ` ・ 次の定時チェック ${summary.scheduler.auto ? summary.scheduler.next : "オフ"}`}</span></div>
+        {approvals.length === 0 && contentWaiting.length === 0 && rules.length === 0 && <div className="empty">いま判断が必要なものはありません。</div>}
+        {rules.map((p) => (
+          <div key={p.id} className="approval-item">
+            <div className="ai-main" onClick={() => onRule(p)}>
+              <span className="tid">ルール</span><span className="ttl">{p.rule}</span>
+            </div>
+            <button className="btn primary sm" onClick={() => onRule(p)}>確認する</button>
+          </div>
+        ))}
         {contentWaiting.map((w) => (
           <div key={w.week} className="approval-item">
             <div className="ai-main" onClick={() => onOpenWeek(w.week)}>
@@ -172,7 +182,7 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, n
         <div className="chips">
           {["今日の報告をして", "今週の投稿を見せて", "企画書を開いて要約して", "T-014 の期限を来週金曜にして",
             "企画部に来週の投稿セットを作ってもらって", "インスタのフォロワー120人", "今日 note が500円売れた",
-            "週次レポートを作って"].map((s) => (
+            "週次レポートを作って", "来週金曜の投稿に向けて逆算して進めて", "これを今後のルールにして"].map((s) => (
             <button key={s} className="chip" onClick={() => onSay(s)}>「{s}」</button>
           ))}
         </div>
@@ -444,7 +454,7 @@ export const TABS = [
 
 export default function Workspace(props) {
   const { tab, setTab, summary, jobs, health, log, logRef, taskFilter, setTaskFilter, docId, setDocId,
-          focusTask, setFocusTask, onApprove, onSay, refresh, notify, week, setWeek } = props;
+          focusTask, setFocusTask, onApprove, onSay, refresh, notify, week, setWeek, onRule } = props;
   const contentWaiting = summary ? (summary.content_weeks || []).reduce((n, w) => n + (w.counts["承認待ち"] || 0), 0) : 0;
   const approvals = summary ? summary.tasks.filter((t) => t.status === "承認待ち").length : 0;
   const running = jobs.filter((j) => j.status === "running").length;
@@ -469,7 +479,7 @@ export default function Workspace(props) {
           <div className="warnbox">会社リポジトリ(ai-company)が見つかりません。backend/.env の AI_COMPANY_DIR を確認してください。</div>
         )}
         {summary && tab === "home" && <Home summary={summary} jobs={jobs} onApprove={onApprove} onSay={onSay} onTab={goTab} onOpenTask={openTask}
-                                            onChanged={refresh} notify={notify} onOpenWeek={(w) => { setWeek(w); setTab("content"); }} />}
+                                            onChanged={refresh} notify={notify} onOpenWeek={(w) => { setWeek(w); setTab("content"); }} onRule={onRule} />}
         {tab === "content" && <Content week={week} setWeek={setWeek} onChanged={refresh} notify={notify} onSay={onSay} />}
         {summary && tab === "tasks" && <Tasks summary={summary} filter={taskFilter} setFilter={setTaskFilter} onApprove={onApprove}
                                               onChanged={refresh} onOpenDoc={(id) => { setDocId(id); setTab("docs"); }}

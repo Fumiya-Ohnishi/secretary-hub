@@ -31,3 +31,7 @@ export const decidePost = (path, decision, comment = "") => call("POST", "/api/c
 export const approveWeek = (week) => call("POST", `/api/content/weeks/${encodeURIComponent(week)}/approve`);
 export const recordRevenue = (r) => call("POST", "/api/metrics/revenue", r);
 export const recordFollowers = (r) => call("POST", "/api/metrics/followers", r);
+export const setScheduler = (s) => call("POST", "/api/scheduler", s);
+export const runCheckNow = () => call("POST", "/api/scheduler/run");
+export const readNotifications = (ids) => call("POST", "/api/notifications/read", { ids });
+export const decideRule = (id, approve) => call("POST", `/api/rules/${encodeURIComponent(id)}/decision`, { approve });
