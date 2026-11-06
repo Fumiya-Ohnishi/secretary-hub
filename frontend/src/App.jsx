@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { getHealth, getSummary, sendChat, claudeStatus, addTask } from "./api.js";
 import { useSpeechInput, useSpeechOutput } from "./speech.js";
+import Live2DStage from "./Live2DStage.jsx";
 
 const FACES = {
   normal: "faces/normal.jpg",
@@ -70,6 +71,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [summary, setSummary] = useState(null);
   const [health, setHealth] = useState(null);
+  const [live2dFailed, setLive2dFailed] = useState(false);
   const logRef = useRef(null);
 
   const tts = useSpeechOutput();
@@ -127,7 +129,9 @@ export default function App() {
       </header>
       <main>
         <div className="stage">
-          <img src={FACES[mood]} alt="秘書" draggable="false" />
+          {live2dFailed
+            ? <img src={FACES[mood]} alt="秘書" draggable="false" />
+            : <Live2DStage mood={mood} speaking={tts.speaking} onError={() => setLive2dFailed(true)} />}
           <span className="moodtag">{MOOD_JA[mood]}</span>
           {tts.speaking && <span className="speaking">speaking…</span>}
         </div>

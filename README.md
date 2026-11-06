@@ -40,6 +40,30 @@
 - APIキーは `backend/.env` のみ(gitコミット禁止)。ブラウザ側には渡しません
 - パスワード類はこのシステムでは一切扱いません(投稿は社長が実行)
 
-## Live2D 化(進行中)
+## Live2D の秘書
 
-秘書を Live2D モデルに置き換えるプロジェクトを `live2d_work/` で進めています。進捗と次の作業は [`live2d_work/README.md`](live2d_work/README.md) を参照。
+左の秘書は Live2D モデルで動きます(自動まばたき・呼吸、話すと口パク、気分で表情が変わる)。
+読み込めない場合は、従来の静止画(`frontend/public/faces/`)に自動で切り替わります。
+
+| 気分 | 表情 | いつ変わるか |
+|---|---|---|
+| normal | 通常 | ふだん |
+| pleased | 上機嫌(笑い目・頬染め) | 褒めたとき・お礼を言ったとき |
+| thinking | 考え中(困り眉) | 部署に作業を頼んだとき・考えているとき |
+| pouty | 不機嫌(軽) | 無理を言ったとき・からかったとき |
+
+### 初回だけ: Cubism Core を置く
+
+Live2D の表示には Live2D 公式の実行用ファイル **Cubism Core** が必要です。ライセンス上、このリポジトリ(公開)には含めていません。
+
+1. Live2D 公式サイトの「Cubism SDK for Web」をダウンロード(利用規約に同意)
+2. zip の中の `Core/live2dcubismcore.js` を `frontend/public/live2d/core/live2dcubismcore.js` に置く
+3. `run_mac.command` をダブルクリック(画面が自動でビルドし直されます)
+
+### ファイル
+
+| 場所 | 内容 |
+|---|---|
+| `frontend/public/live2d/secretary/` | モデル一式(moc3・テクスチャ・表情4種) |
+| `frontend/src/Live2DStage.jsx` | 表示部品(pixi-live2d-display)。気分→表情、話し中→口パク |
+| `live2d_work/` | モデルを作った過程(PSD・手順書・ツール)。[`live2d_work/README.md`](live2d_work/README.md) |
