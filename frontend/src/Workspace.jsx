@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createTask, patchTask, getDocs, getDoc, createJob, recordRevenue, recordFollowers } from "./api.js";
 import { Blocks } from "./DocView.jsx";
 import Content from "./Content.jsx";
+import { Calendar, OrgChart } from "./Extras.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
 export const STATUSES = ["未着手", "進行中", "承認待ち", "承認済み", "完了", "差し戻し"];
@@ -180,7 +181,7 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, n
       <section className="card say">
         <h3>こう話しかけてみてください</h3>
         <div className="chips">
-          {["今日の報告をして", "今週の投稿を見せて", "企画書を開いて要約して", "T-014 の期限を来週金曜にして",
+          {["今日の報告をして", "今日の投稿を始めて", "今週の投稿を見せて", "企画書を開いて要約して", "T-014 の期限を来週金曜にして",
             "企画部に来週の投稿セットを作ってもらって", "インスタのフォロワー120人", "今日 note が500円売れた",
             "週次レポートを作って", "来週金曜の投稿に向けて逆算して進めて", "これを今後のルールにして"].map((s) => (
             <button key={s} className="chip" onClick={() => onSay(s)}>「{s}」</button>
@@ -449,7 +450,8 @@ function Chat({ log, logRef }) {
 }
 
 export const TABS = [
-  ["home", "ホーム"], ["content", "投稿"], ["tasks", "タスク"], ["docs", "資料"], ["jobs", "部署の作業"], ["chat", "会話"],
+  ["home", "ホーム"], ["content", "投稿"], ["calendar", "予定"], ["tasks", "タスク"], ["docs", "資料"], ["jobs", "部署の作業"],
+  ["org", "組織図"], ["chat", "会話"],
 ];
 
 export default function Workspace(props) {
@@ -480,6 +482,9 @@ export default function Workspace(props) {
         )}
         {summary && tab === "home" && <Home summary={summary} jobs={jobs} onApprove={onApprove} onSay={onSay} onTab={goTab} onOpenTask={openTask}
                                             onChanged={refresh} notify={notify} onOpenWeek={(w) => { setWeek(w); setTab("content"); }} onRule={onRule} />}
+        {summary && tab === "calendar" && <Calendar summary={summary} refresh={refresh} notify={notify} onOpenTask={openTask}
+                                                    onOpenWeek={(w) => { setWeek(w); setTab("content"); }} />}
+        {tab === "org" && <OrgChart onSay={onSay} />}
         {tab === "content" && <Content week={week} setWeek={setWeek} onChanged={refresh} notify={notify} onSay={onSay} />}
         {summary && tab === "tasks" && <Tasks summary={summary} filter={taskFilter} setFilter={setTaskFilter} onApprove={onApprove}
                                               onChanged={refresh} onOpenDoc={(id) => { setDocId(id); setTab("docs"); }}

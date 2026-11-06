@@ -164,7 +164,7 @@ def job_list() -> List[dict]:
 # ---------- 道具の定義 ----------
 EDITABLE = ["未着手", "進行中", "承認待ち", "完了"]
 DEPARTMENTS = ["戦略", "企画", "制作", "メディア", "分析"]
-PANELS = ["home", "content", "tasks", "docs", "jobs", "chat"]
+PANELS = ["home", "content", "calendar", "tasks", "docs", "jobs", "org", "chat"]
 
 
 def _tool(name, description, props, required):
@@ -191,7 +191,8 @@ TOOLS = [
     _tool("list_documents", "Notion の資料(企画書・アカウント設計など)の一覧を取得する。", {}, []),
     _tool("open_document", "Notion の資料を画面に開き、内容を読む。要約や質問への回答に使う。",
           {"query": {"type": "string", "description": "資料名の一部、または Notion の URL/ID"}}, ["query"]),
-    _tool("show_panel", "画面右側の表示を切り替える。home=ホーム, content=投稿セット, tasks=タスク, docs=資料, jobs=部署の作業, chat=会話履歴",
+    _tool("show_panel", "画面右側の表示を切り替える。home=ホーム, content=投稿セット, calendar=週の予定, tasks=タスク, docs=資料, "
+          "jobs=部署の作業, org=組織図(社員と稼働状況), chat=会話履歴",
           {"panel": {"type": "string", "enum": PANELS}}, ["panel"]),
     _tool("delegate_work", "部署(Claude Code)に作業を依頼する。企画・リサーチ・原稿作成・分析など、時間のかかる作業に使う。"
           "依頼と同時にタスクを起票(進行中)し、完了すると画面に通知される。",
@@ -229,6 +230,8 @@ TOOLS = [
                "instruction": {"type": "string", "description": "部署への具体的な指示(社長の工程なら社長がすること)"}},
                "required": ["title", "assignee", "due", "instruction"], "additionalProperties": False}}},
           ["title", "deadline", "steps"]),
+    _tool("start_posting", "投稿アシスタントを開く。承認済みの投稿を1件ずつ、キャプションのコピー・画像の保存・注意点・"
+          "「投稿しました」の順に案内する。社長が「今日の投稿を始めて」「投稿したい」と言ったときに使う。", {}, []),
     _tool("run_check_now", "定時チェック(今日やること・遅れ・自動依頼・社長へのお願い)を今すぐ行う。", {}, []),
     _tool("propose_rule", "過去の失敗を繰り返さないためのルール案を出す(社長が承認すると learned_rules.md に追加)。"
           "社長が「これをルールにして」と言ったときや、同じ指摘が繰り返されたときに使う。",
@@ -377,6 +380,15 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
                 + (f"。最初の工程を自動で依頼しました: {started[0]['department']}部" if started else
                    "。最初の工程は期限の3日前になったら自動で依頼します" if scheduler.settings()["auto"]
                    else "。自動進行がオフのため、依頼は社長の指示を待ちます"))
+
+    if name == "start_posting":
+        posts = content.to_post()
+        if not posts:
+            return "承認済みでまだ投稿していないものはありません。"
+        actions.append({"type": "posting"})
+        today = datetime.date.today().isoformat()
+        n_today = sum(1 for p in posts if p["scheduled"].startswith(today))
+        return f"投稿アシスタントを開きました。投稿待ち{len(posts)}件(今日の予定{n_today}件)。"
 
     if name == "run_check_now":
         r = await scheduler.run_check()
@@ -579,50 +591,147 @@ def split_mood(text: str):
     return re.sub(r"\[mood:[^\]]*\]", "", text).strip(), (m.group(1) if m else "normal")
 
 
-async def chat(message: str, history: List[dict]) -> dict:
+# ストリーミング用の道具定義(大きな入力も流れてくるように。受け取った入力は _valid_input で確かめる)
+TOOLS_STREAM = [{**t, "eager_input_streaming": True} for t in TOOLS]
+_TOOL_SCHEMAS = {t["name"]: t["input_schema"] for t in TOOLS}
+
+
+def _valid_input(name: str, args) -> Optional[str]:
+    """必須項目・選択肢・型を確かめる。問題があれば理由を返す"""
+    schema = _TOOL_SCHEMAS.get(name)
+    if schema is None:
+        return f"未知の道具 {name}"
+    if not isinstance(args, dict):
+        return "入力が JSON オブジェクトではありません"
+    for key in schema.get("required", []):
+        if key not in args:
+            return f"必須項目 {key} がありません"
+    for key, val in args.items():
+        spec = schema["properties"].get(key)
+        if spec is None:
+            return f"不明な項目 {key}"
+        if "enum" in spec and val not in spec["enum"]:
+            return f"{key} は {spec['enum']} のどれか"
+        typ = spec.get("type")
+        if typ == "string" and not isinstance(val, str) or typ == "integer" and not isinstance(val, int) \
+                or typ == "array" and not isinstance(val, list):
+            return f"{key} の型が違います({typ})"
+    return None
+
+
+class _MoodFilter:
+    """流れてくる文章から [mood:..] を取り除く(タグの途中で切れても大丈夫なように、[ 以降は確定まで保留)"""
+    def __init__(self):
+        self.buf = ""
+        self.mood = None
+
+    def feed(self, text: str) -> str:
+        self.buf += text
+        out = ""
+        while self.buf:
+            i = self.buf.find("[")
+            if i == -1:
+                out, self.buf = out + self.buf, ""
+                break
+            out += self.buf[:i]
+            self.buf = self.buf[i:]
+            j = self.buf.find("]")
+            if j == -1:
+                if len(self.buf) > 40:  # タグではなかった
+                    out, self.buf = out + self.buf, ""
+                break
+            tag = self.buf[:j + 1]
+            m = re.fullmatch(r"\[mood:\s*(normal|pleased|thinking|pouty)\s*\]", tag)
+            if m:
+                self.mood = m.group(1)
+            elif not tag.startswith("[mood"):
+                out += tag
+            self.buf = self.buf[j + 1:]
+        return out
+
+    def flush(self) -> str:
+        rest, self.buf = ("" if self.buf.startswith("[mood") else self.buf), ""
+        return rest
+
+
+async def chat_stream(message: str, history: List[dict]):
+    """会話の返事を少しずつ返す。{"t": "text", "v": 文字} を何度か → 最後に {"t": "done", reply, mood, actions}"""
     actions: List[dict] = []
     data = await company.summary()
     system = persona() + "\n\n" + context_text(data)
     messages = _messages(history, message)
-    reply = ""
+    spoken, error = "", None
+    mf = _MoodFilter()
     try:
         for _ in range(8):
-            resp = await client.messages.create(model=MODEL, max_tokens=16000, system=system, tools=TOOLS,
-                                                 messages=messages, **_request_options())
+            async with client.messages.stream(model=MODEL, max_tokens=16000, system=system, tools=TOOLS_STREAM,
+                                              messages=messages, **_request_options()) as stream:
+                async for text in stream.text_stream:
+                    out = mf.feed(text)
+                    if out:
+                        spoken += out
+                        yield {"t": "text", "v": out}
+                resp = await stream.get_final_message()
             add_usage(resp)
             if resp.stop_reason == "refusal":
-                reply = "申し訳ありません、その件はお答えできません。[mood:normal]"
+                error = "申し訳ありません、その件はお答えできません。"
                 break
-            uses = [b for b in resp.content if getattr(b, "type", "") == "tool_use"]
-            texts = [b.text for b in resp.content if getattr(b, "type", "") == "text"]
             if resp.stop_reason == "pause_turn":
                 messages.append({"role": "assistant", "content": resp.content})
                 continue
+            uses = [b for b in resp.content if getattr(b, "type", "") == "tool_use"]
             if not uses:
-                reply = "".join(texts)
                 break
+            if resp.stop_reason == "max_tokens":
+                error = "返事が長くなりすぎたため、途中で止めました。"
+                break
+            # 道具を使う前に、ここまでの文を区切る(読み上げを先に進めるため)
+            if spoken and not spoken.endswith(("。", "!", "?", "!", "?", "\n")):
+                spoken += "\n"
+                yield {"t": "text", "v": "\n"}
             messages.append({"role": "assistant", "content": resp.content})
             results = []
             for u in uses:
+                bad = _valid_input(u.name, u.input)
+                if bad:
+                    results.append({"type": "tool_result", "tool_use_id": u.id, "content": f"INVALID_INPUT: {bad}", "is_error": True})
+                    continue
                 try:
                     out = await run_tool(u.name, dict(u.input or {}), actions)
                     results.append({"type": "tool_result", "tool_use_id": u.id, "content": out})
                 except Exception as e:
                     results.append({"type": "tool_result", "tool_use_id": u.id, "content": f"エラー: {e}", "is_error": True})
             messages.append({"role": "user", "content": results})
+            yield {"t": "actions", "v": actions[:]}
         else:
-            reply = "作業が長くなったため、いったんここまでにします。[mood:thinking]"
+            error = "作業が長くなったため、いったんここまでにします。"
     except anthropic.AuthenticationError:
-        reply = "APIキーが正しくないようです。backend/.env の ANTHROPIC_API_KEY を確認してください。"
+        error = "APIキーが正しくないようです。backend/.env の ANTHROPIC_API_KEY を確認してください。"
     except anthropic.NotFoundError:
-        reply = f"モデル {MODEL} が使えません。backend/.env の ANTHROPIC_MODEL を確認してください。"
+        error = f"モデル {MODEL} が使えません。backend/.env の ANTHROPIC_MODEL を確認してください。"
     except anthropic.RateLimitError:
-        reply = "API の利用上限に達しました。少し待ってからもう一度お願いします。"
+        error = "API の利用上限に達しました。少し待ってからもう一度お願いします。"
     except anthropic.APIStatusError as e:
-        reply = f"API エラー({e.status_code})です。少し待ってからもう一度お願いします。"
+        error = f"API エラー({e.status_code})です。少し待ってからもう一度お願いします。"
     except anthropic.APIConnectionError:
-        reply = "API に接続できません。インターネット接続を確認してください。"
-    text, mood = split_mood(reply)
+        error = "API に接続できません。インターネット接続を確認してください。"
+    rest = mf.flush()
+    if rest:
+        spoken += rest
+        yield {"t": "text", "v": rest}
+    if error:
+        spoken += ("\n" if spoken else "") + error
+        yield {"t": "text", "v": ("\n" if spoken != error else "") + error}
+    mood = mf.mood or "normal"
     if any(a["type"] == "job" for a in actions) and mood == "normal":
         mood = "thinking"
-    return {"reply": text or "承知しました。", "mood": mood, "actions": actions}
+    yield {"t": "done", "reply": spoken.strip() or "承知しました。", "mood": mood, "actions": actions}
+
+
+async def chat(message: str, history: List[dict]) -> dict:
+    """ストリーミングを使わない呼び出し(最後の結果だけ返す)"""
+    result = {}
+    async for ev in chat_stream(message, history):
+        if ev["t"] == "done":
+            result = ev
+    return {"reply": result.get("reply", ""), "mood": result.get("mood", "normal"), "actions": result.get("actions", [])}

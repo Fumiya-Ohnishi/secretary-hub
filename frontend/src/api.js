@@ -35,3 +35,39 @@ export const setScheduler = (s) => call("POST", "/api/scheduler", s);
 export const runCheckNow = () => call("POST", "/api/scheduler/run");
 export const readNotifications = (ids) => call("POST", "/api/notifications/read", { ids });
 export const decideRule = (id, approve) => call("POST", `/api/rules/${encodeURIComponent(id)}/decision`, { approve });
+
+/** 返事を少しずつ受け取る。onEvent({t:"text",v}) / ({t:"actions",v}) / ({t:"done",reply,mood,actions}) */
+export async function chatStream(message, history, onEvent) {
+  const r = await fetch("/api/chat/stream", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message, history }),
+  });
+  if (!r.ok || !r.body) throw new Error(`通信エラー(${r.status})`);
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "", done = null;
+  for (;;) {
+    const { value, done: end } = await reader.read();
+    if (end) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (!line) continue;
+      const ev = JSON.parse(line);
+      if (ev.t === "done") done = ev;
+      onEvent(ev);
+    }
+  }
+  if (!done) throw new Error("返事が途中で切れました");
+  return done;
+}
+
+export const getToPost = () => call("GET", "/api/content/to_post");
+export const getAllPosts = () => call("GET", "/api/content/posts");
+export const schedulePost = (path, date) => call("POST", "/api/content/schedule", { path, date });
+export const getOrg = () => call("GET", "/api/org");
+export const search = (q) => call("GET", `/api/search?q=${encodeURIComponent(q)}`);
+export const getDiagnostics = () => call("GET", "/api/diagnostics");

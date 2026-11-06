@@ -155,79 +155,129 @@ export function useSpeechOutput() {
     };
   }, []);
 
-  const stop = () => {
-    const a = audioRef.current;
-    if (a.source) { a.source.onended = null; try { a.source.stop(); } catch (e) {} a.source = null; }
-    if ("speechSynthesis" in window) speechSynthesis.cancel();
-    levelRef.current = null;
-    setSpeaking(false);
+  /* ---- 読み上げの順番待ち(1文ずつ。VOICEVOX は次の文の音声を先に作っておく) ---- */
+  const queueRef = useRef([]);      // [{ text, audio: Promise<ArrayBuffer> | null }]
+  const playingRef = useRef(false);
+  const streamOpenRef = useRef(false);
+  const bufRef = useRef("");
+  const genRef = useRef(0);         // stop() のたびに増やし、古い再生の続きを無視する
+
+  const fetchAudio = (text) => fetch("/api/tts", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text, speaker: Number(voiceRef.current) }),
+  }).then((r) => { if (!r.ok) throw new Error("VOICEVOX error"); return r.arrayBuffer(); });
+
+  const finishIfIdle = () => {
+    if (!playingRef.current && !queueRef.current.length && !streamOpenRef.current) setSpeaking(false);
   };
 
-  const speakBrowser = (text, voiceName) => {
-    if (!("speechSynthesis" in window)) return;
+  const playBuffer = async (arrayBuffer, gen) => {
+    const a = audioRef.current;
+    if (!a.ctx) a.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    await a.ctx.resume();
+    const buffer = await a.ctx.decodeAudioData(arrayBuffer);
+    if (gen !== genRef.current) return;
+    await new Promise((resolve) => {
+      const source = a.ctx.createBufferSource();
+      const analyser = a.ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      source.buffer = buffer;
+      source.connect(analyser);
+      analyser.connect(a.ctx.destination);
+      const data = new Float32Array(analyser.fftSize);
+      const meter = () => {
+        if (a.source !== source) return;
+        analyser.getFloatTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+        levelRef.current = Math.sqrt(sum / data.length);
+        requestAnimationFrame(meter);
+      };
+      source.onended = () => { if (a.source === source) { a.source = null; levelRef.current = null; } resolve(); };
+      a.source = source;
+      levelRef.current = 0;
+      source.start();
+      meter();
+    });
+  };
+
+  const playBrowser = (text, gen) => new Promise((resolve) => {
+    if (!("speechSynthesis" in window) || gen !== genRef.current) return resolve();
     const u = new SpeechSynthesisUtterance(text);
-    const v = browserVoicesRef.current.find((x) => x.name === voiceName)
+    const v = browserVoicesRef.current.find((x) => x.name === voiceRef.current)
       || browserVoicesRef.current.find((x) => x.name === pickVoice(browserVoicesRef.current));
     if (v) u.voice = v;
     u.lang = "ja-JP";
     u.rate = 1.05;
     u.pitch = 1.2;
-    u.onstart = () => setSpeaking(true);
-    u.onend = u.onerror = () => setSpeaking(false);
+    u.onend = u.onerror = () => resolve();
     speechSynthesis.speak(u);
+  });
+
+  const playNext = async () => {
+    const gen = genRef.current;
+    const item = queueRef.current.shift();
+    if (!item) { playingRef.current = false; finishIfIdle(); return; }
+    playingRef.current = true;
+    setSpeaking(true);
+    try {
+      if (item.audio) await playBuffer(await item.audio, gen);
+      else await playBrowser(item.text, gen);
+    } catch (e) {
+      console.warn("VOICEVOX で話せないため、ブラウザの声で話します:", e);
+      levelRef.current = null;
+      await playBrowser(item.text, gen);
+    }
+    if (gen === genRef.current) playNext();
   };
 
-  const speakVoicevox = async (text) => {
-    const r = await fetch("/api/tts", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, speaker: Number(voiceRef.current) }),
-    });
-    if (!r.ok) throw new Error(await r.text());
-    const a = audioRef.current;
-    if (!a.ctx) a.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    await a.ctx.resume();
-    const buffer = await a.ctx.decodeAudioData(await r.arrayBuffer());
-    const source = a.ctx.createBufferSource();
-    const analyser = a.ctx.createAnalyser();
-    analyser.fftSize = 1024;
-    source.buffer = buffer;
-    source.connect(analyser);
-    analyser.connect(a.ctx.destination);
-    const data = new Float32Array(analyser.fftSize);
-    const meter = () => {
-      if (a.source !== source) return;
-      analyser.getFloatTimeDomainData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
-      levelRef.current = Math.sqrt(sum / data.length);
-      requestAnimationFrame(meter);
-    };
-    source.onended = () => {
-      if (a.source !== source) return;
-      a.source = null;
-      levelRef.current = null;
-      setSpeaking(false);
-    };
-    a.source = source;
-    levelRef.current = 0;
+  const enqueue = (text) => {
+    const t = text.trim();
+    if (!t) return;
+    const audio = engineRef.current === "voicevox" ? fetchAudio(t) : null;
+    if (audio) audio.catch(() => {}); // 失敗は再生時にブラウザの声へ
+    queueRef.current.push({ text: t, audio });
     setSpeaking(true);
-    source.start();
-    meter();
+    if (!playingRef.current) playNext();
+  };
+
+  const stop = () => {
+    genRef.current += 1;
+    queueRef.current = [];
+    streamOpenRef.current = false;
+    bufRef.current = "";
+    playingRef.current = false;
+    const a = audioRef.current;
+    if (a.source) { const src = a.source; a.source = null; try { src.stop(); } catch (e) {} }
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+    levelRef.current = null;
+    setSpeaking(false);
+  };
+
+  // 流れてくる文章を、句点や改行で区切って順に読み上げる
+  const streamStart = () => { stop(); streamOpenRef.current = true; };
+  const streamPush = (chunk) => {
+    if (!streamOpenRef.current) return;
+    bufRef.current += chunk;
+    const re = /[^。!?！？\n]*[。!?！？\n]+/g;
+    let m, last = 0;
+    while ((m = re.exec(bufRef.current))) { enqueue(m[0]); last = re.lastIndex; }
+    bufRef.current = bufRef.current.slice(last);
+  };
+  const streamEnd = () => {
+    if (!streamOpenRef.current) return;
+    enqueue(bufRef.current);
+    bufRef.current = "";
+    streamOpenRef.current = false;
+    finishIfIdle();
   };
 
   const speak = (text) => {
     if (!text) return;
-    stop();
-    if (engineRef.current === "voicevox") {
-      speakVoicevox(text).catch((e) => {
-        console.warn("VOICEVOX で話せないため、ブラウザの声で話します:", e);
-        levelRef.current = null;
-        speakBrowser(text, "");
-      });
-    } else {
-      speakBrowser(text, voiceRef.current);
-    }
+    streamStart();
+    streamPush(text);
+    streamEnd();
   };
 
   const chooseVoice = (value) => {
@@ -235,5 +285,5 @@ export function useSpeechOutput() {
     save(engineRef.current === "voicevox" ? VV_VOICE_KEY : VOICE_KEY, value);
   };
 
-  return { engine, voices, voiceValue, setVoice: chooseVoice, speak, stop, speaking, levelRef };
+  return { engine, voices, voiceValue, setVoice: chooseVoice, speak, stop, streamStart, streamPush, streamEnd, speaking, levelRef };
 }

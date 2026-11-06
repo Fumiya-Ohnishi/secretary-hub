@@ -186,3 +186,35 @@ def summary_text() -> str:
         c = "・".join(f"{k}{v}" for k, v in w["counts"].items()) or "0件"
         lines.append(f"  - {w['week']} テーマ「{w['theme'] or '未定'}」: {c}")
     return "\n".join(lines)
+
+
+# ---------- 投稿アシスタント・カレンダー ----------
+def all_posts() -> List[dict]:
+    out = []
+    for w in list_weeks():
+        try:
+            for p in get_week(w["week"])["posts"]:
+                out.append({**p, "week": w["week"], "theme": w["theme"]})
+        except Exception:
+            pass
+    return out
+
+
+def to_post() -> List[dict]:
+    """承認済みでまだ投稿していないもの(予定日の早い順)"""
+    posts = [p for p in all_posts() if p["status"] == "承認済み"]
+    return sorted(posts, key=lambda p: (p["scheduled"] or "9999"))
+
+
+def set_scheduled(rel: str, date: str) -> dict:
+    """投稿予定日を変える(時刻はそのまま)。社長がカレンダーで動かしたとき"""
+    datetime.date.fromisoformat(date)
+    path = safe_path(rel)
+    if path.suffix != ".md" or not WEEK_RE.match(path.parent.name):
+        raise PermissionError("投稿ファイルではありません")
+    meta, body = parse(path.read_text())
+    old = meta.get("scheduled", "")
+    time_part = old[10:].strip() if len(old) > 10 else ""
+    meta["scheduled"] = f"{date} {time_part}".strip()
+    path.write_text(dump(meta, body))
+    return _post(path)

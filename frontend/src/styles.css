@@ -382,3 +382,79 @@ select.status-sel { color-scheme: dark; }
 .pill-btn:hover { border-color: var(--accent); color: var(--text); }
 .set-sep { border: none; border-top: 1px solid var(--line); margin: 2px 0; }
 @media (max-width: 900px) { .pills { display: flex; } .pills .pill:not(.pill-btn) { display: none; } }
+
+/* 時間帯の背景(朝・昼・夕方・夜) */
+.stage-bg.morning { background: radial-gradient(ellipse 60% 45% at 50% 30%, rgba(255, 214, 170, .22), transparent 70%), radial-gradient(ellipse 80% 40% at 50% 105%, rgba(201, 204, 216, .10), transparent 70%), linear-gradient(180deg, #2a3358 0%, #141a33 100%); }
+.stage-bg.day { background: radial-gradient(ellipse 60% 45% at 50% 30%, rgba(170, 200, 255, .26), transparent 70%), radial-gradient(ellipse 80% 40% at 50% 105%, rgba(201, 204, 216, .12), transparent 70%), linear-gradient(180deg, #24305a 0%, #121834 100%); }
+.stage-bg.evening { background: radial-gradient(ellipse 60% 45% at 50% 30%, rgba(255, 150, 140, .22), transparent 70%), radial-gradient(ellipse 80% 40% at 50% 105%, rgba(201, 204, 216, .08), transparent 70%), linear-gradient(180deg, #2c2347 0%, #120f26 100%); }
+.stage-bg.night { background: radial-gradient(ellipse 60% 45% at 50% 30%, rgba(142, 149, 242, .2), transparent 70%), radial-gradient(ellipse 80% 40% at 50% 105%, rgba(201, 204, 216, .08), transparent 70%), linear-gradient(180deg, #121733 0%, #090c1a 100%); }
+
+/* モーダル共通 */
+.modal.wide { width: min(980px, 100%); max-height: 90vh; overflow-y: auto; }
+.modal-back.top { place-items: start center; padding-top: 12vh; }
+.center { text-align: center; }
+
+/* 投稿アシスタント */
+.pa-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.pa-progress { flex: 1; height: 4px; background: var(--panel3); border-radius: 4px; overflow: hidden; }
+.pa-progress span { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+.pa-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; font-size: 15px; }
+.pa-title .today { color: var(--warn); }
+.pa-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
+.pa-grid > * { min-width: 0; }
+.pa-caption { max-height: 260px; overflow-y: auto; margin-bottom: 10px; }
+.pa-side { display: flex; flex-direction: column; gap: 8px; }
+.pa-check { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 6px 8px; background: var(--bg2); border-radius: 8px; cursor: pointer; }
+.pa-check input { width: 16px; height: 16px; accent-color: var(--ok); }
+.pa-done { font-size: 42px; text-align: center; margin: 10px 0; }
+
+/* 週カレンダー */
+.cal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.cal-note { margin-left: auto; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.cal-day { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-height: 260px; padding: 8px 6px; display: flex; flex-direction: column; gap: 5px; }
+.cal-day.today { border-color: var(--accent); box-shadow: inset 0 0 0 1px rgba(142, 149, 242, .3); }
+.cal-day.droppable { border-style: dashed; }
+.cal-date { display: flex; justify-content: space-between; font-weight: 700; font-size: 15px; padding: 0 4px 4px; }
+.cal-date span { font-weight: 400; color: var(--mute); font-size: 11px; }
+.cal-item { border-radius: 8px; padding: 5px 7px; font-size: 11px; cursor: pointer; border-left: 3px solid var(--line2); background: var(--bg2); }
+.cal-item[draggable="true"] { cursor: grab; }
+.cal-item.post { border-left-color: #3987e5; }
+.cal-item.task { border-left-color: #c98500; }
+.cal-item.job { border-left-color: #199e70; cursor: default; }
+.cal-label { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cal-sub { color: var(--mute); font-size: 10px; }
+.cal-legend { margin-top: 8px; }
+.lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.lg.post { background: #3987e5; } .lg.task { background: #c98500; } .lg.job { background: #199e70; }
+
+/* 組織図 */
+.org-top { display: flex; align-items: center; gap: 14px; }
+.org-line { flex: 0 0 40px; height: 1px; background: var(--line2); }
+.org-count { margin-left: auto; }
+.org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.org-dept { margin-bottom: 0; }
+.org-dept.busy { border-color: rgba(124, 196, 247, .5); }
+.org-member { display: flex; gap: 8px; align-items: flex-start; padding: 5px 0; cursor: pointer; font-size: 13px; }
+.org-member .avatar { flex: 0 0 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--panel3); font-size: 11px; color: var(--sub); }
+.org-member.boss .avatar { background: rgba(243, 181, 98, .18); color: var(--warn); }
+.om-text { min-width: 0; }
+.org-last { margin: 6px 0 2px; }
+
+/* 検索 */
+.palette { padding: 12px; width: min(640px, 100%); }
+.palette input { width: 100%; background: var(--bg2); border: 1px solid var(--line2); border-radius: 10px; padding: 12px 14px; font-size: 15px; outline: none; }
+.pal-list { max-height: 50vh; overflow-y: auto; margin-top: 8px; }
+.pal-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.pal-item.on { background: var(--panel3); }
+
+/* 診断 */
+.diag { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.diag:first-of-type { border-top: none; }
+.diag-fix { color: var(--warn); font-size: 12px; margin-top: 2px; }
+
+@media (max-width: 900px) {
+  .pa-grid { grid-template-columns: 1fr; }
+  .cal-grid { grid-template-columns: 1fr; }
+  .cal-day { min-height: 0; }
+}
