@@ -73,29 +73,88 @@ function pickVoice(list) {
   return (list[0] && list[0].name) || "";
 }
 
-/** 音声出力(ブラウザTTS) */
+const VV_VOICE_KEY = "secretary-voice-voicevox";
+
+function loadSaved(key) {
+  try { return localStorage.getItem(key) || ""; } catch (e) { return ""; }
+}
+function save(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) {}
+}
+
+/**
+ * 音声出力。VOICEVOX(無料の読み上げソフト)が起動していればその声、無ければブラウザの声で話す。
+ * VOICEVOX のときは levelRef.current に今の音量(0〜1)が入るので、口パクに使える
+ * (ブラウザの声のときは null)。
+ */
 export function useSpeechOutput() {
-  const [voices, setVoices] = useState([]);
-  const [voiceName, setVoiceName] = useState("");
+  const [engine, setEngine] = useState("browser");
+  const engineRef = useRef("browser");
+  const [voices, setVoices] = useState([]); // [{ value, label }]
+  const [voiceValue, setVoiceValue] = useState("");
   const [speaking, setSpeaking] = useState(false);
+  const levelRef = useRef(null);
+  const audioRef = useRef({ ctx: null, source: null });
+  const browserVoicesRef = useRef([]);
 
   useEffect(() => {
-    const load = () => {
+    let cancelled = false;
+    const loadBrowserVoices = () => {
+      if (!("speechSynthesis" in window)) return [];
       const all = speechSynthesis.getVoices();
       const ja = all.filter((v) => v.lang && v.lang.toLowerCase().startsWith("ja"));
-      const list = ja.length ? ja : all;
-      setVoices(list);
-      setVoiceName((prev) => prev || pickVoice(list));
+      browserVoicesRef.current = ja.length ? ja : all;
+      return browserVoicesRef.current;
     };
-    load();
-    speechSynthesis.onvoiceschanged = load;
+    const useBrowser = () => {
+      const list = loadBrowserVoices();
+      setEngine("browser");
+      setVoices(list.map((v) => ({ value: v.name, label: v.name })));
+      setVoiceValue((prev) => prev || pickVoice(list));
+    };
+    if ("speechSynthesis" in window) {
+      // ブラウザの声の一覧は後から届くことがある
+      speechSynthesis.onvoiceschanged = () => { if (!cancelled && engineRef.current === "browser") useBrowser(); };
+    }
+    fetch("/api/tts/speakers").then((r) => r.json()).then((d) => {
+      if (cancelled) return;
+      if (!d.available) return useBrowser();
+      engineRef.current = "voicevox";
+      setEngine("voicevox");
+      setVoices(d.speakers.map((sp) => ({ value: String(sp.id), label: sp.name })));
+      const saved = loadSaved(VV_VOICE_KEY);
+      setVoiceValue(d.speakers.some((sp) => String(sp.id) === saved) ? saved : String(d.default));
+      loadBrowserVoices(); // VOICEVOX が落ちたときの予備
+    }).catch(() => { if (!cancelled) useBrowser(); });
+
+    // ブラウザは「ユーザー操作の後」でないと音を鳴らせないので、最初の操作で音声の準備をしておく
+    const unlock = () => {
+      const a = audioRef.current;
+      if (!a.ctx) a.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      a.ctx.resume();
+    };
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
   }, []);
 
-  const speak = (text) => {
-    if (!("speechSynthesis" in window) || !text) return;
-    speechSynthesis.cancel();
+  const stop = () => {
+    const a = audioRef.current;
+    if (a.source) { a.source.onended = null; try { a.source.stop(); } catch (e) {} a.source = null; }
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+    levelRef.current = null;
+    setSpeaking(false);
+  };
+
+  const speakBrowser = (text, voiceName) => {
+    if (!("speechSynthesis" in window)) return;
     const u = new SpeechSynthesisUtterance(text);
-    const v = voices.find((x) => x.name === voiceName);
+    const v = browserVoicesRef.current.find((x) => x.name === voiceName)
+      || browserVoicesRef.current.find((x) => x.name === pickVoice(browserVoicesRef.current));
     if (v) u.voice = v;
     u.lang = "ja-JP";
     u.rate = 1.05;
@@ -105,10 +164,63 @@ export function useSpeechOutput() {
     speechSynthesis.speak(u);
   };
 
-  const chooseVoice = (name) => {
-    setVoiceName(name);
-    try { localStorage.setItem(VOICE_KEY, name); } catch (e) {}
+  const speakVoicevox = async (text) => {
+    const r = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text, speaker: Number(voiceValue) }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const a = audioRef.current;
+    if (!a.ctx) a.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    await a.ctx.resume();
+    const buffer = await a.ctx.decodeAudioData(await r.arrayBuffer());
+    const source = a.ctx.createBufferSource();
+    const analyser = a.ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    source.buffer = buffer;
+    source.connect(analyser);
+    analyser.connect(a.ctx.destination);
+    const data = new Float32Array(analyser.fftSize);
+    const meter = () => {
+      if (a.source !== source) return;
+      analyser.getFloatTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+      levelRef.current = Math.sqrt(sum / data.length);
+      requestAnimationFrame(meter);
+    };
+    source.onended = () => {
+      if (a.source !== source) return;
+      a.source = null;
+      levelRef.current = null;
+      setSpeaking(false);
+    };
+    a.source = source;
+    levelRef.current = 0;
+    setSpeaking(true);
+    source.start();
+    meter();
   };
 
-  return { voices, voiceName, setVoiceName: chooseVoice, speak, speaking };
+  const speak = (text) => {
+    if (!text) return;
+    stop();
+    if (engine === "voicevox") {
+      speakVoicevox(text).catch((e) => {
+        console.warn("VOICEVOX で話せないため、ブラウザの声で話します:", e);
+        levelRef.current = null;
+        speakBrowser(text, "");
+      });
+    } else {
+      speakBrowser(text, voiceValue);
+    }
+  };
+
+  const chooseVoice = (value) => {
+    setVoiceValue(value);
+    save(engine === "voicevox" ? VV_VOICE_KEY : VOICE_KEY, value);
+  };
+
+  return { engine, voices, voiceValue, setVoice: chooseVoice, speak, speaking, levelRef };
 }
