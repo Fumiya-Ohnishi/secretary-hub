@@ -6,8 +6,10 @@ import { Calendar, OrgChart } from "./Extras.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
 export const STATUSES = ["未着手", "進行中", "承認待ち", "承認済み", "完了", "差し戻し"];
-const ASSIGNEES = ["秘書", "戦略", "企画", "制作", "メディア", "分析", "社長"];
-const DEPARTMENTS = ["戦略", "企画", "制作", "メディア", "分析"];
+const ASSIGNEES = ["秘書", "戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析", "社長"];
+const DEPARTMENTS = ["戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析"];
+const DEPT_FULL = { 戦略: "経営戦略部", 収益化: "収益化部", 企画: "企画編集部", ライティング: "ライティング部", デザイン: "デザイン部",
+  画像: "画像制作部", 映像: "映像制作部", SNS運用: "SNS運用部", 品質管理: "品質管理部", 分析: "データ分析部" };
 const STATUS_CLASS = { 未着手: "s-todo", 進行中: "s-doing", 承認待ち: "s-wait", 承認済み: "s-ok", 完了: "s-done", 差し戻し: "s-ng" };
 
 export function StatusBadge({ status }) {
@@ -168,7 +170,7 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, n
           <div className="card-head"><h3>部署の作業</h3><button className="link" onClick={() => onTab("jobs")}>すべて</button></div>
           {jobs.slice(0, 4).map((j) => (
             <div key={j.id} className="mini-row" onClick={() => onTab("jobs")}>
-              <span className={`job-dot ${j.status}`} /><span className="ttl">{j.department}部:{j.title}</span>
+              <span className={`job-dot ${j.status}`} /><span className="ttl">{j.department_full || j.department + "部"}:{j.title}</span>
             </div>
           ))}
           {jobs.length === 0 && <div className="empty">まだ依頼はありません。「戦略部に〜を頼んで」と話しかけてください。</div>}
@@ -404,7 +406,7 @@ function Jobs({ jobs, claudeCli, onChanged, notify }) {
     if (!form.title.trim() || !form.instruction.trim()) return;
     try {
       await createJob(form);
-      notify(`${form.department}部に依頼しました`);
+      notify(`${DEPT_FULL[form.department] || form.department}に依頼しました`);
       setForm({ ...form, title: "", instruction: "" });
       onChanged();
     } catch (err) { notify(err.message, "error"); }
@@ -415,7 +417,7 @@ function Jobs({ jobs, claudeCli, onChanged, notify }) {
       <form className="card job-form" onSubmit={submit}>
         <div className="row">
           <select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}>
-            {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}部</option>)}
+            {DEPARTMENTS.map((d) => <option key={d} value={d}>{DEPT_FULL[d]}</option>)}
           </select>
           <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="件名(例: 来週の投稿企画)" />
         </div>
@@ -427,7 +429,7 @@ function Jobs({ jobs, claudeCli, onChanged, notify }) {
         <div key={j.id} className={`card job ${j.status}`}>
           <div className="job-head" onClick={() => setOpen(open === j.id ? null : j.id)}>
             <span className={`job-dot ${j.status}`} />
-            <strong>{j.department}部</strong><span className="ttl">{j.title}</span>
+            <strong>{j.department_full || j.department + "部"}</strong><span className="ttl">{j.title}</span>
             <span className="muted small">{j.started.slice(11, 16)}{j.finished ? `〜${j.finished.slice(11, 16)}` : " 作業中…"}</span>
           </div>
           {(open === j.id || j.status !== "running") && j.output && (

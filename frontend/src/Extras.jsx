@@ -136,7 +136,7 @@ export function Calendar({ summary, refresh, notify, onOpenTask, onOpenWeek }) {
     ...(summary?.tasks || []).filter((t) => (t.due || "").startsWith(day) && !["完了", "承認済み"].includes(t.status))
       .map((t) => ({ kind: "task", id: t.key, label: `${t.id} ${t.title}`, sub: `${t.assignee}・${t.status}`, raw: t })),
     ...(summary?.jobs || []).filter((j) => (j.started || "").startsWith(day))
-      .map((j) => ({ kind: "job", id: j.id, label: `${j.department}部:${j.title}`, sub: j.status === "running" ? "作業中" : j.status === "done" ? "完了" : "エラー" })),
+      .map((j) => ({ kind: "job", id: j.id, label: `${j.department_full || j.department + "部"}:${j.title}`, sub: j.status === "running" ? "作業中" : j.status === "done" ? "完了" : "エラー" })),
   ];
   const drop = async (day) => {
     if (!drag) return;

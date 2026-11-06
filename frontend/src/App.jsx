@@ -182,9 +182,9 @@ export default function App() {
         const before = prev.find((p) => p.id === j.id);
         if (before && before.status === "running" && j.status !== "running") {
           const ok = j.status === "done";
-          notify(`${j.department}部「${j.title}」${ok ? "完了" : "エラー"}`, ok ? "ok" : "error");
-          say(ok ? `社長、${j.department}部から「${j.title}」の作業が終わったと報告がありました。作業タブで結果を確認できます。`
-                 : `${j.department}部の「${j.title}」でエラーが出ました。作業タブに内容を出しています。`, ok ? "pleased" : "thinking");
+          notify(`${j.department_full || j.department + "部"}「${j.title}」${ok ? "完了" : "エラー"}`, ok ? "ok" : "error");
+          say(ok ? `社長、${j.department_full || j.department + "部"}から「${j.title}」の作業が終わったと報告がありました。作業タブで結果を確認できます。`
+                 : `${j.department_full || j.department + "部"}の「${j.title}」でエラーが出ました。作業タブに内容を出しています。`, ok ? "pleased" : "thinking");
         }
       }
       jobsRef.current = s.jobs || [];

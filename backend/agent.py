@@ -86,16 +86,54 @@ def usage_summary() -> dict:
     return {**m, "month": month, "jpy": round(m["usd"] * USD_JPY), "rate": USD_JPY}
 
 # ---------- 部署への作業依頼(Claude Code) ----------
-# 作るAIとチェックするAI: この部署の成果物は、別の部署(メディア部)が見直してから承認待ちに回す
-CHECKED_DEPARTMENTS = ("企画", "制作")
-CHECK_STEP = (
-    "作業が終わったら、別のサブエージェント「media」(チェック役)に、成果物を就業規則・playbooks・learned_rules.md と照合させること"
-    "(NG事項、PR表記、AI製の明示、文字数、出典、入れてはいけない情報の明示)。"
-    "指摘はすべて直し、指摘内容は data/corrections.md の表に「| 日付 | 対象 | 指摘 | チェックAI |」の形で1行ずつ追記する。"
-    "投稿セットの場合は確認結果を content/drafts/YYYY-WW/_check.md に残し、直し終えた投稿の状態を「承認待ち」にする。"
-)
+# 部署(Notion の担当名 → 組織図の部署名)。旧部署名は新しい部署に読み替える
+DEPT_FULL = {"戦略": "経営戦略部", "収益化": "収益化部", "企画": "企画編集部", "ライティング": "ライティング部",
+             "デザイン": "デザイン部", "画像": "画像制作部", "映像": "映像制作部", "SNS運用": "SNS運用部",
+             "品質管理": "品質管理部", "分析": "データ分析部", "制作": "ライティング部", "メディア": "SNS運用部"}
+# 作るAIとチェックするAI: 投稿の中身を作る部署は、部内の上司のあと品質管理部(独立)が見てから承認待ちにする
+CHECKED_DEPARTMENTS = ("企画編集部", "ライティング部", "デザイン部", "画像制作部", "映像制作部", "SNS運用部", "収益化部")
 
-SUBAGENTS = {"戦略": "strategy", "企画": "planning", "制作": "production", "メディア": "media", "分析": "analysis"}
+
+def _roster(dept_full: str) -> List[dict]:
+    try:
+        import org
+        return org.chart().get(dept_full, [])
+    except Exception:
+        return []
+
+
+def _job_prompt(job: dict) -> str:
+    dept = DEPT_FULL.get(job["department"], job["department"])
+    members = _roster(dept)
+    bosses = [m for m in members if m["boss"]]
+    staff = [m for m in members if not m["boss"]]
+    roster = "\n".join(f"- {m['name']}({m['title']}{'・上司' if m['boss'] else ''}): {m['description']}" for m in members)
+    lines = [f"あなたは AI会社の秘書室として、{dept}の作業を進めます。部署の社員はサブエージェントとして定義されています。",
+             f"作業: {job['instruction']}", "", f"## {dept}の社員", roster or "(定義なし。あなた自身が部署として作業する)", "",
+             "## 進め方"]
+    if staff:
+        lines.append("1. 作業に合う担当(複数可)のサブエージェントに作らせる")
+    else:
+        lines.append("1. 部署のサブエージェントに作業させる")
+    if bosses:
+        b = bosses[0]["name"]
+        lines.append(f"2. 上司のサブエージェント「{b}」にチェックさせ、不合格なら担当に直させる(最大2回)。指摘は data/corrections.md に追記")
+    if dept in CHECKED_DEPARTMENTS:
+        qa = _roster("品質管理部")
+        if qa:
+            names = "・".join(m["name"] for m in qa if not m["boss"])
+            lead = next((m["name"] for m in qa if m["boss"]), "qa-lead")
+            lines.append(f"3. 投稿の中身ができたら、品質管理部の {names} にそれぞれチェックさせ、品質管理部長「{lead}」が合否を判定する。"
+                         "不合格の指摘は直して再判定(最大2回)。合否票は content/drafts/YYYY-WW/_check.md、指摘は data/corrections.md に残す")
+            lines.append("4. 合格した投稿だけ、状態を「承認待ち」にする")
+    lines += ["", "## 守ること",
+              "- CLAUDE.md(就業規則)と playbooks/learned_rules.md に従う。成果物は所定のフォルダに保存する(投稿セットは playbooks/post_format.md の形式)",
+              "- 外部への投稿・申請・購入・ログインはしない。承認済み・差し戻しにはしない(承認は社長だけ)",
+              "- 上司・品質管理部のチェックは、作った担当とは別のサブエージェントにさせる(自分で作ったものを自分で合格にしない)",
+              "- 最後に、誰が何をして、どのファイルに保存したか、チェックの結果を日本語で3行以内でまとめる"]
+    return "\n".join(lines)
+
+
 jobs: Dict[str, dict] = _load_json(JOBS_FILE, {})
 for _j in jobs.values():  # 前回の起動中に終わらなかった作業
     if _j.get("status") == "running":
@@ -109,16 +147,7 @@ def _save_jobs():
 
 def _run_job(job_id: str):
     job = jobs[job_id]
-    agent_name = SUBAGENTS.get(job["department"], "")
-    prompt = (
-        (f"サブエージェント「{agent_name}」({job['department']}部、定義は .claude/agents/{agent_name}.md)に、次の作業をさせてください。\n"
-         if agent_name else f"{job['department']}部として次の作業をしてください。\n")
-        + f"作業: {job['instruction']}\n"
-        "CLAUDE.md(就業規則)と playbooks/learned_rules.md(過去の失敗から学んだルール)に従い、成果物は所定のフォルダに保存すること。"
-        "投稿セットは playbooks/post_format.md の形式。外部への投稿・申請はしない。承認済みにはしない(承認は社長だけ)。"
-        + (CHECK_STEP if job["department"] in CHECKED_DEPARTMENTS else "")
-        + "最後に、何をしてどのファイルに保存したかを日本語で3行以内でまとめること。"
-    )
+    prompt = _job_prompt(job)
     try:
         if not shutil.which("claude"):
             raise RuntimeError("Claude Code CLI が見つかりません。ターミナルで `npm install -g @anthropic-ai/claude-code` → `claude` で一度ログインしてください。")
@@ -149,7 +178,8 @@ def _run_job(job_id: str):
 
 def start_job(department: str, instruction: str, title: str, task_key: Optional[str] = None) -> dict:
     job_id = datetime.datetime.now().strftime("%m%d%H%M%S%f")
-    jobs[job_id] = {"id": job_id, "title": title, "department": department, "instruction": instruction,
+    jobs[job_id] = {"id": job_id, "title": title, "department": department,
+                    "department_full": DEPT_FULL.get(department, f"{department}部"), "instruction": instruction,
                     "status": "running", "output": "", "task_key": task_key,
                     "started": datetime.datetime.now().isoformat(timespec="seconds"), "finished": None}
     _save_jobs()
@@ -163,7 +193,7 @@ def job_list() -> List[dict]:
 
 # ---------- 道具の定義 ----------
 EDITABLE = ["未着手", "進行中", "承認待ち", "完了"]
-DEPARTMENTS = ["戦略", "企画", "制作", "メディア", "分析"]
+DEPARTMENTS = ["戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析"]
 PANELS = ["home", "content", "calendar", "tasks", "docs", "jobs", "org", "chat"]
 
 
@@ -219,8 +249,9 @@ TOOLS = [
            "url": {"type": "string", "description": "https:// から始まるプロフィールURL"},
            "opened": {"type": "string", "description": "開設日 YYYY-MM-DD。省略時は今日"}}, ["platform", "url"]),
     _tool("create_plan", "期限から逆算して、工程ごとのタスクを日付つきで起票する(逆算スケジュール)。"
-          "部署の工程は、前の工程が終わると秘書が自動で部署に依頼する。投稿セットの基本形: 企画(企画部)→台本・原稿(制作部)"
-          "→素材・仕上げ(制作部、メディア部のチェック込み)→社長の承認(社長)→投稿(社長)。各工程の期限は最終期限から逆算して決める。",
+          "部署の工程は、前の工程が終わると秘書が自動で部署に依頼する。投稿セットの基本形(週): 週テーマと構成(企画)→原稿・台本(ライティング)"
+          "→画像・図解(デザイン/画像)とリール(映像)→媒体ごとの仕上げ(SNS運用、品質管理部のチェック込み)→社長の承認(社長)→投稿(社長)。"
+          "各工程の期限は最終期限から逆算して決める。",
           {"title": {"type": "string", "description": "プラン名(例: 2026-47 投稿セット)"},
            "deadline": {"type": "string", "description": "最終期限 YYYY-MM-DD"},
            "steps": {"type": "array", "description": "工程(順番どおり)", "items": {"type": "object", "properties": {
@@ -322,7 +353,7 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         job = start_job(args["department"], args["instruction"], args["title"], task_key)
         actions.append({"type": "job", "job": job})
         actions.append({"type": "refresh"})
-        return f"{args['department']}部に依頼しました(作業ID {job['id']})。完了すると画面に通知されます。"
+        return f"{DEPT_FULL.get(args['department'], args['department'])}に依頼しました(作業ID {job['id']})。完了すると画面に通知されます。"
 
     if name == "get_jobs":
         return json.dumps([{k: j[k] for k in ("title", "department", "status", "started", "finished")}
@@ -424,7 +455,8 @@ def persona() -> str:
     return f"""あなたは「{SECRETARY_NAME}」という名のAI秘書。アニメ調の女性キャラとして画面に表示され、音声で社長と話す。
 人格: 落ち着いた敬語。クールだが仕事は丁寧。数字に強く、報告は結論→根拠→次の一手の順。褒められたら少し照れる。
 
-あなたの背後には「AI会社」がある(社長以外は全員AI。部署: 戦略/企画/制作/メディア/分析)。
+あなたの背後には「AI会社」がある(社長以外は全員AI。11部署・43名: 秘書室/経営戦略/収益化/企画編集/ライティング/デザイン/
+画像制作/映像制作/SNS運用/品質管理/データ分析。各部署に作る担当とチェックする上司がいる)。部署への依頼は担当名(戦略・企画・ライティング等)で行う。
 社長はこの画面だけで仕事を完結させたい。頼まれたことは道具を使って実際に進め、「やりました」と結果で答える。
 - タスクの確認・起票・状態や期限の変更、Notion の資料を開く・要約する、画面の切り替え、部署への作業依頼、
   投稿セットの確認と承認カード、収益・フォロワー数の記録、開設アカウントの登録、週次レポートの作成ができる。
