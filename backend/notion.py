@@ -137,9 +137,21 @@ async def list_tasks() -> List[dict]:
     return sorted(tasks, key=order)
 
 
+def valid_date(value: str) -> str:
+    """YYYY-MM-DD か確認して返す(空文字は「期限なし」)"""
+    value = (value or "").strip()
+    if value:
+        datetime.date.fromisoformat(value)  # 形式が違えば ValueError
+    return value
+
+
 async def update_task(key: str, status: Optional[str] = None, note: Optional[str] = None,
-                      append_note: Optional[str] = None) -> dict:
+                      append_note: Optional[str] = None, due: Optional[str] = None) -> dict:
+    """due: None=変更しない / "" =期限を消す / "YYYY-MM-DD"=その日に変える"""
     props: Dict[str, dict] = {}
+    if due is not None:
+        due = valid_date(due)
+        props["期限"] = {"date": {"start": due} if due else None}
     if status:
         if status not in STATUSES:
             raise NotionError(f"ステータスは {' / '.join(STATUSES)} のどれかです")

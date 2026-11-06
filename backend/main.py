@@ -67,6 +67,7 @@ class TaskIn(BaseModel):
 class TaskPatch(BaseModel):
     status: Optional[str] = None
     note: Optional[str] = None
+    due: Optional[str] = None  # "YYYY-MM-DD"。"" で期限を消す
 
 
 class Decision(BaseModel):
@@ -87,7 +88,9 @@ async def patch_task(key: str, body: TaskPatch):
     """社長が画面で状態を変える(社長の操作なので承認済みも可)"""
     try:
         note = body.note and f"{body.note}({datetime.date.today():%m/%d} 社長)"
-        return await company.update_task(key, status=body.status, append_note=note)
+        return await company.update_task(key, status=body.status, append_note=note, due=body.due)
+    except ValueError as e:
+        return err(e, 400)
     except Exception as e:
         return err(e)
 

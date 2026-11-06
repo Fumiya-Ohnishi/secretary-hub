@@ -321,3 +321,8 @@ button.kpi:hover { border-color: var(--line2); }
 /* グリッド内で長い1行テキストが列幅を押し広げないように */
 .two-col > *, .kpis > *, .layout > *, .docs > * { min-width: 0; }
 .two-col { align-items: start; }
+
+/* 期限の変更 */
+.due-editor { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.due-editor input { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; color-scheme: dark; }
+.due-editor input:focus { border-color: var(--accent); outline: none; }

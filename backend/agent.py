@@ -91,9 +91,10 @@ TOOLS = [
            "assignee": {"type": "string", "enum": company.ASSIGNEES},
            "due": {"type": "string", "description": "期限 YYYY-MM-DD。分からなければ省略"},
            "note": {"type": "string"}}, ["title", "assignee"]),
-    _tool("update_task", "タスクの状態や備考を変える。承認済み・差し戻しにはできない(それは ask_approval で社長に確認する)。",
+    _tool("update_task", "タスクの状態・期限・備考を変える。承認済み・差し戻しにはできない(それは ask_approval で社長に確認する)。",
           {"task": {"type": "string", "description": "タスクID(例 T-009)"},
            "status": {"type": "string", "enum": EDITABLE},
+           "due": {"type": "string", "description": "新しい期限 YYYY-MM-DD(「来週金曜」などは今日の日付から計算する)。期限を消すときは空文字"},
            "note": {"type": "string", "description": "備考に追記する内容"}}, ["task"]),
     _tool("ask_approval", "承認待ちのタスクについて、社長に承認か差し戻しを決めてもらう。画面に承認カードを出す。"
           "社長が「承認して」「差し戻して」と言ったときもこれを使う(確定は社長がカードのボタンか「はい」で行う)。",
@@ -148,10 +149,10 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         if status in ("承認済み", "差し戻し"):
             return "エラー: 承認・差し戻しは社長が行います。ask_approval でカードを出してください。"
         t = await company.find_task(args["task"])
-        t = await company.update_task(t["key"], status=status,
+        t = await company.update_task(t["key"], status=status, due=args.get("due"),
                                       append_note=args.get("note") and f"{args['note']}({datetime.date.today():%m/%d})")
         actions.append({"type": "refresh"})
-        return f"更新しました: {t['id']} 状態={t['status']}"
+        return f"更新しました: {t['id']} 状態={t['status']} 期限={t['due'] or 'なし'}"
 
     if name == "ask_approval":
         t = await company.find_task(args["task"])

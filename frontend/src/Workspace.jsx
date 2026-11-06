@@ -105,7 +105,7 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask }) {
         <h3>こう話しかけてみてください</h3>
         <div className="chips">
           {["今日の報告をして", "承認待ちを見せて", "企画書を開いて要約して", "T-015 を進行中にして",
-            "戦略部に来週の投稿企画を頼んで", "VOICEVOXの規約確認をタスクに追加して"].map((s) => (
+            "戦略部に来週の投稿企画を頼んで", "T-014 の期限を来週金曜にして"].map((s) => (
             <button key={s} className="chip" onClick={() => onSay(s)}>「{s}」</button>
           ))}
         </div>
@@ -116,6 +116,31 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask }) {
 
 /* ---------------- タスク ---------------- */
 const FILTERS = ["未完了", "承認待ち", "完了", "すべて"];
+
+/** 期限の変更(日付を選んで「変更」。「期限なし」で消す) */
+function DueEditor({ task, onChanged, notify }) {
+  const current = (task.due || "").slice(0, 10);
+  const [value, setValue] = useState(current);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setValue(current), [current]);
+  const save = async (due) => {
+    setSaving(true);
+    try {
+      const t = await patchTask(task.key, { due });
+      notify(due ? `${t.id} の期限を ${fmtDate(due)} にしました` : `${t.id} の期限をなしにしました`, "ok");
+      onChanged();
+    } catch (err) { notify(err.message, "error"); setValue(current); }
+    setSaving(false);
+  };
+  return (
+    <div className="due-editor">
+      <span className="muted small">期限</span>
+      <input type="date" value={value} onChange={(e) => setValue(e.target.value)} />
+      <button className="btn primary sm" disabled={saving || !value || value === current} onClick={() => save(value)}>変更</button>
+      {current && <button className="btn ghost sm" disabled={saving} onClick={() => save("")}>期限なし</button>}
+    </div>
+  );
+}
 
 function Tasks({ summary, filter, setFilter, onApprove, onChanged, onOpenDoc, focusKey, notify }) {
   const [form, setForm] = useState({ title: "", assignee: "秘書", due: "" });
@@ -175,6 +200,7 @@ function Tasks({ summary, filter, setFilter, onApprove, onChanged, onOpenDoc, fo
             </div>
             {open === t.key && (
               <div className="task-detail">
+                <DueEditor task={t} onChanged={onChanged} notify={notify} />
                 {t.note ? <p>{t.note}</p> : <p className="muted">備考なし</p>}
                 <div className="row-actions">
                   {t.status === "承認待ち" && <button className="btn primary sm" onClick={() => onApprove(t)}>承認 / 差し戻し</button>}
