@@ -27,10 +27,16 @@ def members() -> List[dict]:
     return out
 
 
+ORDER = ["秘書室", "経営戦略部", "収益化部", "企画編集部", "ライティング部", "デザイン部", "画像制作部", "映像制作部",
+         "SNS運用部", "品質管理部", "データ分析部"]
+
+
 def chart() -> Dict[str, List[dict]]:
+    """部署 → 社員(上司が先)。部署の並びは組織図の順"""
     depts: Dict[str, List[dict]] = {}
     for m in members():
         depts.setdefault(m["department"], []).append(m)
     for v in depts.values():
-        v.sort(key=lambda m: (not m["boss"], m["name"]))
-    return depts
+        v.sort(key=lambda m: not m["boss"])  # 上司を先に、担当は定義の並び
+    rank = {d: i for i, d in enumerate(ORDER)}
+    return dict(sorted(depts.items(), key=lambda kv: rank.get(kv[0], len(ORDER))))

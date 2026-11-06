@@ -135,7 +135,7 @@ async def advance() -> List[dict]:
             prev_done = all(pt["status"] in DONE for pn, pt in steps if pn < n)
             due = t.get("due", "")[:10]
             near = not due or datetime.date.fromisoformat(due) <= today + datetime.timedelta(days=LOOKAHEAD_DAYS)
-            if (t["status"] == "未着手" and prev_done and t["assignee"] in agent.SUBAGENTS
+            if (t["status"] == "未着手" and prev_done and t["assignee"] in agent.DEPT_FULL
                     and t["key"] not in running_keys and (n > 1 or near)):
                 instruction = t.get("instruction") or t["title"]
                 await company.update_task(t["key"], status="進行中",
