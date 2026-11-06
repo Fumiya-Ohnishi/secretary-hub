@@ -51,3 +51,8 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; 
 /* 注記・クレジットは、秘書の服の上でも読めるように小さな帯をつける */
 .foot span { background: rgba(16, 19, 40, .62); color: #fff; padding: 4px 14px; border-radius: 10px; }
 .foot span:empty { display: none; }
+
+/* 秘書だけを透明背景で描く(実録リールに重ねる用。tools/reel/render_record_reel.mjs) */
+html.avatar, html.avatar body { background: transparent; }
+.reel.avatar > :not(.stage) { display: none; }
+.reel.avatar .stage { top: 0; }

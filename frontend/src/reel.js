@@ -92,7 +92,8 @@ window.reelReady = () => ready;
 window.reelSetup = (s, timeline) => {
   spec = s; tl = timeline;
   const r = $("r");
-  r.className = `reel ${s.theme || "B"}`;
+  r.className = `reel ${s.theme || "B"}${s.avatar ? " avatar" : ""}`;
+  document.documentElement.classList.toggle("avatar", !!s.avatar); // 秘書だけを透明背景で描く
   $("tag").innerHTML = s.theme === "B" ? `SECRETARY SENA // ${esc(s.series || "AI WORK")}` : `AI秘書セナの${esc(s.series || "")}`;
   $("title").innerHTML = md(s.title || "");
   $("credit").textContent = s.credit || "";
