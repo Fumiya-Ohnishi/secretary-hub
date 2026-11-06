@@ -308,3 +308,107 @@ def blocks_to_text(blocks: List[dict], indent: int = 0) -> str:
         if b.get("children"):
             lines.append(blocks_to_text(b["children"], indent + (0 if t in ("table", "column_list", "column") else 1)))
     return "\n".join(l for l in lines if l is not None)
+
+
+# ---------- 収益・アカウント・レポート ----------
+REVENUE_DB = os.getenv("NOTION_REVENUE_DB", "0ca816aeacb8476d9326f5623b3def3d").strip()
+REVENUE_SOURCE_JA = {"note_sales": "note販売", "amazon_affiliate": "Amazonアフィ", "other": "その他"}
+
+
+async def add_revenue(date: str, source: str, amount: int, memo: str) -> None:
+    await _req("POST", "/pages", json={"parent": {"database_id": REVENUE_DB}, "properties": {
+        "メモ": {"title": _text(memo or REVENUE_SOURCE_JA.get(source, source))},
+        "ソース": {"select": {"name": REVENUE_SOURCE_JA.get(source, "その他")}},
+        "金額": {"number": amount},
+        "日付": {"date": {"start": date}},
+    }})
+
+
+async def find_child_page(title: str) -> Optional[str]:
+    cursor = None
+    while True:
+        params = {"page_size": 100}
+        if cursor:
+            params["start_cursor"] = cursor
+        data = await _req("GET", f"/blocks/{ROOT_PAGE}/children", params=params)
+        for b in data.get("results", []):
+            if b.get("type") == "child_page" and b["child_page"].get("title") == title:
+                return b["id"].replace("-", "")
+        if not data.get("has_more"):
+            return None
+        cursor = data.get("next_cursor")
+
+
+async def create_page(title: str, blocks: List[dict], icon: str = "📄") -> dict:
+    """「AI会社」ページの下にページを作る(ブロックは100個ずつ追加)"""
+    page = await _req("POST", "/pages", json={
+        "parent": {"page_id": ROOT_PAGE}, "icon": {"type": "emoji", "emoji": icon},
+        "properties": {"title": {"title": _text(title)}}, "children": blocks[:100]})
+    pid = page["id"].replace("-", "")
+    for i in range(100, len(blocks), 100):
+        await append_blocks(pid, blocks[i:i + 100])
+    return {"id": pid, "url": page.get("url", ""), "title": title}
+
+
+async def append_blocks(page_id: str, blocks: List[dict]) -> None:
+    await _req("PATCH", f"/blocks/{page_id}/children", json={"children": blocks})
+
+
+async def archive_page(page_id: str) -> None:
+    await _req("PATCH", f"/pages/{page_id}", json={"archived": True})
+
+
+def _rt_md(text: str) -> List[dict]:
+    """**太字** と `コード` だけを Notion の文字装飾にする"""
+    out = []
+    for part in re.split(r"(\*\*[^*]+\*\*|`[^`]+`)", text):
+        if not part:
+            continue
+        ann = {}
+        if part.startswith("**") and part.endswith("**"):
+            part, ann = part[2:-2], {"bold": True}
+        elif part.startswith("`") and part.endswith("`"):
+            part, ann = part[1:-1], {"code": True}
+        item = {"type": "text", "text": {"content": part[:1900]}}
+        if ann:
+            item["annotations"] = ann
+        out.append(item)
+    return out
+
+
+def markdown_to_blocks(md: str) -> List[dict]:
+    """週次レポートなどの簡単なマークダウンを Notion のブロックに変換する"""
+    blocks: List[dict] = []
+    lines = md.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip()
+        if line.startswith("|"):
+            rows = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                if not all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+                    rows.append(cells)
+                i += 1
+            width = max(len(r) for r in rows) if rows else 0
+            if rows:
+                blocks.append({"type": "table", "table": {"table_width": width, "has_column_header": True, "children": [
+                    {"type": "table_row", "table_row": {"cells": [_rt_md(c) for c in r + [""] * (width - len(r))]}}
+                    for r in rows]}})
+            continue
+        m = re.match(r"^(#{1,3})\s+(.*)", line)
+        if m:
+            t = f"heading_{len(m.group(1))}"
+            blocks.append({"type": t, t: {"rich_text": _rt_md(m.group(2))}})
+        elif re.match(r"^\s*[-*]\s+", line):
+            blocks.append({"type": "bulleted_list_item", "bulleted_list_item": {"rich_text": _rt_md(re.sub(r"^\s*[-*]\s+", "", line))}})
+        elif re.match(r"^\s*\d+\.\s+", line):
+            blocks.append({"type": "numbered_list_item", "numbered_list_item": {"rich_text": _rt_md(re.sub(r"^\s*\d+\.\s+", "", line))}})
+        elif line.startswith(">"):
+            blocks.append({"type": "quote", "quote": {"rich_text": _rt_md(line.lstrip("> "))}})
+        elif line.strip() == "---":
+            blocks.append({"type": "divider", "divider": {}})
+        elif line.strip():
+            blocks.append({"type": "paragraph", "paragraph": {"rich_text": _rt_md(line)}})
+        i += 1
+    return blocks

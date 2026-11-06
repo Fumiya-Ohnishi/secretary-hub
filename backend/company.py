@@ -157,3 +157,143 @@ def summary_text(data: dict) -> str:
     for t in open_t[:12]:
         lines.append(f"  - {t['id']} {t['title'][:60]}(担当:{t['assignee']}・状態:{t['status']}・期限:{t['due'] or '-'})")
     return "\n".join(lines)
+
+
+# ---------- 数字の記録(収益・フォロワー) ----------
+FOLLOWERS_CSV = COMPANY_DIR / "data" / "followers.csv"
+ACCOUNTS_MD = COMPANY_DIR / "data" / "accounts.md"
+PLATFORMS = ["instagram", "x", "threads", "note"]
+PLATFORM_JA = {"instagram": "Instagram", "x": "X", "threads": "Threads", "note": "note"}
+REVENUE_SOURCES = ["note_sales", "amazon_affiliate", "other"]
+
+
+def _append_csv(path: Path, header: List[str], row: List[str]):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new = not path.exists() or not path.read_text().strip()
+    with path.open("a", newline="") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(header)
+        w.writerow(row)
+
+
+async def record_revenue(amount: int, source: str = "other", date: Optional[str] = None, memo: str = "") -> dict:
+    if source not in REVENUE_SOURCES:
+        source = "other"
+    date = notion.valid_date(date or "") or datetime.date.today().isoformat()
+    amount = int(amount)
+    _append_csv(REVENUE_CSV, ["date", "source", "amount", "memo"], [date, source, str(amount), memo])
+    synced = None
+    if notion.configured():
+        try:
+            await notion.add_revenue(date, source, amount, memo)
+            synced = True
+        except Exception as e:
+            synced = str(e)
+    return {"date": date, "source": source, "amount": amount, "memo": memo, "notion": synced}
+
+
+def record_followers(platform: str, followers: int, date: Optional[str] = None) -> dict:
+    if platform not in PLATFORMS:
+        raise ValueError(f"媒体は {' / '.join(PLATFORMS)} のどれかです")
+    date = notion.valid_date(date or "") or datetime.date.today().isoformat()
+    _append_csv(FOLLOWERS_CSV, ["date", "platform", "followers"], [date, platform, str(int(followers))])
+    return {"date": date, "platform": platform, "followers": int(followers)}
+
+
+def read_followers() -> dict:
+    """媒体ごとの推移 {platform: [{date, followers}]}(同じ日は最後の値)"""
+    series: dict = {p: {} for p in PLATFORMS}
+    if FOLLOWERS_CSV.exists():
+        with FOLLOWERS_CSV.open() as f:
+            for r in csv.DictReader(f):
+                try:
+                    series.setdefault(r["platform"], {})[r["date"]] = int(float(r["followers"]))
+                except (KeyError, ValueError):
+                    pass
+    return {p: [{"date": d, "followers": v} for d, v in sorted(s.items())] for p, s in series.items() if s}
+
+
+def revenue_daily() -> List[dict]:
+    """今月の日別収益と累計"""
+    rev = read_revenue()
+    month = rev["month"]
+    by_day: dict = {}
+    if REVENUE_CSV.exists():
+        with REVENUE_CSV.open() as f:
+            for r in csv.DictReader(f):
+                if r.get("date", "").startswith(month):
+                    try:
+                        by_day[r["date"]] = by_day.get(r["date"], 0) + int(float(r.get("amount") or 0))
+                    except ValueError:
+                        pass
+    total, out = 0, []
+    for d in sorted(by_day):
+        total += by_day[d]
+        out.append({"date": d, "amount": by_day[d], "cumulative": total})
+    return out
+
+
+def metrics() -> dict:
+    return {"followers": read_followers(), "revenue_daily": revenue_daily()}
+
+
+def metrics_text() -> str:
+    f = read_followers()
+    if not f:
+        return "- フォロワー: 記録なし"
+    return "- フォロワー(最新): " + "、".join(
+        f"{PLATFORM_JA[p]} {s[-1]['followers']}人({s[-1]['date']})" for p, s in f.items() if p in PLATFORM_JA)
+
+
+# ---------- アカウント台帳 ----------
+ACCOUNT_HOSTS = {"instagram": ("instagram.com",), "x": ("x.com", "twitter.com"),
+                 "threads": ("threads.net", "threads.com"), "note": ("note.com",)}
+
+
+async def register_account(platform: str, url: str, opened: Optional[str] = None) -> dict:
+    """data/accounts.md の表に URL と開設日を書き、Notion の「アカウント台帳」ページにも記録する"""
+    if platform not in PLATFORMS:
+        raise ValueError(f"媒体は {' / '.join(PLATFORMS)} のどれかです")
+    url = url.strip()
+    if not re.match(r"^https://", url) or not any(h in url.split("/")[2] for h in ACCOUNT_HOSTS[platform]):
+        raise ValueError(f"{PLATFORM_JA[platform]} の URL(https://{ACCOUNT_HOSTS[platform][0]}/...)を指定してください")
+    opened = notion.valid_date(opened or "") or datetime.date.today().isoformat()
+    name = PLATFORM_JA[platform]
+    if ACCOUNTS_MD.exists():
+        lines = ACCOUNTS_MD.read_text().splitlines()
+        for i, line in enumerate(lines):
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if line.startswith("|") and cells and cells[0] == name:
+                cells[1], cells[2] = url, opened
+                lines[i] = "| " + " | ".join(cells) + " |"
+                break
+        ACCOUNTS_MD.write_text("\n".join(lines) + "\n")
+    synced = None
+    if notion.configured():
+        try:
+            pid = await notion.find_child_page("アカウント台帳")
+            item = [{"type": "bulleted_list_item", "bulleted_list_item": {"rich_text": [
+                {"type": "text", "text": {"content": f"{name}: "}},
+                {"type": "text", "text": {"content": url, "link": {"url": url}}},
+                {"type": "text", "text": {"content": f"(開設 {opened})"}}]}}]
+            if pid:
+                await notion.append_blocks(pid, item)
+            else:
+                await notion.create_page("アカウント台帳", [{"type": "callout", "callout": {"rich_text": [{"type": "text", "text": {
+                    "content": "開設したアカウントの URL。パスワード・認証情報は書かない"}}], "icon": {"type": "emoji", "emoji": "🔒"}}}] + item, "🪪")
+            synced = True
+        except Exception as e:
+            synced = str(e)
+    return {"platform": platform, "url": url, "opened": opened, "notion": synced}
+
+
+def accounts_text() -> str:
+    if not ACCOUNTS_MD.exists():
+        return ""
+    got = []
+    for line in ACCOUNTS_MD.read_text().splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if line.startswith("|") and len(cells) > 2 and cells[1].startswith("http"):
+            got.append(f"{cells[0]} {cells[1]}")
+    return "- 開設済みアカウント: " + ("、".join(got) if got else "まだなし")

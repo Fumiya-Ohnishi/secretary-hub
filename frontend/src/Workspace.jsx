@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { createTask, patchTask, getDocs, getDoc, createJob } from "./api.js";
+import { createTask, patchTask, getDocs, getDoc, createJob, recordRevenue, recordFollowers } from "./api.js";
 import { Blocks } from "./DocView.jsx";
+import Content from "./Content.jsx";
+import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
 export const STATUSES = ["未着手", "進行中", "承認待ち", "承認済み", "完了", "差し戻し"];
 const ASSIGNEES = ["秘書", "戦略", "企画", "制作", "メディア", "分析", "社長"];
@@ -26,6 +28,58 @@ function notionId(url) {
   return m && /notion\.(so|site)/.test(url) ? m[m.length - 1].replace(/-/g, "") : null;
 }
 
+/* ---------------- 数字(グラフと記録) ---------------- */
+const PLATFORM_JA = { instagram: "Instagram", x: "X", threads: "Threads", note: "note" };
+const SOURCES = [["note_sales", "note販売"], ["amazon_affiliate", "Amazonアフィ"], ["other", "その他"]];
+
+function Metrics({ metrics, usage, onChanged, notify }) {
+  const [rev, setRev] = useState({ amount: "", source: "note_sales" });
+  const [fol, setFol] = useState({ platform: "instagram", followers: "" });
+  const followers = metrics?.followers || {};
+  const series = Object.keys(PLATFORM_COLORS).filter((k) => followers[k]?.length).map((k) => ({
+    key: k, label: PLATFORM_JA[k], color: PLATFORM_COLORS[k],
+    points: followers[k].map((p) => ({ date: p.date, value: p.followers })),
+  }));
+  const daily = metrics?.revenue_daily || [];
+  const saveRev = async (e) => {
+    e.preventDefault();
+    try { const r = await recordRevenue({ amount: Number(rev.amount), source: rev.source }); notify(`収益 ¥${r.amount.toLocaleString()} を記録しました`, "ok"); setRev({ ...rev, amount: "" }); onChanged(); }
+    catch (err) { notify(err.message, "error"); }
+  };
+  const saveFol = async (e) => {
+    e.preventDefault();
+    try { const r = await recordFollowers({ platform: fol.platform, followers: Number(fol.followers) }); notify(`${PLATFORM_JA[r.platform]} ${r.followers}人を記録しました`, "ok"); setFol({ ...fol, followers: "" }); onChanged(); }
+    catch (err) { notify(err.message, "error"); }
+  };
+  return (
+    <div className="two-col">
+      <section className="card">
+        <div className="card-head"><h3>フォロワー数の推移</h3></div>
+        {series.length ? <LineChart series={series} unit="人" /> : <div className="empty">まだ記録がありません。「インスタのフォロワー120人」と話しかけてください。</div>}
+        <form className="rec-form" onSubmit={saveFol}>
+          <select value={fol.platform} onChange={(e) => setFol({ ...fol, platform: e.target.value })}>
+            {Object.entries(PLATFORM_JA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <input type="number" min="0" inputMode="numeric" value={fol.followers} placeholder="人数" onChange={(e) => setFol({ ...fol, followers: e.target.value })} />
+          <button className="btn sm" disabled={fol.followers === ""}>記録</button>
+        </form>
+      </section>
+      <section className="card">
+        <div className="card-head"><h3>今月の収益(累計)</h3>{usage && <span className="muted small" title={`入力 ${usage.input.toLocaleString()} / 出力 ${usage.output.toLocaleString()} トークン・${usage.calls}回(1ドル=${usage.rate}円で概算)`}>AI利用料 約¥{usage.jpy.toLocaleString()}</span>}</div>
+        {daily.length ? <LineChart series={[{ key: "rev", label: "累計収益", color: PLATFORM_COLORS.instagram, points: daily.map((d) => ({ date: d.date, value: d.cumulative })) }]} format={(v) => `¥${v.toLocaleString()}`} />
+          : <div className="empty">今月の収益はまだありません。「今日 note が500円売れた」と話しかけると記録します。</div>}
+        <form className="rec-form" onSubmit={saveRev}>
+          <select value={rev.source} onChange={(e) => setRev({ ...rev, source: e.target.value })}>
+            {SOURCES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <input type="number" min="0" inputMode="numeric" value={rev.amount} placeholder="金額(円)" onChange={(e) => setRev({ ...rev, amount: e.target.value })} />
+          <button className="btn sm" disabled={rev.amount === ""}>記録</button>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 /* ---------------- ホーム ---------------- */
 function Ring({ pct }) {
   const r = 34, c = 2 * Math.PI * r, p = Math.min(100, Math.max(0, pct));
@@ -38,8 +92,10 @@ function Ring({ pct }) {
   );
 }
 
-function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, notify }) {
+function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, notify, onOpenWeek, onRule }) {
+  const rules = summary.rule_proposals || [];
   const { revenue, tasks } = summary;
+  const contentWaiting = (summary.content_weeks || []).filter((w) => w.counts["承認待ち"]);
   const approvals = tasks.filter((t) => t.status === "承認待ち");
   const doing = tasks.filter((t) => ["進行中", "未着手", "差し戻し"].includes(t.status));
   const running = jobs.filter((j) => j.status === "running");
@@ -54,8 +110,8 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, n
             <div className="kpi-lbl">今月の収益 / 目標 ¥{revenue.goal.toLocaleString()}</div>
           </div>
         </div>
-        <button className={`kpi ${approvals.length ? "attn" : ""}`} onClick={() => onTab("tasks", "承認待ち")}>
-          <div className="kpi-num">{approvals.length}</div><div className="kpi-lbl">承認待ち</div>
+        <button className={`kpi ${approvals.length + contentWaiting.length ? "attn" : ""}`} onClick={() => onTab("tasks", "承認待ち")}>
+          <div className="kpi-num">{approvals.length + contentWaiting.length}</div><div className="kpi-lbl">承認待ち</div>
         </button>
         <button className="kpi" onClick={() => onTab("tasks", "未完了")}>
           <div className="kpi-num">{doing.length}</div><div className="kpi-lbl">未完了タスク</div>
@@ -66,8 +122,25 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, n
       </div>
 
       <section className="card">
-        <div className="card-head"><h3>社長の判断待ち</h3><span className="muted">{approvals.length}件</span></div>
-        {approvals.length === 0 && <div className="empty">いま判断が必要なものはありません。</div>}
+        <div className="card-head"><h3>社長の判断待ち</h3><span className="muted">{approvals.length + contentWaiting.length + rules.length}件
+          {summary.scheduler && ` ・ 次の定時チェック ${summary.scheduler.auto ? summary.scheduler.next : "オフ"}`}</span></div>
+        {approvals.length === 0 && contentWaiting.length === 0 && rules.length === 0 && <div className="empty">いま判断が必要なものはありません。</div>}
+        {rules.map((p) => (
+          <div key={p.id} className="approval-item">
+            <div className="ai-main" onClick={() => onRule(p)}>
+              <span className="tid">ルール</span><span className="ttl">{p.rule}</span>
+            </div>
+            <button className="btn primary sm" onClick={() => onRule(p)}>確認する</button>
+          </div>
+        ))}
+        {contentWaiting.map((w) => (
+          <div key={w.week} className="approval-item">
+            <div className="ai-main" onClick={() => onOpenWeek(w.week)}>
+              <span className="tid">投稿</span><span className="ttl">{w.week} の投稿セット「{w.theme || "テーマ未定"}」承認待ち {w.counts["承認待ち"]}件</span>
+            </div>
+            <button className="btn primary sm" onClick={() => onOpenWeek(w.week)}>中身を見る</button>
+          </div>
+        ))}
         {approvals.map((t) => (
           <div key={t.key} className="approval-item">
             <div className="ai-main" onClick={() => onOpenTask(t)}>
@@ -102,11 +175,14 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, n
         </section>
       </div>
 
+      <Metrics metrics={summary.metrics} usage={summary.usage} onChanged={onChanged} notify={notify} />
+
       <section className="card say">
         <h3>こう話しかけてみてください</h3>
         <div className="chips">
-          {["今日の報告をして", "承認待ちを見せて", "企画書を開いて要約して", "T-015 を進行中にして",
-            "戦略部に来週の投稿企画を頼んで", "T-014 の期限を来週金曜にして"].map((s) => (
+          {["今日の報告をして", "今週の投稿を見せて", "企画書を開いて要約して", "T-014 の期限を来週金曜にして",
+            "企画部に来週の投稿セットを作ってもらって", "インスタのフォロワー120人", "今日 note が500円売れた",
+            "週次レポートを作って", "来週金曜の投稿に向けて逆算して進めて", "これを今後のルールにして"].map((s) => (
             <button key={s} className="chip" onClick={() => onSay(s)}>「{s}」</button>
           ))}
         </div>
@@ -373,12 +449,13 @@ function Chat({ log, logRef }) {
 }
 
 export const TABS = [
-  ["home", "ホーム"], ["tasks", "タスク"], ["docs", "資料"], ["jobs", "部署の作業"], ["chat", "会話"],
+  ["home", "ホーム"], ["content", "投稿"], ["tasks", "タスク"], ["docs", "資料"], ["jobs", "部署の作業"], ["chat", "会話"],
 ];
 
 export default function Workspace(props) {
   const { tab, setTab, summary, jobs, health, log, logRef, taskFilter, setTaskFilter, docId, setDocId,
-          focusTask, setFocusTask, onApprove, onSay, refresh, notify } = props;
+          focusTask, setFocusTask, onApprove, onSay, refresh, notify, week, setWeek, onRule } = props;
+  const contentWaiting = summary ? (summary.content_weeks || []).reduce((n, w) => n + (w.counts["承認待ち"] || 0), 0) : 0;
   const approvals = summary ? summary.tasks.filter((t) => t.status === "承認待ち").length : 0;
   const running = jobs.filter((j) => j.status === "running").length;
   const goTab = (t, filter) => { if (filter) setTaskFilter(filter); setTab(t); };
@@ -391,6 +468,7 @@ export default function Workspace(props) {
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
             {label}
             {k === "tasks" && approvals > 0 && <span className="count warn">{approvals}</span>}
+            {k === "content" && contentWaiting > 0 && <span className="count warn">{contentWaiting}</span>}
             {k === "jobs" && running > 0 && <span className="count">{running}</span>}
           </button>
         ))}
@@ -401,7 +479,8 @@ export default function Workspace(props) {
           <div className="warnbox">会社リポジトリ(ai-company)が見つかりません。backend/.env の AI_COMPANY_DIR を確認してください。</div>
         )}
         {summary && tab === "home" && <Home summary={summary} jobs={jobs} onApprove={onApprove} onSay={onSay} onTab={goTab} onOpenTask={openTask}
-                                            onChanged={refresh} notify={notify} />}
+                                            onChanged={refresh} notify={notify} onOpenWeek={(w) => { setWeek(w); setTab("content"); }} onRule={onRule} />}
+        {tab === "content" && <Content week={week} setWeek={setWeek} onChanged={refresh} notify={notify} onSay={onSay} />}
         {summary && tab === "tasks" && <Tasks summary={summary} filter={taskFilter} setFilter={setTaskFilter} onApprove={onApprove}
                                               onChanged={refresh} onOpenDoc={(id) => { setDocId(id); setTab("docs"); }}
                                               focusKey={focusTask} notify={notify} />}

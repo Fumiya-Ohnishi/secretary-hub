@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { getHealth, getSummary, sendChat, decideTask } from "./api.js";
+import { getHealth, getSummary, sendChat, decideTask, getBriefing, approveWeek, setScheduler, runCheckNow,
+         readNotifications, decideRule } from "./api.js";
 import { useSpeechInput, useSpeechOutput } from "./speech.js";
 import Live2DStage from "./Live2DStage.jsx";
 import Workspace from "./Workspace.jsx";
@@ -7,7 +8,8 @@ import ApprovalCard from "./ApprovalCard.jsx";
 
 const FACES = { normal: "faces/normal.jpg", pleased: "faces/pleased.jpg", thinking: "faces/thinking.jpg", pouty: "faces/pouty.jpg" };
 const FATAL_MIC = ["not-allowed", "service-not-allowed", "network", "audio-capture"];
-const PANEL_TABS = ["home", "tasks", "docs", "jobs", "chat"];
+const PANEL_TABS = ["home", "content", "tasks", "docs", "jobs", "chat"];
+const LOG_KEY = "hub-log";
 
 function load(key, fallback) {
   try { const v = localStorage.getItem(key); return v == null ? fallback : JSON.parse(v); } catch (e) { return fallback; }
@@ -41,8 +43,52 @@ function greeting(summary, name) {
   return `${hello}、社長。${parts.join("、")}。ご用件をどうぞ。`;
 }
 
+/** 投稿セットの承認カード(全部承認 / 中身を見る / あとで) */
+function ContentApprovalCard({ info, busy, onApproveAll, onOpen, onClose }) {
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal approval-card" role="dialog" aria-label="投稿セットの承認" onClick={(e) => e.stopPropagation()}>
+        <div className="ac-label">社長の判断 ・ 投稿セット</div>
+        <div className="ac-title"><span className="tid">{info.week}</span>{info.theme || "今週の投稿"}</div>
+        <p className="ac-note">承認待ちの投稿が {info.count}件あります。中身(台本・キャプション・画像)は投稿タブで確認できます。
+          承認したものだけを、社長が投稿に使います。</p>
+        <div className="ac-actions">
+          <button className="btn ghost" onClick={onClose}>あとで</button>
+          <button className="btn" onClick={onOpen}>中身を見る</button>
+          <button className="btn primary" disabled={busy} onClick={onApproveAll}>全部承認する</button>
+        </div>
+        <div className="ac-voice">🎙 声でも決められます:「はい」で全部承認 /「中身を見せて」/「あとで」</div>
+      </div>
+    </div>
+  );
+}
+
+/** ルール追加の提案(修正ログから)。承認すると learned_rules.md に1行追加 */
+function RuleCard({ proposal, busy, onDecide, onClose }) {
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal approval-card" role="dialog" aria-label="ルール追加の提案" onClick={(e) => e.stopPropagation()}>
+        <div className="ac-label">社長の判断 ・ ルール追加の提案</div>
+        <div className="ac-title">{proposal.rule}</div>
+        <p className="ac-note">理由:{proposal.reason}{"\n"}承認すると、全部署が作業前に読む「過去の失敗から学んだルール」に追加します。</p>
+        <div className="ac-actions">
+          <button className="btn ghost" onClick={onClose}>あとで</button>
+          <button className="btn" disabled={busy} onClick={() => onDecide(false)}>追加しない</button>
+          <button className="btn primary" disabled={busy} onClick={() => onDecide(true)}>ルールに追加する</button>
+        </div>
+        <div className="ac-voice">🎙 声でも決められます:「はい」で追加 /「いらない」/「あとで」</div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  const [log, setLog] = useState([]);
+  const [ruleCard, setRuleCard] = useState(null);
+  const seenNotes = useRef(new Set());
+  const [log, setLog] = useState(() => load(LOG_KEY, []));
+  const [week, setWeek] = useState(null);
+  const [contentApproval, setContentApproval] = useState(null);
+  const pendingSpeech = useRef(null);
   const [line, setLine] = useState("");
   const [mood, setMood] = useState("normal");
   const [busy, setBusy] = useState(false);
@@ -111,17 +157,39 @@ export default function App() {
       }
       jobsRef.current = s.jobs || [];
       setJobs(s.jobs || []);
+      // 定時チェックのお知らせ: 吹き出し+読み上げ+ブラウザの通知
+      const fresh = (s.scheduler?.unread || []).filter((n) => !seenNotes.current.has(n.id));
+      if (fresh.length) {
+        fresh.forEach((n) => seenNotes.current.add(n.id));
+        const last = fresh[fresh.length - 1];
+        notify(`🔔 ${last.title}`, "info");
+        say(last.text, "normal");
+        try { if ("Notification" in window && Notification.permission === "granted" && document.hidden) new Notification(last.title, { body: last.text }); } catch (e) {}
+        readNotifications(fresh.map((n) => n.id)).catch(() => {});
+      }
       return s;
     } catch (e) { return null; }
   }, [notify, say]);
 
   useEffect(() => {
     getHealth().then(setHealth).catch(() => setHealth({ offline: true }));
-    refresh().then((s) => {
-      const g = greeting(s, name);
-      setLine(g);
-      setLog([{ role: "ai", text: g }]);
+    refresh().then(async (s) => {
+      let text = greeting(s, name), m = "normal";
+      setLine(text);
+      try {
+        const b = await getBriefing();
+        if (b.text) { text = b.text; m = b.mood || "normal"; setLine(text); setMood(m); }
+      } catch (e) {}
+      setLog((l) => [...l, { role: "sys", text: `── ${new Date().toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 起動 ──` }, { role: "ai", text }]);
+      pendingSpeech.current = text; // ブラウザは操作の後でないと音を出せないので、最初のクリックで読み上げる
     });
+    const speakPending = () => {
+      const t = pendingSpeech.current;
+      pendingSpeech.current = null;
+      if (t && !load("hub-muted", false)) setTimeout(() => tts.speak(t), 150);
+    };
+    window.addEventListener("pointerdown", speakPending, { once: true });
+    window.addEventListener("keydown", speakPending, { once: true });
   }, []);
 
   const running = jobs.some((j) => j.status === "running");
@@ -131,6 +199,7 @@ export default function App() {
   }, [running, refresh]);
 
   useEffect(() => { logRef.current?.scrollTo(0, 1e9); }, [log, tab]);
+  useEffect(() => { save(LOG_KEY, log.slice(-60)); }, [log]);
 
   /* ---------- 承認・差し戻し(社長の操作) ---------- */
   const decide = async (decision, comment) => {
@@ -147,6 +216,48 @@ export default function App() {
     setDeciding(false);
   };
 
+  const decideRuleCard = async (approve, p = ruleCard) => {
+    if (!p) return;
+    setDeciding(true);
+    try {
+      await decideRule(p.id, approve);
+      setRuleCard(null);
+      notify(approve ? "ルールに追加しました" : "追加しないことにしました", "ok");
+      say(approve ? `「${p.rule}」を、全部署が守るルールに追加しました。` : "承知しました。このルールは追加しません。", approve ? "pleased" : "normal");
+      refresh();
+    } catch (e) { notify(e.message, "error"); }
+    setDeciding(false);
+  };
+
+  const toggleAuto = async () => {
+    try {
+      const r = await setScheduler({ auto: !summary?.scheduler?.auto });
+      notify(r.auto ? `定時チェックをオンにしました(${r.times.join("・")})` : "定時チェックをオフにしました");
+      if (r.auto && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
+      refresh();
+    } catch (e) { notify(e.message, "error"); }
+  };
+  const checkNow = async () => {
+    setSettingsOpen(false);
+    setBusy(true); setMood("thinking");
+    try { await runCheckNow(); await refresh(); } catch (e) { notify(e.message, "error"); }
+    setBusy(false);
+  };
+
+  const approveContent = async () => {
+    if (!contentApproval) return;
+    setDeciding(true);
+    try {
+      const r = await approveWeek(contentApproval.week);
+      setContentApproval(null);
+      notify(`${r.week} の投稿 ${r.approved}件を承認しました`, "ok");
+      say(`${r.week}の投稿を${r.approved}件、承認しました。投稿タブの「投稿しました」で、投稿済みを記録できます。`, "pleased");
+      setWeek(r.week); setTab("content");
+      refresh();
+    } catch (e) { notify(e.message, "error"); }
+    setDeciding(false);
+  };
+
   /* ---------- 話しかける ---------- */
   const handleActions = (actions = []) => {
     for (const a of actions) {
@@ -154,6 +265,9 @@ export default function App() {
       if (a.type === "open_doc") { setDocId(a.id); setTab("docs"); }
       if (a.type === "approval") setApproval(a.task);
       if (a.type === "job") setTab("jobs");
+      if (a.type === "content") { setWeek(a.week); setTab("content"); }
+      if (a.type === "content_approval") setContentApproval(a);
+      if (a.type === "rule_approval") setRuleCard(a.proposal);
     }
     if (actions.some((a) => ["refresh", "job", "approval"].includes(a.type))) refresh();
   };
@@ -162,6 +276,23 @@ export default function App() {
     const text = (raw || "").trim();
     if (!text || busy) return;
     setInput("");
+    pendingSpeech.current = null;
+    if (ruleCard) {
+      setLog((l) => [...l, { role: "user", text }]);
+      if (/(いらない|不要|追加しない|却下|ダメ|だめ)/.test(text)) return decideRuleCard(false);
+      if (/^(はい|承認|追加|ok|オッケー|オーケー|お願いします|いいよ|いいです|大丈夫)/i.test(text)) return decideRuleCard(true);
+      if (/(あとで|後で|キャンセル|やめ|保留)/.test(text)) { setRuleCard(null); return say("承知しました。ホームに残しておきます。"); }
+    }
+    // 投稿セットの承認カード: 声の返事で確定(AI は介さない)
+    if (contentApproval) {
+      setLog((l) => [...l, { role: "user", text }]);
+      if (/差し?戻|中身|見せ|確認/.test(text)) {
+        setWeek(contentApproval.week); setTab("content"); setContentApproval(null);
+        return say(/差し?戻/.test(text) ? "差し戻す投稿を開いて、理由を入れて「差し戻す」を押してください。" : "投稿タブに中身を出しました。");
+      }
+      if (/^(はい|承認|全部|ok|オッケー|オーケー|お願いします|いいよ|いいです|大丈夫)/i.test(text)) return approveContent();
+      if (/(あとで|後で|キャンセル|やめ|保留)/.test(text)) { setContentApproval(null); return say("承知しました。あとで確認できるようにしておきます。"); }
+    }
     // 承認カードが出ているときは、声の返事で確定できる(AI は介さず、社長の言葉で直接決める)
     if (approval) {
       setLog((l) => [...l, { role: "user", text }]);
@@ -230,6 +361,9 @@ export default function App() {
           {settingsOpen && (
             <div className="settings" onMouseLeave={() => setSettingsOpen(false)}>
               <label className="set-row"><span>読み上げ</span><input type="checkbox" checked={!muted} onChange={toggleMute} /></label>
+              <label className="set-row"><span>定時チェック{summary?.scheduler ? `(${summary.scheduler.times.join("・")})` : ""}</span>
+                <input type="checkbox" checked={!!summary?.scheduler?.auto} onChange={toggleAuto} /></label>
+              <button className="btn sm" onClick={checkNow}>今すぐ確認してもらう</button>
               <label className="set-row"><span>ハンズフリー</span><input type="checkbox" checked={handsFree} onChange={toggleHandsFree} disabled={!supported} /></label>
               {tts.voices.length > 0 && (
                 <label className="set-col"><span>声({tts.engine === "voicevox" ? "VOICEVOX" : "ブラウザ"})</span>
@@ -275,6 +409,7 @@ export default function App() {
           <div className="quick">
             <button onClick={() => submit("今日の報告をして")}>今日の報告</button>
             <button onClick={() => submit("承認待ちを見せて")}>承認待ち{appr ? `(${appr})` : ""}</button>
+            <button onClick={() => submit("今週の投稿を見せて")}>投稿</button>
             <button onClick={() => submit("資料の一覧を見せて")}>資料</button>
           </div>
         </section>
@@ -282,9 +417,15 @@ export default function App() {
         <Workspace tab={tab} setTab={setTab} summary={summary} jobs={jobs} health={health} log={log} logRef={logRef}
                    taskFilter={taskFilter} setTaskFilter={setTaskFilter} docId={docId} setDocId={setDocId}
                    focusTask={focusTask} setFocusTask={setFocusTask} onApprove={setApproval} onSay={submit}
-                   refresh={refresh} notify={notify} />
+                   refresh={refresh} notify={notify} week={week} setWeek={setWeek} onRule={setRuleCard} />
       </main>
 
+      {ruleCard && <RuleCard proposal={ruleCard} busy={deciding} onDecide={(a) => decideRuleCard(a)} onClose={() => setRuleCard(null)} />}
+      {contentApproval && (
+        <ContentApprovalCard info={contentApproval} busy={deciding} onApproveAll={approveContent}
+                             onOpen={() => { setWeek(contentApproval.week); setTab("content"); setContentApproval(null); }}
+                             onClose={() => setContentApproval(null)} />
+      )}
       {approval && (
         <ApprovalCard task={approval} busy={deciding} onDecide={decide} onClose={() => setApproval(null)}
                       onOpenDoc={(id) => { setDocId(id); setTab("docs"); setApproval(null); }} />
