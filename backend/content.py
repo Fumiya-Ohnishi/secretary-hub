@@ -95,10 +95,13 @@ def list_weeks() -> List[dict]:
         posts = [_post(p) for p in sorted(wd.glob("[0-9]*.md"))]
         meta, _ = parse((wd / "_week.md").read_text()) if (wd / "_week.md").exists() else ({}, "")
         counts: Dict[str, int] = {}
+        by_platform: Dict[str, Dict[str, int]] = {}
         for p in posts:
             counts[p["status"]] = counts.get(p["status"], 0) + 1
+            bp = by_platform.setdefault(p["platform"], {})
+            bp[p["status"]] = bp.get(p["status"], 0) + 1
         weeks.append({"week": wd.name, "theme": meta.get("theme", ""), "task": meta.get("task", ""),
-                      "count": len(posts), "counts": counts})
+                      "count": len(posts), "counts": counts, "by_platform": by_platform})
     return weeks
 
 

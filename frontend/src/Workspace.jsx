@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { createTask, patchTask, getDocs, getDoc, createJob, recordRevenue, recordFollowers, getOrg } from "./api.js";
 import { Blocks } from "./DocView.jsx";
-import Content from "./Content.jsx";
+import Accounts from "./Accounts.jsx";
 import { Calendar, OrgChart, Activity } from "./Extras.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
@@ -457,7 +457,7 @@ function Chat({ log, logRef }) {
 }
 
 export const TABS = [
-  ["home", "ホーム"], ["content", "投稿"], ["calendar", "予定"], ["tasks", "タスク"], ["docs", "資料"], ["jobs", "部署の作業"],
+  ["home", "ホーム"], ["content", "アカウント"], ["calendar", "予定"], ["tasks", "タスク"], ["docs", "資料"], ["jobs", "部署の作業"],
   ["org", "組織図"], ["chat", "会話"],
 ];
 
@@ -492,7 +492,7 @@ export default function Workspace(props) {
         {summary && tab === "calendar" && <Calendar summary={summary} refresh={refresh} notify={notify} onOpenTask={openTask}
                                                     onOpenWeek={(w) => { setWeek(w); setTab("content"); }} />}
         {tab === "org" && <OrgChart onSay={onSay} notify={notify} />}
-        {tab === "content" && <Content week={week} setWeek={setWeek} onChanged={refresh} notify={notify} onSay={onSay} />}
+        {tab === "content" && <Accounts week={week} setWeek={setWeek} onChanged={refresh} notify={notify} onSay={onSay} />}
         {summary && tab === "tasks" && <Tasks summary={summary} filter={taskFilter} setFilter={setTaskFilter} onApprove={onApprove}
                                               onChanged={refresh} onOpenDoc={(id) => { setDocId(id); setTab("docs"); }}
                                               focusKey={focusTask} notify={notify} />}

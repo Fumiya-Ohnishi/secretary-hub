@@ -326,6 +326,17 @@ TOOLS = [
           {"platform": {"type": "string", "enum": company.PLATFORMS},
            "followers": {"type": "integer"},
            "date": {"type": "string", "description": "YYYY-MM-DD。省略時は今日"}}, ["platform", "followers"]),
+    _tool("record_post_insight", "投稿1本の数字(保存・いいね・表示など)を、その媒体の記録(data/insights_*.csv)に書く。"
+          "社長が「インスタの○○、保存30」のように報告したときに使う。言われていない数字は空のままにする。",
+          {"platform": {"type": "string", "enum": company.PLATFORMS},
+           "content_id": {"type": "string", "description": "投稿ID(例 2026-46-01)。分からなければ投稿の題名"},
+           "values": {"type": "object", "description": "列名→数値。instagram: format,reach,saves,likes,comments,profile_visits,follows / "
+                      "x: impressions,likes,reposts,replies,follows / threads: views,likes,replies,follows / note: metric,value"},
+           "date": {"type": "string", "description": "YYYY-MM-DD。省略時は今日"}}, ["platform", "values"]),
+    _tool("add_improvement", "アカウントの改善点を1行記録する(data/improvements.md。アカウント画面に出る)。"
+          "社長の気づき・分析部の金曜の見直しの結論を残すときに使う。",
+          {"platform": {"type": "string", "enum": company.PLATFORMS},
+           "text": {"type": "string", "description": "改善点(1〜2文)"}}, ["platform", "text"]),
     _tool("register_account", "開設したSNSアカウントのURLを台帳(data/accounts.md と Notion)に記録する。URLだけを扱う。",
           {"platform": {"type": "string", "enum": company.PLATFORMS},
            "url": {"type": "string", "description": "https:// から始まるプロフィールURL"},
@@ -469,6 +480,22 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         r = company.record_followers(args["platform"], args["followers"], args.get("date"))
         actions.append({"type": "refresh"})
         return f"記録しました: {r['date']} {company.PLATFORM_JA[r['platform']]} {r['followers']}人"
+
+    if name == "record_post_insight":
+        import accounts
+        vals = dict(args.get("values") or {})
+        if args.get("content_id"):
+            vals["content_id"] = args["content_id"]
+        r = accounts.record_insight(args["platform"], vals, args.get("date"))
+        actions.append({"type": "refresh"})
+        got = "、".join(f"{accounts.COLUMN_JA.get(k, k)} {v}" for k, v in r.items() if v and k not in ("date", "content_id"))
+        return f"記録しました: {r['date']} {company.PLATFORM_JA[args['platform']]} {r.get('content_id', '')} {got}"
+
+    if name == "add_improvement":
+        import accounts
+        r = accounts.add_improvement(args["platform"], args["text"])
+        actions.append({"type": "refresh"})
+        return f"{company.PLATFORM_JA[args['platform']]} の改善点に記録しました: {r['text']}"
 
     if name == "register_account":
         r = await company.register_account(args["platform"], args["url"], args.get("opened"))
