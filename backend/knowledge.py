@@ -193,6 +193,14 @@ def overview() -> dict:
     return {"shelves": shelves, "prefs": prefs(), "recent_lessons": [l.lstrip("- ") for l in lessons[-8:]][::-1]}
 
 
+DATE_SRC = re.compile(r"^\d{4}-\d{2}-\d{2} \([^)]*\) ")
+
+
+def _plain(text: str) -> str:
+    """好みの行から「日付 (出どころ)」を取る"""
+    return DATE_SRC.sub("", text)
+
+
 def brief_for(instruction: str, dept: str = "") -> List[str]:
     """部署への指示書に入れる「資料室」の節"""
     p = prefs()
@@ -200,7 +208,7 @@ def brief_for(instruction: str, dept: str = "") -> List[str]:
     lines = ["## 資料室(作業の前に必ず確認。knowledge/README.md)"]
     if p["confirmed"]:
         lines.append("社長の好み(確定。必ず守る):")
-        lines += [f"- {re.sub(r'^\d{4}-\d{2}-\d{2} \([^)]*\) ', '', x['text'])[:160]}" for x in p["confirmed"][-12:]]
+        lines += ["- " + _plain(x["text"])[:160] for x in p["confirmed"][-12:]]
     if hits:
         lines.append("この仕事に関係しそうな過去の知見(出典つき。同じ失敗をしない):")
         lines += [f"- [{h['shelf_name']}] {h['text'][:220]}({h['source']})" for h in hits]
@@ -212,7 +220,7 @@ def brief_for(instruction: str, dept: str = "") -> List[str]:
 
 def summary_text() -> str:
     p = prefs()
-    conf = "、".join(re.sub(r"^\d{4}-\d{2}-\d{2} \([^)]*\) ", "", x["text"])[:50] for x in p["confirmed"][-8:])
+    conf = "、".join(_plain(x["text"])[:50] for x in p["confirmed"][-8:])
     s = f"- 資料室: 社長の好み 確定{len(p['confirmed'])}件・確認待ち{len(p['pending'])}件"
     if conf:
         s += f"。確定の主なもの: {conf}"
