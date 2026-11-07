@@ -57,6 +57,29 @@ async def start_scheduler():
     asyncio.create_task(media_loop())       # 完成した画像・動画を Google ドライブへ写す
     asyncio.create_task(reels_loop())       # 声なしのリールを声入りに書き出し直す
     asyncio.create_task(watch_loop())       # 参考アカウントの評価・確認の結果を台帳と Notion に反映
+    asyncio.create_task(instagram_loop())   # Meta 公式の仕組みで、自社のフォロワー数(毎日)と参考アカウントの数字(毎週月曜)を取る
+
+
+async def instagram_loop():
+    import instagram_api
+    last_day, last_week = "", ""
+    while True:
+        try:
+            now = datetime.datetime.now()
+            today = now.date().isoformat()
+            if instagram_api.configured() and now.strftime("%H:%M") >= "08:00":
+                if last_day != today:  # 自社のフォロワー数を1日1回
+                    last_day = today
+                    m = await instagram_api.me()
+                    if m.get("followers_count") is not None:
+                        company.record_followers("instagram", int(m["followers_count"]))
+                if now.weekday() == 0 and last_week != today:  # 月曜: 週次リサーチ(8:30)の前に参考アカウントの数字
+                    last_week = today
+                    r = await instagram_api.refresh_watched()
+                    print("参考アカウント(Instagram)を更新:", r)
+        except Exception as e:
+            print("Instagram の数字の取得でエラー:", e)
+        await asyncio.sleep(300)
 
 
 async def watch_loop():
@@ -621,6 +644,16 @@ async def diagnostics():
     add("media", "Google ドライブ(画像・動画の置き場所)", bool(md and md.parent.exists()), str(md) if md else "見つかりません",
         "Mac に Google ドライブのアプリを入れてログイン(または .env の MEDIA_DIR で場所を指定)")
     core = BASE.parent / "frontend" / "public" / "live2d" / "core" / "live2dcubismcore.js"
+    import instagram_api
+    if instagram_api.configured():
+        try:
+            m = await instagram_api.me()
+            add("instagram_api", "Instagram の数字(Meta 公式)", True, f"@{m.get('username')}・フォロワー {m.get('followers_count')}・トークン {instagram_api.token_status()}")
+        except Exception as e:
+            add("instagram_api", "Instagram の数字(Meta 公式)", False, str(e)[:120], "ai-company の playbooks/instagram_api_setup.md")
+    else:
+        add("instagram_api", "Instagram の数字(Meta 公式)", False, "未設定(参考アカウントの数字は公開ページで見える範囲だけ)",
+            "ai-company の playbooks/instagram_api_setup.md の手順で .env に IG_ACCESS_TOKEN を入れる")
     add("live2d", "Live2D(Cubism Core)", core.exists(), "配置済み" if core.exists() else "未配置(静止画で表示中)",
         "README「Live2D の秘書」の手順で live2dcubismcore.js を置く")
     s = scheduler.summary()
