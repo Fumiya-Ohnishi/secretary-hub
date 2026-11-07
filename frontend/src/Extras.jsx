@@ -277,7 +277,7 @@ export function OrgChart({ onSay, notify }) {
   useEffect(() => {
     const load = () => getOrg().then(setData).catch(() => {});
     load();
-    const id = setInterval(load, 5000);
+    const id = setInterval(load, 2000); // 作業中の社員をほぼリアルタイムで反映
     return () => clearInterval(id);
   }, []);
   if (!data) return <div className="empty">読み込み中…</div>;

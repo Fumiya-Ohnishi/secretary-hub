@@ -442,6 +442,8 @@ export default function App() {
     { label: health?.api_key_set ? "頭脳 OK" : "簡易モード", ok: !!health?.api_key_set, title: health?.api_key_set ? `Claude API(${health.model})` : "backend/.env に ANTHROPIC_API_KEY を入れると何でも頼めます" },
     { label: health?.notion ? "Notion 接続" : "Notion 未接続", ok: !!health?.notion, title: health?.notion ? "タスクと資料を Notion と同期中" : "資料タブに接続手順があります" },
     { label: health?.claude_cli ? "部署 OK" : "部署 未接続", ok: !!health?.claude_cli, title: "部署の作業は Claude Code(claude コマンド)で動きます" },
+    { label: !health?.video_tools ? "動画の道具 …" : health.video_tools.ok ? "動画の道具 OK" : "動画の道具 ⚠", ok: !!health?.video_tools?.ok,
+      title: health?.video_tools ? `ffmpeg: ${health.video_tools.ffmpeg || "なし"} / Node.js: ${health.video_tools.node || "なし"}(22以上が必要)` : "確認中" },
     { label: tts.engine === "voicevox" ? "VOICEVOX" : "ブラウザの声", ok: tts.engine === "voicevox", title: "VOICEVOX を起動すると自然な声になります" },
   ];
 
@@ -481,7 +483,7 @@ export default function App() {
               <label className="set-row"><span>ハンズフリー</span><input type="checkbox" checked={handsFree} onChange={toggleHandsFree} disabled={!supported} /></label>
               <label className="set-row"><span>呼びかけモード(「{name}、〜」のときだけ反応)</span>
                 <input type="checkbox" checked={wakeWord} onChange={(e) => { setWakeWord(e.target.checked); save("hub-wake", e.target.checked); }} /></label>
-              <button className="btn sm ghost" onClick={() => { setSettingsOpen(false); setDiagOpen(true); }}>接続の診断</button>
+              <button className="btn sm ghost" onClick={() => { setSettingsOpen(false); setDiagOpen(true); }}>接続の診断(ffmpeg・Node.js・ドライブなど)</button>
               <p className="muted small">キー操作: スペースを押している間だけ聞き取り / ⌘K(Ctrl+K)で検索 / Esc で閉じる</p>
               {!supported && <p className="muted small">{unsupportedReason}</p>}
             </div>
