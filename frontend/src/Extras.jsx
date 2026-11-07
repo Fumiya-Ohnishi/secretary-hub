@@ -1,4 +1,5 @@
 import Office from "./Office.jsx";
+import FloorPlan from "./FloorPlan.jsx";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getToPost, decidePost, getAllPosts, schedulePost, patchTask, getOrg, search, getDiagnostics, createJob } from "./api.js";
 
@@ -273,7 +274,8 @@ export function Activity({ job, members = [], titles = {} }) {
 export function OrgChart({ onSay, notify }) {
   const [data, setData] = useState(null);
   const [dept, setDept] = useState(null);
-  const [view, setViewState] = useState(() => { try { return localStorage.getItem("orgview") || "office"; } catch (e) { return "office"; } });
+  const [view, setViewState] = useState(() => { try { const v = localStorage.getItem("orgview2"); return v || "floor"; } catch (e) { return "floor"; } });
+  const [floorFocus, setFloorFocus] = useState(null);
   useEffect(() => {
     const load = () => getOrg().then(setData).catch(() => {});
     load();
@@ -290,7 +292,7 @@ export function OrgChart({ onSay, notify }) {
   const workingAll = Object.entries(data.members).filter(([, st]) => st.state === "working");
   const titleOf = Object.fromEntries(depts.flatMap(([, ms]) => ms.map((m) => [m.name, m.title])));
   const deptOf = Object.fromEntries(depts.flatMap(([d, ms]) => ms.map((m) => [m.name, d])));
-  const setView = (v) => { setViewState(v); try { localStorage.setItem("orgview", v); } catch (e) {} };
+  const setView = (v) => { setViewState(v); try { localStorage.setItem("orgview2", v); } catch (e) {} };
   return (
     <div className="org">
       <div className="org-top card">
@@ -299,22 +301,13 @@ export function OrgChart({ onSay, notify }) {
         <div><div className="muted small">秘書室</div><strong>統括秘書セナ</strong></div>
         <span className="muted small org-count">社員 {total}名 ・ {depts.length}部署 ・ 作業中 {workingAll.length}名</span>
         <div className="seg org-view">
+          <button className={view === "floor" ? "on" : ""} onClick={() => setView("floor")}>フロア図</button>
           <button className={view === "office" ? "on" : ""} onClick={() => setView("office")}>オフィス</button>
           <button className={view === "list" ? "on" : ""} onClick={() => setView("list")}>一覧</button>
         </div>
       </div>
-      {view === "office" && (
-        <>
-          <Office data={data} onOpenDept={setDept} />
-          <section className="card now-working">
-            <div className="card-head"><h3>いま作業中の社員</h3><span className="muted small">机に座っている社員が作業中。終わると書類が上司の机へ飛びます</span></div>
-            {workingAll.length === 0 && <div className="empty">いまは全員待機中です。部署に仕事を頼むと、担当が机に向かって作業を始めます。</div>}
-            {workingAll.map(([name, st]) => (
-              <div key={name} className="mini-row clickable" onClick={() => setDept(deptOf[name])}><span className="job-dot running" /><strong>{titleOf[name] || name}</strong><span className="muted small">{deptOf[name]}</span><span className="ttl">{st.desc}({st.job})</span><span className="due">{hm(st.at)}〜</span></div>
-            ))}
-          </section>
-        </>
-      )}
+      {view === "floor" && <FloorPlan key={floorFocus || "fp"} data={data} onOpenDept={setDept} focusName={floorFocus} />}
+      {view === "office" && <Office data={data} onOpenDept={setDept} onShowFloor={(name) => { setFloorFocus(name); setView("floor"); }} />}
       {view === "list" && <>
       {workingAll.length > 0 && (
         <section className="card now-working">

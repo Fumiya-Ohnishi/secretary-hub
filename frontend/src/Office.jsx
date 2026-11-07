@@ -54,11 +54,26 @@ function layoutDesks(departments) {
   return desks;
 }
 
-export default function Office({ data, onOpenDept }) {
+/** 立体のオフィス: 働いている風景を眺める画面(文字の看板・流れの線は出さない。詳しい状況はフロア図で見る) */
+export default function Office({ data, onOpenDept, onShowFloor }) {
   const wrap = useRef(null), cvs = useRef(null);
   const S = useRef({ avatars: {}, flyers: [], chats: [], cam: { s: 1, x: 0, y: 0 }, prev: {}, hit: [] }).current;
   const [hover, setHover] = useState(null);
   const [nowOpen, setNowOpen] = useState(true);
+  const [card, setCard] = useState(null); // 押した社員(名前と今していることだけ出す)
+  const [auto, setAuto] = useState(true);   // 自動カメラ
+  const [cinema, setCinema] = useState(false); // 全画面(文字を全部消す)
+  useEffect(() => { S.auto = auto; }, [auto]);
+  useEffect(() => { S.cinema = cinema; }, [cinema]);
+  useEffect(() => {
+    const fs = () => { if (!document.fullscreenElement) setCinema(false); };
+    document.addEventListener("fullscreenchange", fs); return () => document.removeEventListener("fullscreenchange", fs);
+  }, []);
+  const goCinema = async () => {
+    setCinema(true); setAuto(true);
+    try { await wrap.current?.requestFullscreen?.(); } catch (e) {}
+    setTimeout(() => S.refit?.(), 300);
+  };
 
   function seat(a) { const dk = S.desks[a.name]; return [dk.gx + 0.35, dk.gy - 0.6]; }
   function route(a, to) { // 廊下(y=6.5 / 13.5)を通る
@@ -81,6 +96,26 @@ export default function Office({ data, onOpenDept }) {
     for (const [d, ms] of Object.entries(data.departments)) for (const m of ms) { info[m.name] = m; if (m.boss) deptBoss[d] = m.name; }
     S.info = info;
     S.jobs = (data.jobs || []).filter((j) => j.status === "running").map((j) => j.title);
+    // 部署ごとの今の仕事(看板用): 作業中の作業名と進み具合、24時間以内に止まった作業
+    const full = (j) => j.department_full || `${j.department}部`;
+    const dj = {}, stop = {}, day = Date.now() - 864e5;
+    for (const j of [...(data.jobs || [])].reverse()) { // 古い順。あとの作業が上書きする
+      const d = full(j);
+      if (j.status === "running") {
+        const acts = j.activity || [], done = acts.filter((a) => a.status === "done").length;
+        dj[d] = { title: j.title, done, total: Math.max(acts.length, 1), started: j.started }; delete stop[d];
+      } else if (j.status === "error" && new Date(j.finished || j.started).getTime() > day) stop[d] = j.title;
+      else if (j.status === "done") delete stop[d];
+    }
+    S.deptJob = dj; S.deptStop = stop;
+    // 社員ごとの実績(作業の記録から): 担当した数・差し戻し(エラー)の数
+    const rec = {};
+    for (const j of data.jobs || []) for (const a of j.activity || []) {
+      const r = (rec[a.agent] = rec[a.agent] || { done: 0, err: 0, last: null });
+      if (a.status === "done") r.done++; if (a.status === "error") r.err++;
+      if (!r.last || (a.started || "") > (r.last.started || "")) r.last = { desc: a.desc, started: a.started, job: j.title };
+    }
+    S.rec = rec;
     for (const [name, dk] of Object.entries(desks)) {
       const st = data.members[name], working = st?.state === "working", h = hash(name);
       let a = S.avatars[name];
@@ -269,6 +304,63 @@ export default function Office({ data, onOpenDept }) {
       }
     };
 
+    // ---- 部屋の看板: 部署名・状態・今の仕事・進み具合 ----
+    const sign = (dept, x, y, n, t) => {
+      if (dept === "ラウンジ") return;
+      const fut = document.documentElement.dataset.look === "future";
+      const p = P(x + 0.25, y + 0.25, 26), sc = Math.max(0.62, Math.min(1.2, S.cam.s * 0.95));
+      const job = S.deptJob?.[dept], stop = S.deptStop?.[dept];
+      const state = stop && !job ? "stop" : job || n ? "run" : "idle";
+      const chip = { stop: "止まっています", run: "作業中", idle: "待機" }[state];
+      const chipBg = { stop: fut ? "#ff4d8d" : "#ff8a9a", run: fut ? "#00e5ff" : "#7cc4f7", idle: "rgba(255,255,255,.12)" }[state];
+      const line2 = state === "stop" ? stop : job ? job.title : "待機中";
+      const t2 = line2.length > 17 ? line2.slice(0, 17) + "…" : line2;
+      ctx.font = `800 ${12 * sc}px "Noto Sans JP", sans-serif`; const w1 = ctx.measureText(dept).width;
+      ctx.font = `700 ${9.5 * sc}px "Noto Sans JP", sans-serif`; const wc = ctx.measureText(chip).width + 12 * sc;
+      ctx.font = `500 ${10 * sc}px "Noto Sans JP", sans-serif`; const w2 = ctx.measureText(t2).width;
+      const W = Math.max(w1 + wc + 22 * sc, w2 + 18 * sc), H = (job ? 44 : 38) * sc, bx = p.x - 6 * sc, by = p.y - H;
+      ctx.save();
+      if (state === "stop") { ctx.shadowColor = chipBg; ctx.shadowBlur = (10 + 6 * Math.sin(t * 4)) * sc; }
+      else if (fut) { ctx.shadowColor = "#00e5ff"; ctx.shadowBlur = 8 * sc; }
+      ctx.fillStyle = fut ? "rgba(4,12,26,.92)" : "rgba(16,20,42,.93)";
+      ctx.beginPath(); ctx.roundRect(bx, by, W, H, (fut ? 3 : 8) * sc); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.lineWidth = 1.2; ctx.strokeStyle = state === "stop" ? chipBg : fut ? "rgba(0,229,255,.5)" : COLORS[dept]; ctx.stroke();
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillStyle = fut ? "#e6fbff" : "#eef0fb"; ctx.font = `800 ${12 * sc}px "Noto Sans JP", sans-serif`; ctx.fillText(dept, bx + 8 * sc, by + 12 * sc);
+      const cx = bx + W - wc - 7 * sc;
+      ctx.fillStyle = chipBg; ctx.beginPath(); ctx.roundRect(cx, by + 5 * sc, wc, 14 * sc, 7 * sc); ctx.fill();
+      ctx.fillStyle = state === "idle" ? "#aab0cc" : "#0b0e1a"; ctx.font = `700 ${9.5 * sc}px "Noto Sans JP", sans-serif`; ctx.fillText(chip, cx + 6 * sc, by + 12.5 * sc);
+      ctx.fillStyle = state === "stop" ? chipBg : fut ? "#8fb8c9" : "#a8afd0"; ctx.font = `500 ${10 * sc}px "Noto Sans JP", sans-serif`; ctx.fillText(t2, bx + 8 * sc, by + 28 * sc);
+      if (job) {
+        const pw = W - 16 * sc, u = Math.min(1, (job.done + 0.3 + 0.2 * Math.sin(t * 2)) / (job.total + 0.5));
+        ctx.fillStyle = "rgba(255,255,255,.1)"; ctx.fillRect(bx + 8 * sc, by + 37 * sc, pw, 3 * sc);
+        ctx.fillStyle = fut ? "#00e5ff" : COLORS[dept]; ctx.fillRect(bx + 8 * sc, by + 37 * sc, pw * u, 3 * sc);
+      }
+      ctx.restore();
+    };
+    // ---- 仕事の流れ(企画→ライティング→デザイン→品質管理→秘書室)。床に光る点線、動いている区間だけ流れる ----
+    const FLOW = ["企画編集部", "ライティング部", "デザイン部", "品質管理部", "秘書室"];
+    const center = (d) => { const r = ROOMS.find((q) => q[0] === d); return [r[1] + r[3] / 2, r[2] + r[4] / 2]; };
+    const flow = (t) => {
+      const fut = document.documentElement.dataset.look === "future";
+      for (let i = 0; i < FLOW.length - 1; i++) {
+        const a = center(FLOW[i]), b = center(FLOW[i + 1]);
+        const live = S.deptJob?.[FLOW[i]] || S.deptJob?.[FLOW[i + 1]];
+        const pa = P(...a), pb = P(...b);
+        ctx.save();
+        ctx.strokeStyle = live ? (fut ? "rgba(0,229,255,.85)" : "rgba(185,189,250,.85)") : "rgba(185,189,250,.18)";
+        ctx.lineWidth = (live ? 3 : 2) * S.cam.s; ctx.setLineDash([8 * S.cam.s, 7 * S.cam.s]); ctx.lineDashOffset = live ? -t * 30 * S.cam.s : 0;
+        if (live && fut) { ctx.shadowColor = "#00e5ff"; ctx.shadowBlur = 10; }
+        ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+        // 向きの矢印
+        const mx = (pa.x + pb.x) / 2, my = (pa.y + pb.y) / 2, ang = Math.atan2(pb.y - pa.y, pb.x - pa.x), r = 7 * S.cam.s;
+        ctx.setLineDash([]); ctx.fillStyle = ctx.strokeStyle; ctx.beginPath();
+        ctx.moveTo(mx + Math.cos(ang) * r, my + Math.sin(ang) * r); ctx.lineTo(mx + Math.cos(ang + 2.5) * r, my + Math.sin(ang + 2.5) * r);
+        ctx.lineTo(mx + Math.cos(ang - 2.5) * r, my + Math.sin(ang - 2.5) * r); ctx.fill();
+        ctx.restore();
+      }
+    };
+
     // ---- 1コマ ----
     const draw = (t) => {
       const desks = S.desks || {}, dpr = window.devicePixelRatio || 1;
@@ -294,7 +386,8 @@ export default function Office({ data, onOpenDept }) {
         }
       }
       // 床
-      poly([P(0, 0), P(GW, 0), P(GW, GH), P(0, GH)], "#2a2f4a");
+      const FUT = document.documentElement.dataset.look === "future";
+      poly([P(0, 0), P(GW, 0), P(GW, GH), P(0, GH)], FUT ? "#06101f" : "#2a2f4a");
       const ed = [P(0, GH), P(GW, GH), P(GW, 0)], dz = 12 * S.cam.s;
       poly([ed[0], ed[1], { x: ed[1].x, y: ed[1].y + dz }, { x: ed[0].x, y: ed[0].y + dz }], "#151a30");
       poly([ed[1], ed[2], { x: ed[2].x, y: ed[2].y + dz }, { x: ed[1].x, y: ed[1].y + dz }], "#1b2038");
@@ -302,22 +395,23 @@ export default function Office({ data, onOpenDept }) {
       for (const a of Object.values(S.avatars)) if (a.working) busy[a.dept] = (busy[a.dept] || 0) + 1;
       for (const [dept, x, y, w, h, floor] of ROOMS) {
         const c = COLORS[dept];
-        const base = floor === "wood" ? "#6b5640" : floor === "lounge" ? "#7a6248" : shade(c, 0.36);
+        const base = FUT ? (floor === "lounge" ? "#0d1a33" : "#091428") : floor === "wood" ? "#6b5640" : floor === "lounge" ? "#7a6248" : shade(c, 0.36);
         poly([P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], base);
-        ctx.save(); ctx.globalAlpha = floor === "carpet" ? 0.1 : 0.22; ctx.strokeStyle = floor === "carpet" ? "#fff" : "#2d2218"; ctx.lineWidth = 1;
-        if (floor === "carpet") {
+        ctx.save(); ctx.globalAlpha = FUT ? 0.35 : floor === "carpet" ? 0.1 : 0.22; ctx.strokeStyle = FUT ? "#00e5ff" : floor === "carpet" ? "#fff" : "#2d2218"; ctx.lineWidth = 1;
+        if (floor === "carpet" || FUT) {
           for (let i = 1; i < w; i++) { const p = P(x + i, y), q = P(x + i, y + h); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
           for (let j = 1; j < h; j++) { const p = P(x, y + j), q = P(x + w, y + j); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
         } else for (let j = 0.5; j < h; j += 0.5) { const p = P(x, y + j), q = P(x + w, y + j); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
         ctx.restore();
         if (floor === "lounge") poly([P(x + 1.2, y + 3.2), P(x + 4.4, y + 3.2), P(x + 4.4, y + 5.6), P(x + 1.2, y + 5.6)], "#a4865f");
-        if (busy[dept]) { ctx.save(); ctx.globalAlpha = 0.14 + 0.06 * Math.sin(t * 2); poly([P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], c); ctx.restore(); }
+        if (busy[dept]) { ctx.save(); ctx.globalAlpha = 0.14 + 0.06 * Math.sin(t * 2); poly([P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], FUT ? "#00e5ff" : c); ctx.restore(); }
+        if (S.deptStop?.[dept] && !S.deptJob?.[dept]) { ctx.save(); ctx.globalAlpha = 0.16 + 0.1 * Math.sin(t * 4); poly([P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], "#ff4d6d", "#ff8a9a", 2); ctx.restore(); }
         const gz = 18;
         ctx.save(); ctx.globalAlpha = 0.16;
-        poly([P(x, y + h), P(x + w, y + h), P(x + w, y + h, gz), P(x, y + h, gz)], "#bfd3ff");
-        poly([P(x + w, y), P(x + w, y + h), P(x + w, y + h, gz), P(x + w, y, gz)], "#bfd3ff");
+        poly([P(x, y + h), P(x + w, y + h), P(x + w, y + h, gz), P(x, y + h, gz)], FUT ? "#00e5ff" : "#bfd3ff");
+        poly([P(x + w, y), P(x + w, y + h), P(x + w, y + h, gz), P(x + w, y, gz)], FUT ? "#00e5ff" : "#bfd3ff");
         ctx.restore();
-        ctx.strokeStyle = "rgba(200,215,255,.35)"; ctx.lineWidth = 1;
+        ctx.strokeStyle = FUT ? "rgba(0,229,255,.7)" : "rgba(200,215,255,.35)"; ctx.lineWidth = 1;
         for (const [px, py] of [[x + w, y + h], [x + w, y], [x, y + h]]) { const a = P(px, py), b = P(px, py, gz); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
       }
       // 置く物を奥から順に
@@ -351,22 +445,70 @@ export default function Office({ data, onOpenDept }) {
         for (let i = 0; i < 3; i++) ctx.fillRect(-4 * s, (-5 + i * 3.5) * s, 8 * s, 1.4 * s);
         ctx.restore();
       }
-      for (const [dept, x, y] of ROOMS) {
-        const p = P(x + 0.25, y + 0.25, 24), n = busy[dept];
-        pill(n ? `${dept} 作業中 ${n}` : dept, p.x, p.y, n ? COLORS[dept] : "rgba(16,20,42,.88)", n ? "#0b0e1a" : "#d5d9f0", 12);
-      }
+      // 部屋の名前は小さく、薄く(風景を邪魔しない)
+      if (!S.cinema) for (const [dept, x, y] of ROOMS) { const p = P(x + 0.25, y + 0.25, 24); pill(dept, p.x, p.y, "rgba(16,20,42,.55)", "rgba(213,217,240,.8)", 10); }
       for (const h of heads) {
         const a = h.a, title = S.info?.[a.name]?.title || "";
-        if (a.working && !a.walking) {
+        if (a.working && !a.walking && !S.cinema && S.hover === a.name) {
           const d = a.desc.length > 15 ? a.desc.slice(0, 15) + "…" : a.desc;
           pill(`${title}:${d} ${".".repeat(1 + (Math.floor(t * 2) % 3))}`, h.x, h.y, "rgba(255,255,255,.97)", "#161a35", 12, true);
         } else if (a.say) pill(a.say, h.x, h.y, "rgba(255,248,226,.97)", "#3a2c12", 12, true);
       }
+      light(t, heads);
+    };
+
+    // ---- 光: 時間帯の色と、作業中の机の画面の光(顔が照らされる) ----
+    const light = (t, heads) => {
+      const W = canvas.width / dpr0(), H = canvas.height / dpr0();
+      const hr = new Date().getHours() + new Date().getMinutes() / 60;
+      const fut = document.documentElement.dataset.look === "future";
+      // 朝(6-10)=暖かい / 昼=そのまま / 夕(16-19)=橙 / 夜=青く暗い
+      const tint = hr >= 6 && hr < 10 ? [255, 214, 170, 0.10] : hr >= 10 && hr < 16 ? [255, 255, 255, 0] : hr >= 16 && hr < 19 ? [255, 150, 90, 0.16] : [20, 30, 80, 0.34];
+      if (tint[3]) { ctx.save(); ctx.globalCompositeOperation = hr >= 19 || hr < 6 ? "multiply" : "soft-light"; ctx.fillStyle = `rgba(${tint[0]},${tint[1]},${tint[2]},${tint[3] * (hr >= 19 || hr < 6 ? 2.2 : 1)})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+      ctx.save(); ctx.globalCompositeOperation = "screen";
+      for (const h of heads) {
+        if (!h.a.working || h.a.walking) continue;
+        const r = 34 * S.cam.s * K, g = ctx.createRadialGradient(h.x, h.y + 18 * S.cam.s, 0, h.x, h.y + 18 * S.cam.s, r);
+        const c = fut ? "0,229,255" : "150,190,255", a = 0.32 + 0.06 * Math.sin(t * 6 + h.x);
+        g.addColorStop(0, `rgba(${c},${a})`); g.addColorStop(1, `rgba(${c},0)`);
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(h.x, h.y + 18 * S.cam.s, r, 0, 7); ctx.fill();
+      }
+      ctx.restore();
+      // 画面の縁を少し暗く(映画のような見え方)
+      const v = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+      v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,.45)"); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+    };
+    const dpr0 = () => window.devicePixelRatio || 1;
+
+    // ---- 自動カメラ: 作業中の人へゆっくり寄る → 全体を見渡す、を繰り返す ----
+    const tour = (dt) => {
+      if (!S.auto || S.drag) return;
+      S.tourT = (S.tourT || 0) + dt;
+      const r = wrap.current?.getBoundingClientRect(); if (!r) return;
+      if (!S.tourTarget || S.tourT > 9) {
+        S.tourT = 0;
+        const ws = Object.values(S.avatars).filter((a) => a.working), all = Object.values(S.avatars);
+        const wide = S.tourWide = !S.tourWide;
+        if (wide || !all.length) { S.tourTarget = { wide: true }; }
+        else { const a = (ws.length ? ws : all)[Math.floor(Math.random() * (ws.length || all.length))]; S.tourTarget = { name: a.name }; }
+      }
+      let goal;
+      if (S.tourTarget.wide) {
+        const left = iso(0, GH).x, right = iso(GW, 0).x, top = iso(0, 0).y - 90, bottom = iso(GW, GH).y;
+        const sc = Math.min(r.width / (right - left + 40), r.height / (bottom - top + 40));
+        goal = { s: sc, x: r.width / 2 - ((left + right) / 2) * sc, y: 20 - top * sc };
+      } else {
+        const a = S.avatars[S.tourTarget.name]; if (!a) return;
+        const sc = Math.max(1.5, S.cam.s), p = iso(a.gx, a.gy);
+        goal = { s: 1.7, x: r.width / 2 - p.x * 1.7, y: r.height / 2 - p.y * 1.7 + 40 };
+      }
+      const k = Math.min(1, dt * 0.6);
+      S.cam.s += (goal.s - S.cam.s) * k; S.cam.x += (goal.x - S.cam.x) * k; S.cam.y += (goal.y - S.cam.y) * k;
     };
 
     const loop = (now) => {
       const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now;
-      step(dt); draw(now / 1000);
+      step(dt); tour(dt); draw(now / 1000);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -384,8 +526,8 @@ export default function Office({ data, onOpenDept }) {
     if (S.drag) { S.cam.x += e.clientX - S.drag.x; S.cam.y += e.clientY - S.drag.y; S.drag = { x: e.clientX, y: e.clientY, moved: true }; return; }
     const h = pick(e); S.hover = h?.name || null; setHover(h);
   };
-  const onDown = (e) => { S.drag = { x: e.clientX, y: e.clientY, moved: false }; };
-  const onUp = (e) => { const moved = S.drag?.moved; S.drag = null; if (!moved) { const h = pick(e); if (h) onOpenDept(h.dept); } };
+  const onDown = (e) => { S.drag = { x: e.clientX, y: e.clientY, moved: false }; if (S.auto) setAuto(false); };
+  const onUp = (e) => { const moved = S.drag?.moved; S.drag = null; if (!moved) { const h = pick(e); setCard(h ? h.name : null); if (h) { S.focus = h.name; } } };
   const focus = (name) => { // その社員を画面の真ん中に、少し寄せて映す
     const a = S.avatars[name]; if (!a || !cvs.current) return;
     const r = cvs.current.getBoundingClientRect(), s = Math.max(S.cam.s, 1.3), p = iso(a.gx, a.gy);
@@ -412,6 +554,7 @@ export default function Office({ data, onOpenDept }) {
               onMouseLeave={() => { S.drag = null; S.hover = null; setHover(null); }} style={{ cursor: hover ? "pointer" : "grab" }} />
       {(() => {
         const working = Object.entries(data.members).filter(([n, st]) => st.state === "working" && S.info?.[n]);
+        if (cinema) return null;
         return (
           <div className={`office-now ${nowOpen ? "" : "closed"}`}>
             <button className="office-now-head" onClick={() => setNowOpen(!nowOpen)}><span className={`dot ${working.length ? "on" : ""}`} />いま作業中 {working.length}名 {nowOpen ? "▴" : "▾"}</button>
@@ -424,16 +567,32 @@ export default function Office({ data, onOpenDept }) {
           </div>
         );
       })()}
-      <div className="office-legend small">机で画面が光っている人=作業中 ・ 書類が飛ぶ=上司へ提出 ・ 休憩と立ち話は雰囲気の演出です</div>
-      <div className="office-zoom">
-        <button onClick={() => zoom(1.2)}>＋</button><button onClick={() => zoom(1 / 1.2)}>−</button><button onClick={() => S.refit?.()}>⌂</button>
+      {!cinema && <div className="office-legend small">働いている様子を眺める画面です(時間帯で光が変わります)・ 詳しい状況はフロア図で ・ 休憩と立ち話は演出です</div>}
+      <div className={`office-zoom ${cinema ? "cinema" : ""}`}>
+        <button onClick={() => setAuto(!auto)} title={auto ? "自動カメラを止める" : "自動カメラで眺める"} className={auto ? "on" : ""}>{auto ? "■" : "▶"}</button>
+        {!cinema && <><button onClick={() => zoom(1.2)}>＋</button><button onClick={() => zoom(1 / 1.2)}>−</button><button onClick={() => { setAuto(false); S.refit?.(); }}>⌂</button></>}
+        <button onClick={() => (cinema ? document.exitFullscreen?.() : goCinema())} title={cinema ? "全画面を終える" : "全画面で眺める(録画にも)"}>{cinema ? "✕" : "⛶"}</button>
       </div>
-      {hover && (
+      {card && !cinema && (() => {
+        const m2 = S.info?.[card] || {}, st2 = data.members[card], a2 = S.avatars[card];
+        const now2 = st2?.state === "working" ? st2.desc : { coffee: "コーヒー休憩中", sofa: "ラウンジで休憩中", chat: "立ち話中", visit: "同僚の机に寄り道中" }[a2?.act] || "待機中";
+        return (
+          <div className="office-tag">
+            <strong>{m2.title}</strong><span className="muted small">{a2?.dept}</span>
+            <div className="small">{now2}</div>
+            <div className="office-tag-btns">
+              {onShowFloor && <button className="link" onClick={() => onShowFloor(card)}>フロア図で詳しく ›</button>}
+              <button className="link" onClick={() => setCard(null)}>閉じる</button>
+            </div>
+          </div>
+        );
+      })()}
+      {hover && !card && !cinema && (
         <div className="office-tip" style={{ left: Math.min(hover.ex + 14, (wrap.current?.clientWidth || 600) - 290), top: hover.ey + 12 }}>
           <strong>{m?.title}{m?.boss ? "(上司)" : ""}</strong><span className="muted small">{hover.dept}</span>
           {m?.persona && <div className="small persona">{m.persona}</div>}
           <div className="small">{doing}</div>
-          <div className="muted small">押すと部署の画面を開きます</div>
+          <div className="muted small">押すと名刺を出します</div>
         </div>
       )}
     </div>
