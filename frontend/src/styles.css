@@ -898,3 +898,22 @@ select.status-sel { color-scheme: dark; }
 [data-look="future"] .fp-book i { background: linear-gradient(180deg, var(--accent), rgba(0,229,255,.2)); box-shadow: 0 0 10px var(--accent); }
 .fp-book em { font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; } .fp-book b { color: var(--text); font-size: 11px; }
 .fp-lib-new { margin-top: 6px; }
+/* フロア図の会議室 */
+.fp-room.meet { grid-column: span 2; background: color-mix(in srgb, #f3b562 8%, var(--panel)); }
+@media (max-width: 700px) { .fp-room.meet { grid-column: auto; } }
+.fp-table { position: relative; height: 74px; display: grid; place-items: center; }
+.fp-table i { width: 46%; height: 34px; border-radius: 40px; background: #8a6d4f; box-shadow: 0 4px 0 rgba(0,0,0,.25); }
+.fp-table span { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: var(--line2); }
+.fp-table span:nth-child(2) { left: 24%; top: 10px; } .fp-table span:nth-child(3) { left: 24%; bottom: 10px; } .fp-table span:nth-child(4) { right: 24%; top: 10px; }
+.fp-table span:nth-child(5) { right: 24%; bottom: 10px; } .fp-table span:nth-child(6) { left: 50%; top: 2px; } .fp-table span:nth-child(7) { left: 50%; bottom: 2px; }
+[data-look="future"] .fp-table i { background: rgba(0,229,255,.18); border: 1px solid var(--accent); box-shadow: 0 0 14px var(--accent); }
+.fp-talk { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; min-height: 74px; }
+.fp-talk div { background: var(--panel2); border-radius: 8px; padding: 3px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-talk div.running { border-left: 3px solid var(--warn); }
+.fp-talk b { color: var(--accent2); font-weight: 700; margin-right: 4px; }
+.fp-meet-panel { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.fp-meet-log p { font-size: 12px; white-space: pre-wrap; margin-bottom: 4px; color: var(--sub); }
+.fp-meet-start { display: flex; gap: 6px; flex-wrap: wrap; }
+.fp-meet-start input { flex: 1; min-width: 140px; background: var(--panel2); border: 1px solid var(--line2); border-radius: 8px; padding: 5px 8px; }
+.fp-min { padding: 5px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 1px; } .fp-min:first-child { border-top: 0; }
+.fp-min a { font-size: 12px; }

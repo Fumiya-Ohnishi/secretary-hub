@@ -79,3 +79,5 @@ export const getKnowledge = () => call("GET", "/api/knowledge");
 export const searchKnowledge = (q) => call("GET", `/api/knowledge/search?q=${encodeURIComponent(q)}`);
 export const addPref = (p) => call("POST", "/api/knowledge/prefs", p);
 export const decidePref = (id, approve, revised = "") => call("POST", `/api/knowledge/prefs/${encodeURIComponent(id)}`, { approve, revised });
+export const getMeetings = () => call("GET", "/api/meetings");
+export const startMeeting = (kind, topic = "") => call("POST", "/api/meetings", { kind, topic });

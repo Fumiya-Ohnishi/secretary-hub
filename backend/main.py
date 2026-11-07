@@ -57,6 +57,7 @@ async def start_scheduler():
     asyncio.create_task(media_loop())       # 完成した画像・動画を Google ドライブへ写す
     asyncio.create_task(reels_loop())       # 声なしのリールを声入りに書き出し直す
     asyncio.create_task(watch_loop())       # 参考アカウントの評価・確認の結果を台帳と Notion に反映
+    asyncio.create_task(meeting_loop())     # 会議の議事録を Notion に載せ、やることを起票して通知
     asyncio.create_task(instagram_loop())   # Meta 公式の仕組みで、自社のフォロワー数(毎日)と参考アカウントの数字(毎週月曜)を取る
 
 
@@ -80,6 +81,38 @@ async def instagram_loop():
         except Exception as e:
             print("Instagram の数字の取得でエラー:", e)
         await asyncio.sleep(300)
+
+
+async def meeting_loop():
+    import meetings
+    while True:
+        try:
+            r = await meetings.sync()
+            if r:
+                print("議事録を反映しました:", r)
+        except Exception as e:
+            print("議事録の反映でエラー:", e)
+        await asyncio.sleep(120)
+
+
+@app.get("/api/meetings")
+def meetings_list():
+    import meetings
+    running = [j for j in agent.job_list() if (j.get("task_key") or "").startswith("meeting:") and j["status"] == "running"]
+    return {"minutes": meetings.list_minutes(), "running": [{"title": j["title"], "started": j["started"], "log": j.get("log", [])[-12:],
+                                                              "activity": j.get("activity", [])[-20:]} for j in running]}
+
+
+class MeetingIn(BaseModel):
+    kind: str = "adhoc"
+    topic: str = ""
+
+
+@app.post("/api/meetings")
+async def meetings_start(body: MeetingIn):
+    actions: list = []
+    msg = await agent.run_tool("hold_meeting", {"kind": body.kind, "topic": body.topic}, actions)
+    return {"message": msg, "job": next((a["job"] for a in actions if a["type"] == "job"), None)}
 
 
 async def watch_loop():

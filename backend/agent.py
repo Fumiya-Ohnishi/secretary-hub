@@ -537,6 +537,11 @@ TOOLS = [
     _tool("search_knowledge", "資料室(過去の失敗と再発防止・うまくいった型・審査・リサーチ・数字)から、関係する知見を探す。"
           "社長に「前にどうだった?」「同じ失敗してない?」と聞かれたとき、仕事を頼む前に確認するときに使う。",
           {"query": {"type": "string"}}, ["query"]),
+    _tool("hold_meeting", "部署をまたぐ会議を開く(企画会議・振り返り会議・全体会議・臨時会議)。社長に「○○について会議して」と言われたとき、"
+          "同じ差し戻しが2回あった・作業が止まったときに使う。議事録は Notion「議事録」に載り、やることは自動で起票され、決まったことが通知される。",
+          {"kind": {"type": "string", "enum": ["planning", "review", "allhands", "adhoc"], "description": "planning=企画会議 review=振り返り allhands=全体 adhoc=臨時"},
+           "topic": {"type": "string", "description": "議題(臨時会議は必須)"},
+           "departments": {"type": "array", "items": {"type": "string"}, "description": "参加部署(正式名。例: デザイン部)。省略時は会議の種類の既定"}}, ["kind"]),
     _tool("propose_rule", "過去の失敗を繰り返さないためのルール案を出す(社長が承認すると learned_rules.md に追加)。"
           "社長が「これをルールにして」と言ったときや、同じ指摘が繰り返されたときに使う。",
           {"rule": {"type": "string", "description": "1行のルール(〜する / 〜しない)"},
@@ -772,6 +777,14 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         actions.append({"type": "refresh"})
         return f"{r['id']} を{'確定' if r['status'] == 'confirmed' else '却下'}しました。"
 
+    if name == "hold_meeting":
+        import meetings
+        k = meetings.KINDS.get(args["kind"], meetings.KINDS["adhoc"])
+        job = start_job("秘書", meetings.instruction(args["kind"], args.get("topic") or "", args.get("departments") or None),
+                        f"{k['name']}{(':' + args['topic'][:30]) if args.get('topic') else ''}", f"meeting:{args['kind']}")
+        actions.append({"type": "job", "job": job})
+        return f"{k['name']}を始めました。終わると議事録を Notion に載せ、決まったことをお知らせします。"
+
     if name == "propose_rule":
         item = corrections.propose(args["rule"], args["reason"])
         if not item:
@@ -870,6 +883,7 @@ def context_text(data: dict) -> str:
         "API の残高を使うのは秘書(あなた)との会話だけ。部署の作業が「残高不足」で止まったのは、プランで動く設定にする前(秘書ハブの更新前)の作業",
         __import__("watch").summary_text(),
         __import__("knowledge").summary_text(),
+        "- 会議: 企画会議=毎週月曜10:30・振り返り会議=毎週金曜17:30・全体会議=毎月第1月曜11:30(hold_meeting で臨時も開ける)。議事録は Notion「議事録」",
         "- 定例の仕事(秘書ハブが自動で頼む): " + " / ".join(f"{r['when']} {r['title']}" for r in scheduler.summary()["routines"]) + "。結果は strategy/research/ に保存される",
         f"- 部署の作業の制限時間: {_job_timeout_min()}分(時間切れのときは作業の記録に「時間切れ」と書く)",
     ])

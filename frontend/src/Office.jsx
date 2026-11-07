@@ -116,6 +116,15 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
       if (!r.last || (a.started || "") > (r.last.started || "")) r.last = { desc: a.desc, started: a.started, job: j.title };
     }
     S.rec = rec;
+    // 会議中: 参加者(作業の記録に出てきた社員と司会の秘書)はラウンジの机のまわりに集まる
+    const mj = (data.jobs || []).find((j) => j.status === "running" && (j.task_key || "").startsWith("meeting:"));
+    S.meet = null; S.meetSay = {};
+    if (mj) {
+      const names = [...new Set(["secretary-chief", ...(mj.activity || []).map((a) => a.agent)])].filter((n) => desks[n]).slice(0, 10);
+      const cx = 25.6, cy = 19.2;
+      S.meet = Object.fromEntries(names.map((n, i) => { const ang = (i / names.length) * Math.PI * 2; return [n, [cx + Math.cos(ang) * 1.35, cy + Math.sin(ang) * 0.95]]; }));
+      for (const a of mj.activity || []) if (a.status === "running" && S.meet[a.agent]) S.meetSay[a.agent] = (a.desc || "").slice(0, 16) + "…";
+    }
     for (const [name, dk] of Object.entries(desks)) {
       const st = data.members[name], working = st?.state === "working", h = hash(name);
       let a = S.avatars[name];
@@ -123,7 +132,7 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
         a = S.avatars[name] = { name, dept: dk.dept, boss: dk.boss, gx: dk.gx + 0.35, gy: dk.gy - 0.6, path: [], act: "desk", wait: 3 + (h % 20),
           hair: HAIR[h % HAIR.length], skin: SKIN[(h >> 3) % SKIN.length], style: STYLES[(h >> 5) % STYLES.length], phase: (h % 100) / 10, say: null };
       }
-      if (working && S.prev[name] !== "working") goDesk(a);
+      if (working && S.prev[name] !== "working" && !S.meet?.[name]) goDesk(a);
       if (!working && S.prev[name] === "working") {
         const to = desks[dk.boss ? deptBoss["秘書室"] : deptBoss[dk.dept]];
         if (to && to !== dk) S.flyers.push({ from: [dk.gx + 0.5, dk.gy], to: [to.gx + 0.5, to.gy], t: 0 });
@@ -190,6 +199,13 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
           continue;
         }
         a.walking = false;
+        if (S.meet?.[a.name]) {
+          if (a.act !== "meeting") { endChat(a); a.act = "meeting"; a.path = route(a, S.meet[a.name]); }
+          a.say = S.meetSay?.[a.name] || null;
+          if (!a.path.length) { const [mx, my] = S.meet[a.name]; a.face = mx - my > 25.6 - 19.2 ? -1 : 1; }
+          continue;
+        }
+        if (a.act === "meeting") { a.say = null; goDesk(a); continue; }
         if (a.working) { if (a.act !== "desk") goDesk(a); continue; }
         if (a.act === "chat") continue;
         a.wait -= dt;
@@ -547,7 +563,7 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
 
   const st = hover && data.members[hover.name], m = hover && S.info?.[hover.name], av = hover && S.avatars[hover.name];
   const doing = !hover ? "" : st?.state === "working" ? `作業中: ${st.desc}(${st.job})`
-    : { coffee: "コーヒー休憩中", sofa: "ラウンジで休憩中", chat: "立ち話中", visit: "同僚の机に寄り道中" }[av?.act] || "待機中";
+    : { coffee: "コーヒー休憩中", sofa: "ラウンジで休憩中", chat: "立ち話中", visit: "同僚の机に寄り道中", meeting: "会議中" }[av?.act] || "待機中";
   return (
     <div className="office" ref={wrap}>
       <canvas ref={cvs} onMouseMove={onMove} onMouseDown={onDown} onMouseUp={onUp}
@@ -575,7 +591,7 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
       </div>
       {card && !cinema && (() => {
         const m2 = S.info?.[card] || {}, st2 = data.members[card], a2 = S.avatars[card];
-        const now2 = st2?.state === "working" ? st2.desc : { coffee: "コーヒー休憩中", sofa: "ラウンジで休憩中", chat: "立ち話中", visit: "同僚の机に寄り道中" }[a2?.act] || "待機中";
+        const now2 = st2?.state === "working" ? st2.desc : { coffee: "コーヒー休憩中", sofa: "ラウンジで休憩中", chat: "立ち話中", visit: "同僚の机に寄り道中", meeting: "会議中" }[a2?.act] || "待機中";
         return (
           <div className="office-tag">
             <strong>{m2.title}</strong><span className="muted small">{a2?.dept}</span>
