@@ -12,7 +12,8 @@ const RECOGNITION_ERRORS = {
 /* ---- 声の感情 ----
  * 秘書の返事の文頭に [tone:joy] などが付いていれば、その文の声(速さ・高さ・抑揚・音量)を変える。
  * 付いていなくても、「!」は少し明るく強く、「…」はやさしく話す。画面には tone タグを出さない(stripTone) */
-export const TONE_RE = /\[tone:\s*(\w+)\s*\]/g;
+// 半角・全角のかっこ、コロン、名前の書き間違い(日本語など)も取り除く
+export const TONE_RE = /[\[［]\s*tone\s*[:：]\s*([^\]］\s]*)\s*[\]］]/gi;
 export const stripTone = (t) => (t || "").replace(TONE_RE, "");
 const BROWSER_TONES = {
   "": { rate: 1.05, pitch: 1.2, volume: 1 }, joy: { rate: 1.1, pitch: 1.35, volume: 1 }, excited: { rate: 1.15, pitch: 1.45, volume: 1 },
@@ -24,6 +25,9 @@ function parseTone(raw) {
   const text = (raw || "").replace(TONE_RE, (_, t) => { if (!tone) tone = t.toLowerCase(); return ""; }).trim();
   if (!tone && /[!！]$/.test(text)) tone = "joy";
   if (!tone && /(…|\.\.\.)$/.test(text)) tone = "soft";
+  const ALIAS = { 嬉しい: "joy", 喜び: "joy", 明るく: "joy", 驚き: "excited", 興奮: "excited", 落ち着き: "calm", やさしく: "calm",
+                  真剣: "serious", 残念: "sad", 悲しい: "sad", 強調: "emph", emphasis: "emph", happy: "joy" };
+  tone = ALIAS[tone] || tone;
   return { text, tone: tone in BROWSER_TONES ? tone : "" };
 }
 
