@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { chatStream } from "./api.js";
 import { getHealth, getSummary, sendChat, decideTask, getBriefing, approveWeek, setScheduler, runCheckNow,
          readNotifications, decideRule } from "./api.js";
-import { useSpeechInput, useSpeechOutput } from "./speech.js";
+import { useSpeechInput, useSpeechOutput, stripTone } from "./speech.js";
 import Live2DStage, { VIEWS } from "./Live2DStage.jsx";
 import Workspace from "./Workspace.jsx";
 import ApprovalCard from "./ApprovalCard.jsx";
@@ -148,12 +148,13 @@ export default function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
   }, []);
 
-  const say = useCallback((text, m = "normal", speakIt = true) => {
+  const say = useCallback((raw, m = "normal", speakIt = true) => {
+    const text = stripTone(raw);
     setInstantLine(false);
     setLine(text);
     setMood(m);
     setLog((l) => [...l, { role: "ai", text }]);
-    if (speakIt && !load("hub-muted", false)) tts.speak(text);
+    if (speakIt && !load("hub-muted", false)) tts.speak(raw);
   }, [tts]);
 
   const { recording, supported, unsupportedReason, start: startRec, stop: stopRec } = useSpeechInput(
@@ -356,7 +357,7 @@ export default function App() {
     if (!muted) tts.streamStart();
     try {
       const res = await chatStream(text, history, (ev) => {
-        if (ev.t === "text") { got += ev.v; setStreamText(got); if (!muted) tts.streamPush(ev.v); }
+        if (ev.t === "text") { got += ev.v; setStreamText(stripTone(got)); if (!muted) tts.streamPush(ev.v); }
         if (ev.t === "actions") { handleActions(ev.v.slice(seen)); seen = ev.v.length; }
       });
       if (!muted) tts.streamEnd();

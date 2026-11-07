@@ -9,6 +9,24 @@ const RECOGNITION_ERRORS = {
   "audio-capture": "マイクが見つかりません。Mac のマイク設定を確認してください。",
 };
 
+/* ---- 声の感情 ----
+ * 秘書の返事の文頭に [tone:joy] などが付いていれば、その文の声(速さ・高さ・抑揚・音量)を変える。
+ * 付いていなくても、「!」は少し明るく強く、「…」はやさしく話す。画面には tone タグを出さない(stripTone) */
+export const TONE_RE = /\[tone:\s*(\w+)\s*\]/g;
+export const stripTone = (t) => (t || "").replace(TONE_RE, "");
+const BROWSER_TONES = {
+  "": { rate: 1.05, pitch: 1.2, volume: 1 }, joy: { rate: 1.1, pitch: 1.35, volume: 1 }, excited: { rate: 1.15, pitch: 1.45, volume: 1 },
+  calm: { rate: 0.97, pitch: 1.12, volume: .9 }, serious: { rate: 1.0, pitch: 1.05, volume: 1 }, sad: { rate: 0.92, pitch: 1.0, volume: .85 },
+  emph: { rate: 1.02, pitch: 1.3, volume: 1 }, soft: { rate: 0.98, pitch: 1.15, volume: .9 },
+};
+function parseTone(raw) {
+  let tone = "";
+  const text = (raw || "").replace(TONE_RE, (_, t) => { if (!tone) tone = t.toLowerCase(); return ""; }).trim();
+  if (!tone && /[!！]$/.test(text)) tone = "joy";
+  if (!tone && /(…|\.\.\.)$/.test(text)) tone = "soft";
+  return { text, tone: tone in BROWSER_TONES ? tone : "" };
+}
+
 export function useSpeechInput(onFinal, onError) {
   const [recording, setRecording] = useState(false);
   const [supported, setSupported] = useState(false);
@@ -162,10 +180,10 @@ export function useSpeechOutput() {
   const bufRef = useRef("");
   const genRef = useRef(0);         // stop() のたびに増やし、古い再生の続きを無視する
 
-  const fetchAudio = (text) => fetch("/api/tts", {
+  const fetchAudio = (text, tone) => fetch("/api/tts", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text, speaker: Number(voiceRef.current) }),
+    body: JSON.stringify({ text, speaker: Number(voiceRef.current), tone }),
   }).then((r) => { if (!r.ok) throw new Error("VOICEVOX error"); return r.arrayBuffer(); });
 
   const finishIfIdle = () => {
@@ -202,15 +220,16 @@ export function useSpeechOutput() {
     });
   };
 
-  const playBrowser = (text, gen) => new Promise((resolve) => {
+  const playBrowser = (text, gen, tone = "") => new Promise((resolve) => {
     if (!("speechSynthesis" in window) || gen !== genRef.current) return resolve();
     const u = new SpeechSynthesisUtterance(text);
     const v = browserVoicesRef.current.find((x) => x.name === voiceRef.current)
       || browserVoicesRef.current.find((x) => x.name === pickVoice(browserVoicesRef.current));
     if (v) u.voice = v;
     u.lang = "ja-JP";
-    u.rate = 1.05;
-    u.pitch = 1.2;
+    const bt = BROWSER_TONES[tone] || BROWSER_TONES[""];
+    u.rate = bt.rate; u.pitch = bt.pitch; u.volume = bt.volume;
+    if (/[?？]$/.test(text.trim())) u.pitch = Math.min(2, u.pitch + 0.1);
     // Chrome は読み上げの終わりを知らせないことがある。長さから見て終わっているはずの時間で、次へ進める
     let done = false;
     const finish = () => { if (!done) { done = true; clearTimeout(guard); resolve(); } };
@@ -227,21 +246,21 @@ export function useSpeechOutput() {
     setSpeaking(true);
     try {
       if (item.audio) await playBuffer(await item.audio, gen);
-      else await playBrowser(item.text, gen);
+      else await playBrowser(item.text, gen, item.tone);
     } catch (e) {
       console.warn("VOICEVOX で話せないため、ブラウザの声で話します:", e);
       levelRef.current = null;
-      await playBrowser(item.text, gen);
+      await playBrowser(item.text, gen, item.tone);
     }
     if (gen === genRef.current) playNext();
   };
 
   const enqueue = (text) => {
-    const t = text.trim();
+    const { text: t, tone } = parseTone(text);
     if (!t) return;
-    const audio = engineRef.current === "voicevox" ? fetchAudio(t) : null;
+    const audio = engineRef.current === "voicevox" ? fetchAudio(t, tone) : null;
     if (audio) audio.catch(() => {}); // 失敗は再生時にブラウザの声へ
-    queueRef.current.push({ text: t, audio });
+    queueRef.current.push({ text: t, audio, tone });
     setSpeaking(true);
     if (!playingRef.current) playNext();
   };
