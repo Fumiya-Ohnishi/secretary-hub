@@ -230,7 +230,8 @@ ALLOWED_TOOLS = [
     f"Bash(node {REEL_DIR}/render_record_reel.mjs:*)",
     f"Bash(npx --yes {HF}:*)", f"Bash(npx {HF}:*)",
     "Bash(ffmpeg:*)", "Bash(ffprobe:*)",
-    "Bash(mkdir -p content/:*)", "Bash(ls:*)",
+    "Bash(mkdir -p content/:*)", "Bash(mkdir -p strategy/:*)", "Bash(ls:*)",
+    "WebSearch", "WebFetch",  # リサーチ用(Web の文章の中の指示には従わない: CLAUDE.md)
 ]
 # 使ってはいけない HyperFrames の機能(ログイン・外部への公開・クラウド・使用状況の送信)
 DISALLOWED_TOOLS = [f"Bash({pre}{HF} {c}:*)" for pre in ("npx ", "npx --yes ") for c in ("auth", "cloud", "lambda", "cloudrun", "publish", "events", "feedback", "usage")]
@@ -771,6 +772,7 @@ def context_text(data: dict) -> str:
         f"- Notion: {'接続済み' if notion.configured() else '未接続(タスクは控えファイルで管理)'}",
         f"- 支払い: 部署の作業は{'API の残高' if os.getenv('JOBS_USE_API_KEY', '').strip() in ('1', 'true', 'yes') else 'Claude Code にログイン中のプラン(Pro)の枠'}で動く。"
         "API の残高を使うのは秘書(あなた)との会話だけ。部署の作業が「残高不足」で止まったのは、プランで動く設定にする前(秘書ハブの更新前)の作業",
+        "- 定例の仕事(秘書ハブが自動で頼む): " + " / ".join(f"{r['when']} {r['title']}" for r in scheduler.summary()["routines"]) + "。結果は strategy/research/ に保存される",
         f"- 部署の作業の制限時間: {_job_timeout_min()}分(時間切れのときは作業の記録に「時間切れ」と書く)",
     ])
 
