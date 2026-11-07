@@ -252,6 +252,11 @@ def _job_env() -> dict:
         paths.insert(0, str(probe.parent)); env["HYPERFRAMES_FFPROBE_PATH"] = str(probe)
     env["PATH"] = ":".join(paths + [env.get("PATH", "")])
     env.update(HYPERFRAMES_NO_TELEMETRY="1", HYPERFRAMES_NO_UPDATE_CHECK="1", HUB_URL=os.getenv("HUB_URL", "http://127.0.0.1:8000"))
+    # 部署の作業は Claude Code にログインしているプラン(Pro / Max)の枠で動かす。
+    # API キーを渡すと Claude Code はそちらを優先し、API の残高から払われてしまうため外す(.env の JOBS_USE_API_KEY=1 で従来どおり)
+    if os.getenv("JOBS_USE_API_KEY", "").strip() not in ("1", "true", "yes"):
+        for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+            env.pop(k, None)
     md = content.media_dir()
     if md:
         env["MEDIA_DIR"] = str(md)
@@ -324,6 +329,23 @@ def _run_claude_streaming(job: dict, prompt: str):
     out = result_text if result_text is not None else "\n".join(plain) or err
     ok = proc.returncode == 0 and not is_error
     job.update(status="done" if ok else "error", output=(out or "")[-6000:] + ("" if ok or not err else f"\n{err[-1000:]}"))
+    if not ok:
+        job["output"] += _job_hint((out or "") + " " + err)
+
+
+def _job_hint(text: str) -> str:
+    """よくある止まり方に、社長が分かる言葉の説明を足す"""
+    t = text.lower()
+    if "credit balance" in t:
+        return ("\n\n【秘書より】API の残高が足りません。部署の作業はプラン(Pro / Max)で動く設定ですが、.env に JOBS_USE_API_KEY=1 があると API の残高を使います。"
+                "その行を消すか、console.anthropic.com の Billing で残高を足してください")
+    if "invalid api key" in t or "/login" in t or "not logged in" in t or "please run" in t and "login" in t:
+        return "\n\n【秘書より】Claude Code にログインしていません。Mac のターミナルで `claude` を開き、`/login` で Pro のアカウントにログインしてから、もう一度頼んでください"
+    if "usage limit" in t or "rate limit" in t or "limit reached" in t:
+        return "\n\n【秘書より】プラン(Pro)の利用枠に達しました。表示された時刻を過ぎると、また使えます。そのあと、もう一度頼んでください"
+    if "model" in t and ("not available" in t or "not found" in t or "access" in t):
+        return "\n\n【秘書より】プランで使えないモデルが指定されています。秘書に「部署の作業を Pro で使えるモデルにして」と伝えてください"
+    return ""
 
 
 def member_status() -> Dict[str, dict]:
