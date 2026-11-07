@@ -21,6 +21,10 @@ if command -v npm >/dev/null 2>&1; then
 else
   echo "⚠ npm が見つかりません。画面のビルドには Node.js が必要です(https://nodejs.org)"
 fi
+# リールの声入れに使う部品(初回だけ)
+if command -v npm >/dev/null 2>&1 && [ ! -d tools/reel/node_modules/playwright-core ]; then
+  (cd tools/reel && npm install --silent) || echo "⚠ リール書き出しの部品を入れられませんでした(声入れは後で自動で再試行します)"
+fi
 if [ ! -f frontend/public/live2d/core/live2dcubismcore.js ]; then
   echo "ℹ Live2D の Cubism Core が無いため、秘書は静止画で表示されます(README の「Live2D の秘書」を参照)"
 fi

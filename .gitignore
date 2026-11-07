@@ -7,3 +7,4 @@ frontend/dist/
 live2d_work/**/*.zip
 frontend/public/live2d/core/
 backend/data/
+tools/reel/node_modules/

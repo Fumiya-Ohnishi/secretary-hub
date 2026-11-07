@@ -50,7 +50,7 @@ try {
   }
   voices = vs;
 } catch (e) {
-  if (!spec.silent_ok) throw new Error(`声を作れませんでした(VOICEVOX と秘書ハブを確認): ${e.message}`);
+  if (!spec.silent_ok || process.env.REEL_REQUIRE_VOICE) throw new Error(`声を作れませんでした(VOICEVOX と秘書ハブを確認): ${e.message}`);
   console.warn("⚠ VOICEVOX が使えないため、声なしで書き出します(silent_ok)");
 }
 const rate = voices ? voices[0].rate : 24000;
