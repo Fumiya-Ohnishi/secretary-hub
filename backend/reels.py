@@ -51,8 +51,8 @@ def _ready() -> Optional[str]:
     """書き出しに必要なものがそろっているか。足りなければ理由を返す"""
     if not shutil.which("node"):
         return "Node.js が見つかりません(https://nodejs.org から入れると、リールに声が入ります)"
-    nm = RENDER.parent / "node_modules" / "playwright-core"
-    if not nm.exists():
+    nm = RENDER.parent / "node_modules"
+    if not (nm / "playwright-core").exists() or not (nm / "ffmpeg-static").exists():
         npm = shutil.which("npm")
         if not npm:
             return "npm が見つかりません"
@@ -100,6 +100,9 @@ def render_pending(hub_url: str, voicevox_ok: bool) -> List[str]:
         out = _out_for(spec)
         out.parent.mkdir(parents=True, exist_ok=True)
         env = dict(os.environ, HUB_URL=hub_url, AI_COMPANY_DIR=str(company.COMPANY_DIR), REEL_REQUIRE_VOICE="1")
+        ff = RENDER.parent / "node_modules" / "ffmpeg-static" / "ffmpeg"
+        if ff.exists() and not shutil.which("ffmpeg"):
+            env["FFMPEG"] = str(ff)
         r = subprocess.run(["node", str(RENDER), str(spec), str(out)], cwd=RENDER.parent, env=env,
                            capture_output=True, text=True, timeout=1800)
         if r.returncode != 0:

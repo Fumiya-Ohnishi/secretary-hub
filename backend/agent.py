@@ -9,7 +9,9 @@ import json
 import os
 import re
 import shutil
+import platform
 import subprocess
+import sys
 import threading
 from typing import Dict, List, Optional
 
@@ -144,9 +146,13 @@ def _job_prompt(job: dict) -> str:
     lines += ["", "## 守ること",
               "- CLAUDE.md(就業規則)と playbooks/learned_rules.md に従う。成果物は所定のフォルダに保存する(投稿セットは playbooks/post_format.md の形式)",
               "- 外部への投稿・申請・購入・ログインはしない。承認済み・差し戻しにはしない(承認は社長だけ)",
-              f"- カルーセル画像は `node tools/render/render_carousel.mjs <JSON> content/output/YYYY-WW/` で、"
-              f"リールは `node {HUB_ROOT}/tools/reel/render_reel.mjs <台本.json> content/output/YYYY-WW/NN_reel.mp4` で書き出す"
-              "(形式は brand/guide.md・playbooks/reel_format.md。リールは秘書ハブと VOICEVOX の起動が必要)",
+              "- 書き出し: カルーセルは `node content/drafts/YYYY-WW/render.mjs <html> content/output/YYYY-WW <接頭辞>`(実録の型)か "
+              "`node tools/render/render_carousel.mjs <JSON> content/output/YYYY-WW/`。"
+              f"リールは `node {REEL_DIR}/render_record_reel.mjs <台本.json> content/output/YYYY-WW/<名前>.mp4`(実録の型。声は秘書ハブが VOICEVOX で入れる)。"
+              f"動きを作り込むときは HyperFrames(`npx --yes {HF} <command>`。.claude/skills/hyperframes の当社ルールを守る。auth・cloud・publish・events は使えない)。"
+              "ffmpeg / ffprobe はそのまま使える",
+              "- 完成した画像・動画は git に入れない。既存の動画・画像は環境変数 MEDIA_DIR の Google ドライブ(週ごとのフォルダ)にある。"
+              "比べるときはそこから読み、新しく書き出したものは content/output/YYYY-WW/ に置く(秘書ハブがドライブへ写す)",
               "- 上司・品質管理部のチェックは、作った担当とは別のサブエージェントにさせる(自分で作ったものを自分で合格にしない)",
               "- 最後に、誰が何をして、どのファイルに保存したか、チェックの結果を日本語で3行以内でまとめる"]
     return "\n".join(lines)
@@ -192,12 +198,49 @@ def _run_job(job_id: str):
 
 SUBAGENT_TOOLS = ("Task", "Agent")  # Claude Code がサブエージェントを呼ぶ道具の名前(版によって違う)
 HUB_ROOT = Path(__file__).resolve().parent.parent
-# 部署が使ってよいコマンド(画像・リールの書き出しだけ。それ以外のコマンドは許可しない)
+# 部署が使ってよいコマンド(画像・リールの書き出しと、その確認だけ。それ以外のコマンドは許可しない)
+REEL_DIR = HUB_ROOT / "tools" / "reel"
+HF = "hyperframes@0.9.19"  # ai-company/.claude/skills/hyperframes と同じ版に固定
 ALLOWED_TOOLS = [
     "Bash(node tools/render/render_carousel.mjs:*)",
-    f"Bash(node {HUB_ROOT}/tools/reel/render_reel.mjs:*)",
-    "Bash(mkdir -p content/output/:*)",
+    "Bash(node content/drafts/*/render.mjs:*)",
+    f"Bash(node {REEL_DIR}/render_reel.mjs:*)",
+    f"Bash(node {REEL_DIR}/render_record_reel.mjs:*)",
+    f"Bash(npx --yes {HF}:*)", f"Bash(npx {HF}:*)",
+    "Bash(ffmpeg:*)", "Bash(ffprobe:*)",
+    "Bash(mkdir -p content/:*)", "Bash(ls:*)",
 ]
+# 使ってはいけない HyperFrames の機能(ログイン・外部への公開・クラウド・使用状況の送信)
+DISALLOWED_TOOLS = [f"Bash({pre}{HF} {c}:*)" for pre in ("npx ", "npx --yes ") for c in ("auth", "cloud", "lambda", "cloudrun", "publish", "events", "feedback", "usage")]
+
+
+def _job_env() -> dict:
+    """部署の作業に渡す環境: ffmpeg の場所、使用状況を送らない設定、画像・動画の置き場所"""
+    env = dict(os.environ)
+    paths = ["/opt/homebrew/bin", "/usr/local/bin"]  # ダブルクリック起動だと Homebrew の場所が PATH に無いことがある
+    ff = REEL_DIR / "node_modules" / "ffmpeg-static" / "ffmpeg"
+    if ff.exists():
+        paths.insert(0, str(ff.parent))
+        env["FFMPEG"] = env["HYPERFRAMES_FFMPEG_PATH"] = str(ff)
+    arch = {"x86_64": "x64", "amd64": "x64", "aarch64": "arm64"}.get(platform.machine().lower(), platform.machine().lower())
+    probe = REEL_DIR / "node_modules" / "ffprobe-static" / "bin" / sys.platform / arch / "ffprobe"
+    if probe.exists():
+        paths.insert(0, str(probe.parent)); env["HYPERFRAMES_FFPROBE_PATH"] = str(probe)
+    env["PATH"] = ":".join(paths + [env.get("PATH", "")])
+    env.update(HYPERFRAMES_NO_TELEMETRY="1", HYPERFRAMES_NO_UPDATE_CHECK="1", HUB_URL=os.getenv("HUB_URL", "http://127.0.0.1:8000"))
+    md = content.media_dir()
+    if md:
+        env["MEDIA_DIR"] = str(md)
+    return env
+
+
+def _extra_dirs() -> List[str]:
+    """部署が読み書きしてよい、会社のフォルダ以外の場所(リールの道具、Google ドライブの画像・動画)"""
+    out = ["--add-dir", str(REEL_DIR)]
+    md = content.media_dir()
+    if md and md.exists():
+        out += ["--add-dir", str(md)]
+    return out
 
 
 def _run_claude_streaming(job: dict, prompt: str):
@@ -205,9 +248,10 @@ def _run_claude_streaming(job: dict, prompt: str):
     job.setdefault("activity", [])
     job.setdefault("log", [])
     proc = subprocess.Popen(["claude", "-p", prompt, "--permission-mode", "acceptEdits",
-                             "--output-format", "stream-json", "--verbose", "--allowedTools", *ALLOWED_TOOLS],
+                             "--output-format", "stream-json", "--verbose", *_extra_dirs(),
+                             "--allowedTools", *ALLOWED_TOOLS, "--disallowedTools", *DISALLOWED_TOOLS],
                             cwd=str(company.COMPANY_DIR), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True, encoding="utf-8", errors="replace")
+                            text=True, encoding="utf-8", errors="replace", env=_job_env())
     timer = threading.Timer(1800, proc.kill)
     timer.start()
     result_text, is_error, plain = None, False, []
@@ -259,7 +303,8 @@ def _run_claude_streaming(job: dict, prompt: str):
 
 
 def member_status() -> Dict[str, dict]:
-    """社員(サブエージェント)ごとの今の状況: {name: {state, desc, job, at}}"""
+    """社員(サブエージェント)ごとの今の状況: {name: {state, desc, job, at}}
+    作業が始まって、まだ担当を呼んでいない間(段取り中)は、その部署の上司を作業中にする"""
     status: Dict[str, dict] = {}
     for j in sorted(jobs.values(), key=lambda j: j["started"]):
         for a in j.get("activity", []):
@@ -270,6 +315,14 @@ def member_status() -> Dict[str, dict]:
             elif not cur or cur["state"] != "working":
                 status[a["agent"]] = {"state": "idle", "desc": a["desc"], "job": j["title"], "at": at,
                                       "result": a["status"]}
+    for j in jobs.values():
+        if j["status"] != "running" or any(a["status"] == "running" for a in j.get("activity", [])):
+            continue
+        dept = j.get("department_full") or DEPT_FULL.get(j["department"], j["department"])
+        boss = next((m["name"] for m in _roster(dept) if m["boss"]), None)
+        if boss and status.get(boss, {}).get("state") != "working":
+            status[boss] = {"state": "working", "desc": "段取り中(担当を決めています)" if not j.get("activity") else "まとめ・確認中",
+                            "job": j["title"], "at": j["started"]}
     return status
 
 

@@ -574,6 +574,18 @@ async def diagnostics():
     agents_dir = COMPANY_DIR / ".claude" / "agents"
     n = len(list(agents_dir.glob("*.md"))) if agents_dir.exists() else 0
     add("agents", "部署の人材定義", n > 0, f"{n}名", "ai-company で git pull(.claude/agents/ が必要)")
+    import agent as _ag
+    env = _ag._job_env()
+    ffm = shutil.which("ffmpeg", path=env["PATH"])
+    add("ffmpeg", "ffmpeg(動画の書き出し)", bool(ffm), ffm or "見つかりません",
+        "秘書ハブを起動し直すと自動で入ります(tools/reel の部品)。入らないときは `brew install ffmpeg`")
+    try:
+        nv = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=5, env=env).stdout.strip()
+    except Exception:
+        nv = ""
+    major = int(nv.lstrip("v").split(".")[0]) if nv[1:2].isdigit() else 0
+    add("node", "Node.js(リール・HyperFrames)", major >= 22, nv or "見つかりません",
+        "HyperFrames には Node.js 22 以上が必要です(https://nodejs.org の LTS を入れる)")
     waiting_reels = reels.pending()
     add("reels", "リールの声入れ", not waiting_reels and not reels.last_error,
         "すべて声入り" if not waiting_reels else f"声入り待ち {len(waiting_reels)}本" + (f"(止まっている理由: {reels.last_error})" if reels.last_error else ""),
