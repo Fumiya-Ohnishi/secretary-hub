@@ -91,7 +91,7 @@ def usage_summary() -> dict:
 # 部署(Notion の担当名 → 組織図の部署名)。旧部署名は新しい部署に読み替える
 DEPT_FULL = {"戦略": "経営戦略部", "収益化": "収益化部", "企画": "企画編集部", "ライティング": "ライティング部",
              "デザイン": "デザイン部", "画像": "画像制作部", "映像": "映像制作部", "SNS運用": "SNS運用部",
-             "品質管理": "品質管理部", "分析": "データ分析部", "制作": "ライティング部", "メディア": "SNS運用部"}
+             "品質管理": "品質管理部", "分析": "データ分析部", "制作": "ライティング部", "メディア": "SNS運用部", "秘書": "秘書室"}
 # 作るAIとチェックするAI: 投稿の中身を作る部署は、部内の上司のあと品質管理部(独立)が見てから承認待ちにする
 CHECKED_DEPARTMENTS = ("企画編集部", "ライティング部", "デザイン部", "画像制作部", "映像制作部", "SNS運用部", "収益化部")
 
@@ -128,6 +128,14 @@ def _env_facts() -> List[str]:
             f"- 画像・動画の置き場所(Google ドライブ): {env.get('MEDIA_DIR', '見つからない')}", ""]
 
 
+def _knowledge_brief(job: dict, dept: str) -> List[str]:
+    try:
+        import knowledge
+        return knowledge.brief_for(job["instruction"], dept)
+    except Exception as e:
+        return [f"## 資料室\n(読み込めませんでした: {e}。knowledge/README.md を自分で読んで確認する)", ""]
+
+
 def _job_prompt(job: dict) -> str:
     dept = DEPT_FULL.get(job["department"], job["department"])
     members = _roster(dept)
@@ -135,7 +143,8 @@ def _job_prompt(job: dict) -> str:
     staff = [m for m in members if not m["boss"]]
     roster = "\n".join(f"- {m['name']}({m['title']}{'・上司' if m['boss'] else ''}): {m['description']}" for m in members)
     lines = [f"あなたは AI会社の秘書室として、{dept}の作業を進めます。部署の社員はサブエージェントとして定義されています。",
-             f"作業: {job['instruction']}", "", *_env_facts(), f"## {dept}の社員", roster or "(定義なし。あなた自身が部署として作業する)", "",
+             f"作業: {job['instruction']}", "", *_env_facts(), *_knowledge_brief(job, dept),
+             f"## {dept}の社員", roster or "(定義なし。あなた自身が部署として作業する)", "",
              "## 進め方"]
     if staff and job["department"] in OPINION_DEPARTMENTS and len(staff) >= 2:
         lines.append("1. 案出しの段階では、性格・視点の違う担当2〜3名に、互いの案を見せずに別々に案を出させる(各社員の定義の「性格・視点」を参照)。"
@@ -515,6 +524,19 @@ TOOLS = [
     _tool("start_posting", "投稿アシスタントを開く。承認済みの投稿を1件ずつ、キャプションのコピー・画像の保存・注意点・"
           "「投稿しました」の順に案内する。社長が「今日の投稿を始めて」「投稿したい」と言ったときに使う。", {}, []),
     _tool("run_check_now", "定時チェック(今日やること・遅れ・自動依頼・社長へのお願い)を今すぐ行う。", {}, []),
+    _tool("remember_preference", "社長の好み・方針(見た目・言葉づかい・やる/やらない・優先順位など)を資料室に記録する。会話の中で社長がそう言ったら自動で使ってよい。"
+          "必ず先に、アカウントの軸(コンセプト)と確定済みの好み(会社データの資料室の行)と照らし合わせる。"
+          "食い違う・曖昧・言い直しが必要なら needs_check=true(確認待ちに入る。社長に「軸の○○と食い違うので確認させてください」と聞く)。"
+          "はっきりしていて軸と一致するなら false(確定に入る)。一時的な指示(今回だけ)は記録しない。",
+          {"text": {"type": "string", "description": "好みを1文で(何を・どうする/しない)"},
+           "needs_check": {"type": "boolean", "description": "軸や確定済みの好みと食い違う・曖昧・言い直しが必要なら true"},
+           "reason": {"type": "string", "description": "needs_check のとき、どこと食い違うか・何が曖昧か"}}, ["text", "needs_check"]),
+    _tool("decide_preference", "確認待ちの社長の好みを、社長の返事に従って確定(言い直し可)または却下する。",
+          {"id": {"type": "string", "description": "P-xxx"}, "approve": {"type": "boolean"},
+           "revised": {"type": "string", "description": "社長が言い直した文(あれば)"}}, ["id", "approve"]),
+    _tool("search_knowledge", "資料室(過去の失敗と再発防止・うまくいった型・審査・リサーチ・数字)から、関係する知見を探す。"
+          "社長に「前にどうだった?」「同じ失敗してない?」と聞かれたとき、仕事を頼む前に確認するときに使う。",
+          {"query": {"type": "string"}}, ["query"]),
     _tool("propose_rule", "過去の失敗を繰り返さないためのルール案を出す(社長が承認すると learned_rules.md に追加)。"
           "社長が「これをルールにして」と言ったときや、同じ指摘が繰り返されたときに使う。",
           {"rule": {"type": "string", "description": "1行のルール(〜する / 〜しない)"},
@@ -730,6 +752,26 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         actions.append({"type": "refresh"})
         return f"定時チェックをしました: {r['notification']['text']}"
 
+    if name in ("remember_preference", "decide_preference", "search_knowledge"):
+        import knowledge
+        if name == "search_knowledge":
+            hits = knowledge.search(args["query"], limit=8)
+            return json.dumps([{k: h[k] for k in ("shelf_name", "source", "text")} for h in hits], ensure_ascii=False) if hits else "資料室に関係する知見は見つかりませんでした。"
+        if name == "remember_preference":
+            r = knowledge.add_pref(args["text"], bool(args.get("needs_check")), args.get("reason") or "")
+            actions.append({"type": "refresh"})
+            if r.get("duplicate"):
+                return f"同じ好みがすでにあります({r['id']}・{'確定' if r['status'] == 'confirmed' else '確認待ち'})。"
+            if r["status"] == "pending":
+                return f"確認待ち({r['id']})に入れました。社長に確認してから確定します。理由: {r['reason']}"
+            return f"社長の好みとして確定しました({r['id']})。部署の作業に反映されます。"
+        try:
+            r = knowledge.decide_pref(args["id"], bool(args["approve"]), args.get("revised") or "")
+        except KeyError as e:
+            return str(e)
+        actions.append({"type": "refresh"})
+        return f"{r['id']} を{'確定' if r['status'] == 'confirmed' else '却下'}しました。"
+
     if name == "propose_rule":
         item = corrections.propose(args["rule"], args["reason"])
         if not item:
@@ -770,6 +812,8 @@ def persona() -> str:
 - 時間のかかる作業(企画・リサーチ・原稿・分析)は delegate_work で部署に依頼する。自分で長文を書かない。
 - 期限のある仕事(例: 来週金曜に投稿)を頼まれたら、create_plan で期限から逆算した工程を起票する。部署の工程は秘書が自動で進める。
   遅れそうなものは、聞かれなくても「今日から動かないと間に合いません」と先回りして伝える。
+- 社長が好み・方針を口にしたら remember_preference で資料室に残す。アカウントの軸(コンセプト)や確定済みの好みと食い違う・曖昧なときは
+  確認待ちにして、その場で「○○と食い違うので確認させてください」と聞く(軸をぶらさない)。確認待ちがあれば、話の区切りで1件ずつ確認する。
 - 社長が差し戻した内容は修正ログに残る。「これをルールにして」と言われたら propose_rule で案を出す(確定は社長)。
 - 承認・差し戻しは社長だけが行う(就業規則)。社長に決めてもらうときは ask_approval でカードを出す。
 - 外部への投稿・申請・購入・ログインは社長が行う。パスワードや認証コードは扱わない。
@@ -825,6 +869,7 @@ def context_text(data: dict) -> str:
         f"- 支払い: 部署の作業は{'API の残高' if os.getenv('JOBS_USE_API_KEY', '').strip() in ('1', 'true', 'yes') else 'Claude Code にログイン中のプラン(Pro)の枠'}で動く。"
         "API の残高を使うのは秘書(あなた)との会話だけ。部署の作業が「残高不足」で止まったのは、プランで動く設定にする前(秘書ハブの更新前)の作業",
         __import__("watch").summary_text(),
+        __import__("knowledge").summary_text(),
         "- 定例の仕事(秘書ハブが自動で頼む): " + " / ".join(f"{r['when']} {r['title']}" for r in scheduler.summary()["routines"]) + "。結果は strategy/research/ に保存される",
         f"- 部署の作業の制限時間: {_job_timeout_min()}分(時間切れのときは作業の記録に「時間切れ」と書く)",
     ])

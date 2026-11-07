@@ -168,6 +168,11 @@ async def summary():
     data["content_weeks"] = content.list_weeks()[:6]
     data["scheduler"] = scheduler.summary()
     data["rule_proposals"] = corrections.proposals()
+    try:
+        import knowledge
+        data["pref_pending"] = knowledge.prefs()["pending"]
+    except Exception:
+        data["pref_pending"] = []
     return data
 
 
@@ -496,6 +501,45 @@ async def new_job(body: JobIn):
     actions: list = []
     await agent.run_tool("delegate_work", body.dict(), actions)
     return next((a["job"] for a in actions if a["type"] == "job"), {})
+
+
+# ---------- 資料室 ----------
+class PrefIn(BaseModel):
+    text: str
+    needs_check: bool = False
+    reason: str = ""
+
+
+class PrefDecision(BaseModel):
+    approve: bool
+    revised: str = ""
+
+
+@app.get("/api/knowledge")
+def knowledge_overview():
+    import knowledge
+    return knowledge.overview()
+
+
+@app.get("/api/knowledge/search")
+def knowledge_search(q: str = ""):
+    import knowledge
+    return {"hits": knowledge.search(q, limit=20)}
+
+
+@app.post("/api/knowledge/prefs")
+def knowledge_add_pref(body: PrefIn):
+    import knowledge
+    return knowledge.add_pref(body.text, body.needs_check, body.reason, "社長・画面")
+
+
+@app.post("/api/knowledge/prefs/{pid}")
+def knowledge_decide_pref(pid: str, body: PrefDecision):
+    import knowledge
+    try:
+        return knowledge.decide_pref(pid, body.approve, body.revised)
+    except KeyError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
 
 
 # ---------- 声(VOICEVOX) ----------

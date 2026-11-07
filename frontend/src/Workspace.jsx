@@ -5,6 +5,7 @@ import Accounts from "./Accounts.jsx";
 import { Calendar, OrgChart, Activity } from "./Extras.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 import Today from "./Today.jsx";
+import Library from "./Library.jsx";
 import { stripTone } from "./speech.js";
 
 export const STATUSES = ["未着手", "進行中", "承認待ち", "承認済み", "完了", "差し戻し"];
@@ -459,7 +460,7 @@ function Chat({ log, logRef }) {
 }
 
 export const TABS = [
-  ["home", "今日"], ["content", "アカウント"], ["calendar", "予定"], ["tasks", "タスク"], ["docs", "資料"], ["jobs", "部署の作業"],
+  ["home", "今日"], ["content", "アカウント"], ["calendar", "予定"], ["tasks", "タスク"], ["docs", "資料"], ["library", "資料室"], ["jobs", "部署の作業"],
   ["org", "組織図"], ["chat", "会話"],
 ];
 
@@ -481,6 +482,7 @@ export default function Workspace(props) {
             {k === "tasks" && approvals > 0 && <span className="count warn">{approvals}</span>}
             {k === "content" && contentWaiting > 0 && <span className="count warn">{contentWaiting}</span>}
             {k === "jobs" && running > 0 && <span className="count">{running}</span>}
+            {k === "library" && summary?.pref_pending?.length > 0 && <span className="count warn">{summary.pref_pending.length}</span>}
           </button>
         ))}
       </nav>
@@ -501,12 +503,13 @@ export default function Workspace(props) {
         )}
         {summary && tab === "calendar" && <Calendar summary={summary} refresh={refresh} notify={notify} onOpenTask={openTask}
                                                     onOpenWeek={(w) => { setWeek(w); setTab("content"); }} />}
-        {tab === "org" && <OrgChart onSay={onSay} notify={notify} />}
+        {tab === "org" && <OrgChart onSay={onSay} notify={notify} onOpenLibrary={() => setTab("library")} />}
         {tab === "content" && <Accounts week={week} setWeek={setWeek} onChanged={refresh} notify={notify} onSay={onSay} />}
         {summary && tab === "tasks" && <Tasks summary={summary} filter={taskFilter} setFilter={setTaskFilter} onApprove={onApprove}
                                               onChanged={refresh} onOpenDoc={(id) => { setDocId(id); setTab("docs"); }}
                                               focusKey={focusTask} notify={notify} />}
         {tab === "docs" && <Docs docId={docId} setDocId={setDocId} notify={notify} />}
+        {tab === "library" && <Library notify={notify} />}
         {tab === "jobs" && <Jobs jobs={jobs} claudeCli={health?.claude_cli} onChanged={refresh} notify={notify} />}
         {tab === "chat" && <Chat log={log} logRef={logRef} />}
       </div>

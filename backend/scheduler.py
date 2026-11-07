@@ -45,6 +45,11 @@ ROUTINES = [
                     "調べる中で新しく見つけた良いアカウントは found_by=秘書 で同じ形で足す(最大3件)。"
                     "(4) 当社への示唆: 来週試す企画案3つと、避けること1つ。監視アカウントとの差と改善点を1つ以上入れる。"
                     "結果は strategy/research/YYYY-MM-DD_週次リサーチ.md に保存し、企画編集部が月曜の企画で読めるようにする。" + RESEARCH_RULES},
+    {"id": "knowledge_review", "weekday": 4, "time": "18:30", "department": "秘書", "title": "資料室の整理(週次)",
+     "instruction": "資料室長(knowledge-manager)が knowledge/README.md の手順で資料室を整理する。今週増えた知見(knowledge/lessons.md・data/corrections.md・"
+                    "content/drafts/*/_check.md・strategy/research/)を読み、重複をまとめ、同じ失敗が2回以上あるものはルール案にする(確定は社長)。"
+                    "knowledge/preferences.md の確認待ちは、アカウントの軸(strategy/concept.md)とどこが食い違うかを1行ずつ添える(確定にはしない)。"
+                    "伸びた投稿の数字があれば knowledge/winning_patterns.md に出典つきで足す。最後に、来週の作業で特に読むべき知見3つをまとめる。"},
     {"id": "news_check", "weekday": 3, "time": "08:30", "department": "戦略", "title": "AIニュースの中間チェック",
      "instruction": "トレンドウォッチャーが、月曜のリサーチ以降の生成AIの新機能・ニュースを確認する(短く、最大5件)。"
                     "会社員の仕事に大きく関わるもの(すぐ投稿にする価値があるもの)があれば「速報候補」と書く。"

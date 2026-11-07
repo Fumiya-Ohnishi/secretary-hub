@@ -210,7 +210,8 @@ export default function Today({ summary, jobs, onApprove, onSay, onTab, onOpenTa
   const rules = summary.rule_proposals || [];
   const contentWaiting = (summary.content_weeks || []).filter((w) => w.counts["承認待ち"]);
   const approvals = summary.tasks.filter((t) => t.status === "承認待ち");
-  const decisions = rules.length + contentWaiting.length + approvals.length;
+  const prefPending = summary.pref_pending || [];
+  const decisions = rules.length + contentWaiting.length + approvals.length + prefPending.length;
   const running = jobs.filter((j) => j.status === "running");
   const rev = summary.revenue || {};
   const pct = Math.min(100, Math.max(0, rev.progress || 0));
@@ -254,6 +255,7 @@ export default function Today({ summary, jobs, onApprove, onSay, onTab, onOpenTa
           <section className="card">
             <div className="card-head"><h3>② 社長の判断待ち</h3><span className="muted small">{decisions}件</span></div>
             <div className="t-legend"><span className="tlg stop">止まっている</span><span className="tlg wait">待っている</span><span className="tlg run">進んでいる</span><span className="tlg ok">終わった</span></div>
+            {prefPending.map((p) => <div key={p.id} className="t-row" onClick={() => onTab("library")}><span className="chip2 c-wait">好みの確認</span><span className="t-row-t">{p.id} {(p.text || "").replace(/^\d{4}-\d{2}-\d{2} \([^)]*\) /, "")}</span><span className="go">確認 ›</span></div>)}
             {rules.map((r) => <div key={r.id} className="t-row" onClick={() => onRule(r)}><span className="chip2 c-wait">ルール案</span><span className="t-row-t">{r.rule}</span><span className="go">確認 ›</span></div>)}
             {contentWaiting.map((w) => <div key={w.week} className="t-row" onClick={() => onOpenWeek(w.week)}><span className="chip2 c-wait">承認待ち</span><span className="t-row-t">{w.week} の投稿セット({w.counts["承認待ち"]}件)</span><span className="go">中身を見る ›</span></div>)}
             {approvals.map((t) => <div key={t.key} className="t-row" onClick={() => onApprove(t)}><span className="chip2 c-wait">承認待ち</span><span className="t-row-t">{t.id} {t.title}</span><span className="go">確認 ›</span></div>)}

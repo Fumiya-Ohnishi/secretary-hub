@@ -1,4 +1,5 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { getKnowledge } from "./api.js";
 
 /* フロア図(平面): いま会社がどう動いているかを確かめる画面
  * ・部屋ごとの看板(状態・今の仕事・進み具合・止まっている)
@@ -57,7 +58,9 @@ function NameCard({ m, dept, st, rec, onClose, onOpenDept }) {
   );
 }
 
-export default function FloorPlan({ data, onOpenDept, focusName }) {
+export default function FloorPlan({ data, onOpenDept, focusName, onOpenLibrary }) {
+  const [lib, setLib] = useState(null);
+  useEffect(() => { getKnowledge().then(setLib).catch(() => {}); }, []);
   const [card, setCard] = useState(focusName || null);
   const wrap = useRef(null), refs = useRef({});
   const [pts, setPts] = useState([]);
@@ -130,6 +133,18 @@ export default function FloorPlan({ data, onOpenDept, focusName }) {
             </section>
           );
         })}
+        {lib && (
+          <section className="fp-room lib" style={{ "--rc": "#c9a77c" }}>
+            <button className="fp-sign" onClick={onOpenLibrary} title="資料室を開く">
+              <span className="fp-n">資料室<em className={`fp-st ${lib.prefs.pending.length ? "stop" : "idle"}`}>{lib.prefs.pending.length ? `確認待ち ${lib.prefs.pending.length}` : "知見の棚"}</em></span>
+              <span className="fp-w">作業の前に、ここで過去の失敗と社長の好みを確認</span>
+            </button>
+            <button className="fp-shelves" onClick={onOpenLibrary}>
+              {lib.shelves.map((s) => <span key={s.key} className="fp-book"><i style={{ height: `${Math.min(100, 20 + s.count)}%` }} /><em>{s.name}</em><b>{s.count}</b></span>)}
+            </button>
+            {lib.recent_lessons[0] && <div className="fp-lib-new muted small">最新:{cut(lib.recent_lessons[0], 46)}</div>}
+          </section>
+        )}
       </div>
       {sel && <NameCard m={sel.m} dept={sel.d} st={data.members[card]} rec={rec[card]} onClose={() => setCard(null)} onOpenDept={onOpenDept} />}
     </div>

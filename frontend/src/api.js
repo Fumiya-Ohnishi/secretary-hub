@@ -75,3 +75,7 @@ export const getAccounts = () => call("GET", "/api/accounts");
 export const getAccount = (p) => call("GET", `/api/accounts/${encodeURIComponent(p)}`);
 export const addInsight = (p, values, date) => call("POST", `/api/accounts/${encodeURIComponent(p)}/insights`, { values, date });
 export const addImprovement = (p, text) => call("POST", `/api/accounts/${encodeURIComponent(p)}/improvements`, { text });
+export const getKnowledge = () => call("GET", "/api/knowledge");
+export const searchKnowledge = (q) => call("GET", `/api/knowledge/search?q=${encodeURIComponent(q)}`);
+export const addPref = (p) => call("POST", "/api/knowledge/prefs", p);
+export const decidePref = (id, approve, revised = "") => call("POST", `/api/knowledge/prefs/${encodeURIComponent(id)}`, { approve, revised });
