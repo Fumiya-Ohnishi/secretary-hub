@@ -88,12 +88,10 @@ async def access_token() -> str:
         # 長期のユーザートークンから取ったページのトークンは期限が無い。それを使えば作り直しが要らない
         if c.get("expires"):
             try:
-                pages = await _get("me/accounts", {"fields": "access_token,instagram_business_account{id,username}"}, token=c["token"])
-                for p in pages.get("data", []):
-                    ig = p.get("instagram_business_account")
-                    if ig and p.get("access_token"):
-                        c.update(token=p["access_token"], expires="", kind="page", ig_user_id=ig["id"], ig_username=ig.get("username", ""))
-                        break
+                found = await _find_ig(token=c["token"])
+                c.update(ig_user_id=found["ig_user_id"], ig_username=found["ig_username"])
+                if found.get("page_token"):
+                    c.update(token=found["page_token"], expires="", kind="page")
             except IGError:
                 pass
         _save_cache(c)
@@ -124,20 +122,48 @@ async def _exchange(tok: str) -> dict:
     return {"token": d["access_token"], "expires": exp.isoformat(timespec="seconds")}
 
 
+async def _find_ig(token: Optional[str] = None) -> dict:
+    """トークンから、つながった Instagram プロアカウントを探す。見つからなければ、何が見えたかを添えて IGError"""
+    fields = "name,access_token,instagram_business_account{id,username},connected_instagram_account{id,username}"
+    pages = (await _get("me/accounts", {"fields": fields, "limit": 100}, token=token)).get("data", [])
+    for p in pages:
+        ig = p.get("instagram_business_account") or p.get("connected_instagram_account")
+        if not ig and p.get("access_token"):  # 一覧に出ないときは、ページのトークンでページ自身に聞く
+            try:
+                d = await _get(p["id"], {"fields": "instagram_business_account{id,username},connected_instagram_account{id,username}"}, token=p["access_token"])
+                ig = d.get("instagram_business_account") or d.get("connected_instagram_account")
+            except IGError:
+                pass
+        if ig:
+            return {"ig_user_id": ig["id"], "ig_username": ig.get("username", ""), "page": p.get("name", ""), "page_token": p.get("access_token", "")}
+    if not pages:
+        # ページのトークンの場合は me がページ自身
+        try:
+            d = await _get("me", {"fields": "name,instagram_business_account{id,username},connected_instagram_account{id,username}"}, token=token)
+            ig = d.get("instagram_business_account") or d.get("connected_instagram_account")
+            if ig:
+                return {"ig_user_id": ig["id"], "ig_username": ig.get("username", ""), "page": d.get("name", ""), "page_token": ""}
+        except IGError:
+            pass
+        raise IGError("トークンから Facebook ページが1つも見えません。グラフAPIエクスプローラーでトークンを発行し直すとき、"
+                      "確認画面で「Ai秘書セナ」のページにチェックを入れてください(pages_show_list の許可も必要)")
+    names = "・".join(p.get("name", "?") for p in pages)
+    raise IGError(f"見えているページ({names})に、Instagram のプロアカウントがつながっていません。"
+                  "トークンを発行し直すとき、確認画面で Instagram の @アカウントにもチェックを入れてください(instagram_basic の許可も必要)")
+
+
 async def my_ig_id() -> str:
     if os.getenv("IG_USER_ID", "").strip():
         return os.getenv("IG_USER_ID").strip()
     c = _cache()
     if c.get("ig_user_id"):
         return c["ig_user_id"]
-    pages = await _get("me/accounts", {"fields": "name,instagram_business_account{id,username}"})
-    for p in pages.get("data", []):
-        ig = p.get("instagram_business_account")
-        if ig:
-            c.update(ig_user_id=ig["id"], ig_username=ig.get("username", ""))
-            _save_cache(c)
-            return ig["id"]
-    raise IGError("Facebook ページにつながった Instagram のプロアカウントが見つかりません(手順の2を確認)")
+    found = await _find_ig()
+    c.update(ig_user_id=found["ig_user_id"], ig_username=found["ig_username"])
+    if found.get("page_token") and c.get("kind") != "page" and c.get("expires"):
+        c.update(token=found["page_token"], expires="", kind="page")  # 期限なしのページ用トークンに切り替える
+    _save_cache(c)
+    return c["ig_user_id"]
 
 
 MEDIA_FIELDS = "caption,media_type,media_product_type,like_count,comments_count,timestamp,permalink"
