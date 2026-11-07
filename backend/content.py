@@ -130,13 +130,14 @@ def media_dir() -> Optional[Path]:
     return None
 
 
-def sync_media() -> int:
-    """content/output/ にある画像・動画を Google ドライブへ写す(同じ大きさのものは飛ばす)。写した数を返す"""
-    dst_root = media_dir()
-    src_root = company.COMPANY_DIR / "content" / "output"
-    if not dst_root or not src_root.is_dir():
-        return 0
+# git から外して Google ドライブ「AI会社/ブランド資料/」に置く、コードでは使わない画像(見本・試作・候補)
+ARCHIVE_DIRS = ("brand/samples", "brand/options", "brand/icons", "brand/prototypes")
+
+
+def _copy_tree(src_root: Path, dst_root: Path) -> int:
     n = 0
+    if not src_root.is_dir():
+        return 0
     for src in src_root.rglob("*"):
         if src.is_file() and src.suffix.lower() in MEDIA_EXT:
             dst = dst_root / src.relative_to(src_root)
@@ -145,6 +146,18 @@ def sync_media() -> int:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
             n += 1
+    return n
+
+
+def sync_media() -> int:
+    """content/output/ の画像・動画を「AI会社/投稿素材/」へ、見本・試作の画像を「AI会社/ブランド資料/」へ写す
+    (同じ大きさのものは飛ばす)。写した数を返す"""
+    dst_root = media_dir()
+    if not dst_root:
+        return 0
+    n = _copy_tree(company.COMPANY_DIR / "content" / "output", dst_root)
+    for rel in ARCHIVE_DIRS:
+        n += _copy_tree(company.COMPANY_DIR / rel, dst_root.parent / "ブランド資料" / rel.split("/", 1)[1])
     return n
 
 
