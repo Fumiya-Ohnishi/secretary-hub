@@ -490,6 +490,11 @@ TOOLS = [
           {"url": {"type": "string", "description": "アカウントの URL(https://...)"},
            "found_by": {"type": "string", "enum": ["社長", "秘書"], "description": "見つけた人"},
            "memo": {"type": "string", "description": "社長が気になった点など(任意)"}}, ["url"]),
+    _tool("instagram_lookup", "Meta 公式の仕組みで、Instagram のプロアカウントのフォロワー数・投稿数・最近の投稿(種類・いいね・コメント)を調べる。"
+          "社長が「この人のフォロワー何人?」「最近どんな投稿が伸びてる?」と聞いたときに使う。個人アカウントは取れない。",
+          {"url": {"type": "string", "description": "プロフィール URL か ユーザー名"}}, ["url"]),
+    _tool("instagram_hashtag", "Meta 公式の仕組みで、ハッシュタグの人気投稿(種類・いいね・コメント・リンク)を調べる。1週間に30タグまで。投稿者名は返らない。",
+          {"tag": {"type": "string", "description": "ハッシュタグ(#なしでよい)"}}, ["tag"]),
     _tool("register_account", "開設したSNSアカウントのURLを台帳(data/accounts.md と Notion)に記録する。URLだけを扱う。",
           {"platform": {"type": "string", "enum": company.PLATFORMS},
            "url": {"type": "string", "description": "https:// から始まるプロフィールURL"},
@@ -650,9 +655,34 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         actions.append({"type": "refresh"})
         return f"{company.PLATFORM_JA[args['platform']]} の改善点に記録しました: {r['text']}"
 
+    if name in ("instagram_lookup", "instagram_hashtag"):
+        import instagram_api
+        if not instagram_api.configured():
+            return "Instagram の数字の仕組みが未設定です(ai-company の playbooks/instagram_api_setup.md)。公開ページで見える範囲なら部署に調べさせられます。"
+        try:
+            if name == "instagram_hashtag":
+                return json.dumps(await instagram_api.hashtag_top(args["tag"]), ensure_ascii=False)[:6000]
+            u = args["url"] if "instagram.com" in args["url"] else f"https://www.instagram.com/{args['url'].lstrip('@')}/"
+            acc = await instagram_api.discover(instagram_api.username_from(u))
+            return json.dumps({**{k: acc[k] for k in ("username", "name", "followers", "posts", "biography")},
+                               "summary": instagram_api.summarize(acc)}, ensure_ascii=False)[:6000]
+        except instagram_api.IGError as e:
+            return f"取れませんでした: {e}"
+
     if name == "watch_account":
         import watch
         row = await watch.add(args["url"], args.get("found_by") or "社長", args.get("memo") or "")
+        if row["platform"] == "Instagram":  # 公式の数字が取れるなら、評価の前に資料として置く
+            try:
+                import instagram_api
+                if instagram_api.configured():
+                    acc = await instagram_api.discover(instagram_api.username_from(row["url"]))
+                    d = company.COMPANY_DIR / "strategy" / "research" / "accounts" / "_api"
+                    d.mkdir(parents=True, exist_ok=True)
+                    (d / f"{acc['username']}.json").write_text(json.dumps({"checked": datetime.date.today().isoformat(), **acc,
+                                                                           "summary": instagram_api.summarize(acc)}, ensure_ascii=False, indent=1), encoding="utf-8")
+            except Exception as e:
+                print("Instagram の数字を取れませんでした:", e)
         job = start_job("戦略", watch.evaluation_instruction(row, args.get("memo") or ""), f"参考アカウントの評価: {row['account']}", f"watch:{row['url']}")
         actions.append({"type": "job", "job": job})
         actions.append({"type": "refresh"})
