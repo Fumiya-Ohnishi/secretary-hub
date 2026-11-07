@@ -9,7 +9,8 @@ import ApprovalCard from "./ApprovalCard.jsx";
 import { PostingAssistant, SearchPalette, Diagnostics, useHotkeys } from "./Extras.jsx";
 
 const FACES = { normal: "faces/normal.jpg", pleased: "faces/pleased.jpg", thinking: "faces/thinking.jpg", pouty: "faces/pouty.jpg" };
-const FATAL_MIC = ["not-allowed", "service-not-allowed", "network", "audio-capture"];
+// 直らないマイクのエラー(ハンズフリーを止める)。network は一時的なことが多いので、少し待って聞き直す
+const FATAL_MIC = ["not-allowed", "service-not-allowed", "audio-capture"];
 const PANEL_TABS = ["home", "content", "tasks", "docs", "jobs", "chat"];
 const LOG_KEY = "hub-log";
 
@@ -135,6 +136,8 @@ export default function App() {
   const wakeNames = [name, "セナ", "せな", "瀬名", "SENA"];
   const wakeRef = useRef(wakeWord); wakeRef.current = wakeWord;
   const handsFreeRef = useRef(false);
+  const netErrors = useRef(0);
+  const [micRetry, setMicRetry] = useState(0);
   const anyCardRef = useRef(false);
 
   const notify = useCallback((text, kind = "info") => {
@@ -155,6 +158,7 @@ export default function App() {
     (final, interim) => {
       if (final) {
         setHeard("");
+        netErrors.current = 0;
         lastActivity.current = Date.now();
         // 呼びかけモード: ハンズフリー中は「セナ」と呼ばれたときだけ反応する
         if (wakeRef.current && handsFreeRef.current && !anyCardRef.current) {
@@ -167,8 +171,13 @@ export default function App() {
     },
     (msg, code) => {
       setHeard("");
-      if (FATAL_MIC.includes(code)) { setHandsFree(false); save("hub-handsfree", false); }
-      if (msg) notify("🎙 " + msg, "error");
+      if (FATAL_MIC.includes(code)) { setHandsFree(false); save("hub-handsfree", false); if (msg) notify("🎙 " + msg, "error"); return; }
+      // 一時的なエラー(network・no-speech など)は、ハンズフリー中なら少し待って聞き直す
+      if (code === "network") {
+        netErrors.current += 1;
+        if (netErrors.current === 3 && msg) notify("🎙 " + msg, "error");
+      }
+      if (handsFreeRef.current) setTimeout(() => setMicRetry((n) => n + 1), code === "network" ? 3000 : 400);
     },
   );
 
@@ -375,7 +384,7 @@ export default function App() {
     if (!handsFree || !supported || tts.speaking || busy || recording || deciding) return;
     const id = setTimeout(startRec, 700);
     return () => clearTimeout(id);
-  }, [handsFree, supported, tts.speaking, busy, recording, deciding]);
+  }, [handsFree, supported, tts.speaking, busy, recording, deciding, micRetry]);
 
   const toggleHandsFree = () => {
     const v = !handsFree;
@@ -497,7 +506,7 @@ export default function App() {
             <div className={`stage-bg ${timeOfDay}`} />
             {live2dFailed
               ? <img className="still" src={FACES[mood]} alt={name} draggable="false" />
-              : <Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef} onError={() => setLive2dFailed(true)} />}
+              : <Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef} state={status} onError={() => setLive2dFailed(true)} />}
             <div className="nameplate"><span className="np-name">{name}</span><span className="np-role">統括秘書</span></div>
             {statusText && <div className={`state-chip ${status}`}><i />{statusText}</div>}
             <div className="dialogue" onClick={() => setTab("chat")}>

@@ -1003,7 +1003,22 @@ async def chat_stream(message: str, history: List[dict]):
     except anthropic.RateLimitError:
         error = "API の利用上限に達しました。少し待ってからもう一度お願いします。"
     except anthropic.APIStatusError as e:
-        error = f"API エラー({e.status_code})です。少し待ってからもう一度お願いします。"
+        if "credit balance" in str(e).lower() and not spoken and shutil.which("claude"):
+            # API の残高切れ: Claude Code(ログイン中の Pro プラン)で返事する。道具は使えないが会話は続く
+            notice = "(API の残高が切れているため、Pro プランで返事します。少し時間がかかります)\n"
+            spoken += notice
+            yield {"t": "text", "v": notice}
+            try:
+                reply = await _cli_reply(system, messages)
+                out = mf.feed(reply)
+                spoken += out
+                yield {"t": "text", "v": out}
+            except Exception as ce:
+                error = f"API の残高が切れていて、Pro プランでの返事もできませんでした({ce})。console.anthropic.com の Billing で残高を足してください。"
+        elif "credit balance" in str(e).lower():
+            error = "API の残高が切れています。console.anthropic.com の Billing で残高を足すと、また会話できます。"
+        else:
+            error = f"API エラー({e.status_code})です。少し待ってからもう一度お願いします。"
     except anthropic.APIConnectionError:
         error = "API に接続できません。インターネット接続を確認してください。"
     rest = mf.flush()
@@ -1017,6 +1032,27 @@ async def chat_stream(message: str, history: List[dict]):
     if any(a["type"] == "job" for a in actions) and mood == "normal":
         mood = "thinking"
     yield {"t": "done", "reply": spoken.strip() or "承知しました。", "mood": mood, "actions": actions}
+
+
+async def _cli_reply(system: str, messages: List[dict]) -> str:
+    """API が使えないときの代わり: Claude Code(Pro プラン)に会話の続きを1回だけ書かせる。読むだけの道具は使ってよい"""
+    convo = "\n\n".join(f"{'社長' if m['role'] == 'user' else 'セナ'}: {m['content'] if isinstance(m['content'], str) else ''}"
+                         for m in messages if isinstance(m.get("content"), str))
+    prompt = (system + "\n\n## 会話\n" + convo + "\n\nセナとして、最後の社長の発言に返事だけを書いてください。"
+              "会社のファイルは読んでよいが、書き換え・部署への依頼・タスクの変更はしない(必要なら「APIの残高が戻ったら実行します」と伝える)。"
+              "返事の最後に [mood:normal|pleased|thinking|pouty] のどれかを1つ付ける。")
+    proc = await asyncio.create_subprocess_exec(
+        "claude", "-p", prompt, "--output-format", "text", "--allowedTools", "Read", "Grep", "Glob",
+        cwd=str(company.COMPANY_DIR), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=_job_env())
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=180)
+    except asyncio.TimeoutError:
+        proc.kill()
+        raise RuntimeError("3分たっても返事がありません")
+    text = (out or b"").decode("utf-8", "replace").strip()
+    if proc.returncode != 0 or not text:
+        raise RuntimeError(((err or b"").decode("utf-8", "replace").strip() or text or "返事が空でした")[-200:])
+    return text
 
 
 async def chat(message: str, history: List[dict]) -> dict:
