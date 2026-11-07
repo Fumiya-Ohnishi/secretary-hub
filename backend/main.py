@@ -52,6 +52,18 @@ app = FastAPI(title="AI-Secretary Hub")
 @app.on_event("startup")
 async def start_scheduler():
     asyncio.create_task(scheduler.loop())  # 決まった時間に動く係
+    asyncio.create_task(media_loop())       # 完成した画像・動画を Google ドライブへ写す
+
+
+async def media_loop():
+    while True:
+        try:
+            n = await asyncio.to_thread(content.sync_media)
+            if n:
+                print(f"  画像・動画 {n} 件を Google ドライブ({content.media_dir()})へ保存しました")
+        except Exception as e:
+            print("  ⚠ Google ドライブへの保存に失敗:", e)
+        await asyncio.sleep(600)
 
 
 def err(e: Exception, code: int = 502):
