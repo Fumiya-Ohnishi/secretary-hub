@@ -597,3 +597,9 @@ select.status-sel { color-scheme: dark; }
 .pv-empty { color: #ddd; font-size: 13px; }
 .pv-hint { color: #9aa0b8; font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { .pv-back { animation: none; } }
+
+/* セナの映し方の切り替え(全身 / 上半身 / アップ) */
+.view-switch { position: absolute; top: 14px; right: 14px; z-index: 3; display: flex; gap: 2px; padding: 3px; border-radius: 99px; background: rgba(11, 14, 26, .55); border: 1px solid var(--line2); backdrop-filter: blur(6px); }
+.view-switch button { border: 0; background: none; color: var(--sub); font-size: 11px; padding: 4px 10px; border-radius: 99px; }
+.view-switch button.on { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.view-switch button:focus-visible { outline: 2px solid var(--accent2); outline-offset: 1px; }

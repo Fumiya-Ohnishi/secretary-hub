@@ -3,8 +3,8 @@ import React, { useEffect, useRef, useState } from "react";
 const BASE = import.meta.env.BASE_URL;
 const CORE_URL = `${BASE}live2d/core/live2dcubismcore.js`;
 const MODEL_URL = `${BASE}live2d/secretary/secretary.model3.json`;
-// モデルのキャンバス(正方形)に対して、表示する範囲の倍率。1 で全身が縦に収まる
-const ZOOM = 1.12;
+// 映し方: 全身 / 上半身(これまでの見え方) / アップ。z=画面の高さに対する倍率、top=上へずらす量(モデルの高さに対する割合)
+export const VIEWS = { full: { label: "全身", z: 1.0, top: 0, center: true }, half: { label: "上半身", z: 1.12, top: 0 }, up: { label: "アップ", z: 1.85, top: 0.015 } };
 
 /** Cubism Core(Live2D 公式の実行用ファイル)を <script> で読み込む。無ければ reject */
 function loadCore() {
@@ -60,12 +60,15 @@ function spring(k = 60, d = 9) {
   return { step(target, dt) { const a = k * (target - x) - d * v; v += a * dt; x += v * dt; return x; }, get value() { return x; } };
 }
 
-export default function Live2DStage({ mood, speaking, levelRef, onError, state = "idle" }) {
+export default function Live2DStage({ mood, speaking, levelRef, onError, state = "idle", view = "half" }) {
   const boxRef = useRef(null);
   const modelRef = useRef(null);
   const speakingRef = useRef(speaking);
   const stateRef = useRef(state);
   const gestureRef = useRef(null);   // { kind, start } 気分が変わった瞬間の一回きりの動き
+  const viewRef = useRef(view);
+  const fitRef = useRef(null);
+  viewRef.current = VIEWS[view] ? view : "half";
   const [ready, setReady] = useState(false);
 
   speakingRef.current = speaking;
@@ -99,16 +102,28 @@ export default function Live2DStage({ mood, speaking, levelRef, onError, state =
       app.stage.addChild(model);
 
       let base = { x: 0, y: 0, w: 0, h: 0 };
-      const fit = () => {
+      let target = null; // 映し方を変えたときは、なめらかに寄る・引く
+      const fit = (instant = false) => {
         const { width, height } = app.screen;
-        const size = model.internalModel.originalHeight;
-        model.scale.set((height / size) * ZOOM);
-        model.x = (width - model.width) / 2;
-        model.y = 0;
-        base = { x: model.x, y: model.y, w: model.width, h: model.height };
+        const oh = model.internalModel.originalHeight, ow = model.internalModel.originalWidth;
+        const v = VIEWS[viewRef.current];
+        let sc = (height / oh) * v.z;
+        if (v.center) sc = Math.min(sc, (width / ow) * 0.98);
+        const w = ow * sc, h = oh * sc;
+        const t = { x: (width - w) / 2, y: v.center ? (height - h) / 2 : -h * v.top, w, h, sc };
+        if (instant || !base.w) { target = null; model.scale.set(sc); base = { x: t.x, y: t.y, w, h, sc }; model.x = t.x; model.y = t.y; }
+        else target = t;
       };
-      fit();
-      app.renderer.on("resize", fit);
+      fitRef.current = () => fit(false);
+      const stepView = (dt) => {
+        if (!target) return;
+        const k = Math.min(1, dt * 6);
+        for (const key of ["x", "y", "w", "h", "sc"]) base[key] += (target[key] - base[key]) * k;
+        model.scale.set(base.sc);
+        if (Math.abs(target.sc - base.sc) < 1e-4 && Math.abs(target.y - base.y) < 0.5) { Object.assign(base, target); model.scale.set(base.sc); target = null; }
+      };
+      fit(true);
+      app.renderer.on("resize", () => fit(true));
 
       // 目線: マウスの方を見る(画面の外ならゆっくり正面に戻る)
       onMove = (e) => {
@@ -169,6 +184,7 @@ export default function Live2DStage({ mood, speaking, levelRef, onError, state =
 
       function animate(now, mouthOpen) {
         const dt = Math.min(0.05, (now - last) / 1000); last = now;
+        stepView(dt);
         const t = now / 1000, st = stateRef.current;
         const level = speakingRef.current ? (levelRef?.current != null ? clampN((levelRef.current - 0.02) * 6, 0, 1) : mouthOpen) : 0;
 
@@ -261,6 +277,8 @@ export default function Live2DStage({ mood, speaking, levelRef, onError, state =
     if (ready && modelRef.current) modelRef.current.expression(mood || "normal");
     if (ready && mood && mood !== "normal") gestureRef.current = { kind: mood, start: performance.now() };
   }, [mood, ready]);
+
+  useEffect(() => { fitRef.current?.(); }, [view]);
 
   return <div className="live2d" ref={boxRef} aria-label="秘書" />;
 }

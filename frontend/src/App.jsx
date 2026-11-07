@@ -3,7 +3,7 @@ import { chatStream } from "./api.js";
 import { getHealth, getSummary, sendChat, decideTask, getBriefing, approveWeek, setScheduler, runCheckNow,
          readNotifications, decideRule } from "./api.js";
 import { useSpeechInput, useSpeechOutput } from "./speech.js";
-import Live2DStage from "./Live2DStage.jsx";
+import Live2DStage, { VIEWS } from "./Live2DStage.jsx";
 import Workspace from "./Workspace.jsx";
 import ApprovalCard from "./ApprovalCard.jsx";
 import { PostingAssistant, SearchPalette, Diagnostics, useHotkeys } from "./Extras.jsx";
@@ -115,6 +115,8 @@ export default function App() {
   const [approval, setApproval] = useState(null);
   const [deciding, setDeciding] = useState(false);
   const [handsFree, setHandsFree] = useState(() => load("hub-handsfree", false));
+  const [senaView, setSenaView] = useState(() => load("hub-sena-view", "half"));
+  const chooseView = (v) => { setSenaView(v); save("hub-sena-view", v); };
   const [muted, setMuted] = useState(() => load("hub-muted", false));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef(null);
@@ -506,7 +508,14 @@ export default function App() {
             <div className={`stage-bg ${timeOfDay}`} />
             {live2dFailed
               ? <img className="still" src={FACES[mood]} alt={name} draggable="false" />
-              : <Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef} state={status} onError={() => setLive2dFailed(true)} />}
+              : <Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef} state={status} view={senaView} onError={() => setLive2dFailed(true)} />}
+            {!live2dFailed && (
+              <div className="view-switch" role="group" aria-label="セナの映し方">
+                {Object.entries(VIEWS).map(([k, v]) => (
+                  <button key={k} className={senaView === k ? "on" : ""} onClick={() => chooseView(k)} aria-pressed={senaView === k}>{v.label}</button>
+                ))}
+              </div>
+            )}
             <div className="nameplate"><span className="np-name">{name}</span><span className="np-role">統括秘書</span></div>
             {statusText && <div className={`state-chip ${status}`}><i />{statusText}</div>}
             <div className="dialogue" onClick={() => setTab("chat")}>
