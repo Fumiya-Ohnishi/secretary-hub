@@ -107,6 +107,27 @@ def _roster(dept_full: str) -> List[dict]:
 OPINION_DEPARTMENTS = {"企画", "ライティング", "デザイン", "戦略", "収益化", "SNS運用", "映像", "画像", "分析"}  # 案出しで意見を広げてから上司がまとめる(品質管理部は独立して点検するので入れない)
 
 
+def _env_facts() -> List[str]:
+    """部署に渡す、秘書ハブが確かめた環境(部署の作業からは確かめられないもの)"""
+    import httpx
+    vv = os.getenv("VOICEVOX_URL", "http://127.0.0.1:50021").rstrip("/")
+    try:
+        ok = httpx.get(f"{vv}/version", timeout=3).status_code == 200
+    except Exception:
+        ok = False
+    env = _job_env()
+    try:
+        nv = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=5, env=env).stdout.strip()
+    except Exception:
+        nv = "見つからない"
+    ff = shutil.which("ffmpeg", path=env["PATH"])
+    return ["## 環境(秘書ハブが確認済み。部署の作業から確かめる必要はない)",
+            f"- VOICEVOX: {'起動中' if ok else '止まっている'}(リールの声は秘書ハブが VOICEVOX の起動中に自動で入れる。止まっていても書き出しは声なしで進めてよい)",
+            f"- Node.js: {nv}(HyperFrames は 22 以上が必要)",
+            f"- ffmpeg: {'使える' if ff else '見つからない'}",
+            f"- 画像・動画の置き場所(Google ドライブ): {env.get('MEDIA_DIR', '見つからない')}", ""]
+
+
 def _job_prompt(job: dict) -> str:
     dept = DEPT_FULL.get(job["department"], job["department"])
     members = _roster(dept)
@@ -114,7 +135,7 @@ def _job_prompt(job: dict) -> str:
     staff = [m for m in members if not m["boss"]]
     roster = "\n".join(f"- {m['name']}({m['title']}{'・上司' if m['boss'] else ''}): {m['description']}" for m in members)
     lines = [f"あなたは AI会社の秘書室として、{dept}の作業を進めます。部署の社員はサブエージェントとして定義されています。",
-             f"作業: {job['instruction']}", "", f"## {dept}の社員", roster or "(定義なし。あなた自身が部署として作業する)", "",
+             f"作業: {job['instruction']}", "", *_env_facts(), f"## {dept}の社員", roster or "(定義なし。あなた自身が部署として作業する)", "",
              "## 進め方"]
     if staff and job["department"] in OPINION_DEPARTMENTS and len(staff) >= 2:
         lines.append("1. 案出しの段階では、性格・視点の違う担当2〜3名に、互いの案を見せずに別々に案を出させる(各社員の定義の「性格・視点」を参照)。"
@@ -218,6 +239,9 @@ def _job_env() -> dict:
     """部署の作業に渡す環境: ffmpeg の場所、使用状況を送らない設定、画像・動画の置き場所"""
     env = dict(os.environ)
     paths = ["/opt/homebrew/bin", "/usr/local/bin"]  # ダブルクリック起動だと Homebrew の場所が PATH に無いことがある
+    node22 = REEL_DIR / "node_modules" / "node" / "bin"  # HyperFrames 用の Node.js 22(部品として入れたもの)
+    if (node22 / "node").exists():
+        paths.insert(0, str(node22))
     ff = REEL_DIR / "node_modules" / "ffmpeg-static" / "ffmpeg"
     if ff.exists():
         paths.insert(0, str(ff.parent))
