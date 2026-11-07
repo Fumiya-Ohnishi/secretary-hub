@@ -508,14 +508,17 @@ export default function App() {
             <div className={`stage-bg ${timeOfDay}`} />
             {live2dFailed
               ? <img className="still" src={FACES[mood]} alt={name} draggable="false" />
-              : <Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef} state={status} view={senaView} onError={() => setLive2dFailed(true)} />}
-            {!live2dFailed && (
-              <div className="view-switch" role="group" aria-label="セナの映し方">
-                {Object.entries(VIEWS).map(([k, v]) => (
-                  <button key={k} className={senaView === k ? "on" : ""} onClick={() => chooseView(k)} aria-pressed={senaView === k}>{v.label}</button>
-                ))}
+              : <div className={senaView === "body" ? "l2d-hidden" : ""}><Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef} state={status} view={senaView === "body" ? "half" : senaView} onError={() => setLive2dFailed(true)} /></div>}
+            {senaView === "body" && (
+              <div className={`sena-body ${status}`} aria-label="セナ(全身)">
+                <img src="/faces/full.png" alt="" draggable="false" />
               </div>
             )}
+            <div className="view-switch" role="group" aria-label="セナの映し方">
+              {[...(!live2dFailed ? Object.entries(VIEWS) : []), ["body", { label: "全身" }]].map(([k, v]) => (
+                <button key={k} className={senaView === k ? "on" : ""} onClick={() => chooseView(k)} aria-pressed={senaView === k}>{v.label}</button>
+              ))}
+            </div>
             <div className="nameplate"><span className="np-name">{name}</span><span className="np-role">統括秘書</span></div>
             {statusText && <div className={`state-chip ${status}`}><i />{statusText}</div>}
             <div className="dialogue" onClick={() => setTab("chat")}>

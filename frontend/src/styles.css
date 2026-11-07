@@ -603,3 +603,15 @@ select.status-sel { color-scheme: dark; }
 .view-switch button { border: 0; background: none; color: var(--sub); font-size: 11px; padding: 4px 10px; border-radius: 99px; }
 .view-switch button.on { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
 .view-switch button:focus-visible { outline: 2px solid var(--accent2); outline-offset: 1px; }
+
+/* 全身(公式デザインの静止画に、呼吸と揺れの動きを付ける。口パクはなし) */
+.l2d-hidden { visibility: hidden; }
+.sena-body { position: absolute; inset: 0; display: flex; justify-content: center; align-items: flex-end; padding: 52px 0 96px; pointer-events: none; }
+.sena-body img { height: 100%; max-width: 92%; object-fit: contain; transform-origin: 50% 100%;
+  filter: drop-shadow(0 18px 24px rgba(0,0,0,.45)); animation: body-idle 5.5s ease-in-out infinite; }
+.sena-body.speaking img { animation: body-idle 5.5s ease-in-out infinite, body-talk .9s ease-in-out infinite; }
+.sena-body.listening img { transform: rotate(1.2deg); }
+.sena-body.thinking img { animation: body-idle 7s ease-in-out infinite; filter: drop-shadow(0 18px 24px rgba(0,0,0,.45)) brightness(.97); }
+@keyframes body-idle { 0%, 100% { transform: rotate(-.5deg) scaleY(1); } 50% { transform: rotate(.5deg) scaleY(1.008); } }
+@keyframes body-talk { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
+@media (prefers-reduced-motion: reduce) { .sena-body img { animation: none !important; } }
