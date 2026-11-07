@@ -4,7 +4,8 @@ const BASE = import.meta.env.BASE_URL;
 const CORE_URL = `${BASE}live2d/core/live2dcubismcore.js`;
 const MODEL_URL = `${BASE}live2d/secretary/secretary.model3.json`;
 // 映し方: 全身 / 上半身(これまでの見え方) / アップ。z=画面の高さに対する倍率、top=上へずらす量(モデルの高さに対する割合)
-export const VIEWS = { full: { label: "全身", z: 1.0, top: 0, center: true }, half: { label: "上半身", z: 1.12, top: 0 }, up: { label: "アップ", z: 1.85, top: 0.015 } };
+// モデルは腰から上までの絵なので、「引き」は体の切れ目を画面の下(吹き出しの裏)にそろえる
+export const VIEWS = { full: { label: "引き", z: 0.86, bottom: true }, half: { label: "標準", z: 1.12, top: 0 }, up: { label: "アップ", z: 1.85, top: 0.015 } };
 
 /** Cubism Core(Live2D 公式の実行用ファイル)を <script> で読み込む。無ければ reject */
 function loadCore() {
@@ -108,9 +109,9 @@ export default function Live2DStage({ mood, speaking, levelRef, onError, state =
         const oh = model.internalModel.originalHeight, ow = model.internalModel.originalWidth;
         const v = VIEWS[viewRef.current];
         let sc = (height / oh) * v.z;
-        if (v.center) sc = Math.min(sc, (width / ow) * 0.98);
+        if (v.bottom) sc = Math.min(sc, (width / ow) * 1.1);
         const w = ow * sc, h = oh * sc;
-        const t = { x: (width - w) / 2, y: v.center ? (height - h) / 2 : -h * v.top, w, h, sc };
+        const t = { x: (width - w) / 2, y: v.bottom ? height - h * 0.97 : -h * v.top, w, h, sc };
         if (instant || !base.w) { target = null; model.scale.set(sc); base = { x: t.x, y: t.y, w, h, sc }; model.x = t.x; model.y = t.y; }
         else target = t;
       };
