@@ -71,3 +71,7 @@ export const schedulePost = (path, date) => call("POST", "/api/content/schedule"
 export const getOrg = () => call("GET", "/api/org");
 export const search = (q) => call("GET", `/api/search?q=${encodeURIComponent(q)}`);
 export const getDiagnostics = () => call("GET", "/api/diagnostics");
+export const getAccounts = () => call("GET", "/api/accounts");
+export const getAccount = (p) => call("GET", `/api/accounts/${encodeURIComponent(p)}`);
+export const addInsight = (p, values, date) => call("POST", `/api/accounts/${encodeURIComponent(p)}/insights`, { values, date });
+export const addImprovement = (p, text) => call("POST", `/api/accounts/${encodeURIComponent(p)}/improvements`, { text });

@@ -34,6 +34,7 @@ from fastapi.responses import StreamingResponse
 
 import agent
 import company
+import accounts
 import content
 import corrections
 import notion
@@ -277,6 +278,44 @@ class AccountIn(BaseModel):
 async def add_revenue(body: RevenueIn):
     try:
         return await company.record_revenue(body.amount, body.source, body.date, body.memo)
+    except ValueError as e:
+        return err(e, 400)
+
+
+class InsightIn(BaseModel):
+    values: dict
+    date: Optional[str] = None
+
+
+class ImprovementIn(BaseModel):
+    text: str
+
+
+@app.get("/api/accounts")
+def get_accounts():
+    return {"accounts": accounts.summary()}
+
+
+@app.get("/api/accounts/{platform}")
+def get_account(platform: str):
+    try:
+        return accounts.overview(platform)
+    except ValueError as e:
+        return err(e, 404)
+
+
+@app.post("/api/accounts/{platform}/insights")
+def add_insight(platform: str, body: InsightIn):
+    try:
+        return accounts.record_insight(platform, body.values, body.date)
+    except ValueError as e:
+        return err(e, 400)
+
+
+@app.post("/api/accounts/{platform}/improvements")
+def add_improvement(platform: str, body: ImprovementIn):
+    try:
+        return accounts.add_improvement(platform, body.text)
     except ValueError as e:
         return err(e, 400)
 

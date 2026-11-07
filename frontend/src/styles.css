@@ -483,3 +483,27 @@ select.status-sel { color-scheme: dark; }
 .activity li.running { color: var(--info); }
 .activity li.error { color: var(--ng); }
 .act-mark { width: 12px; text-align: center; }
+
+/* アカウント(媒体ごとの管理) */
+.acct-switch { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.acct-switch button { background: var(--panel); border: 1px solid var(--line); color: var(--sub); border-radius: 12px; padding: 7px 16px; font-size: 13px; font-weight: 600; }
+.acct-switch button.on { background: var(--panel3); color: var(--text); border-color: var(--line2); }
+.acct-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; border-top: 3px solid var(--line2); }
+.acct-head h3 { margin: 2px 0 4px; font-size: 20px; }
+.acct-head a { word-break: break-all; }
+.acct-kpi { text-align: right; }
+.acct-kpi .kpi-lbl { color: var(--sub); font-size: 12px; }
+.acct-kpi .up { color: var(--ok); } .acct-kpi .down { color: var(--ng); }
+.inline-form { display: flex; gap: 8px; margin-top: 10px; }
+.inline-form input { flex: 1; min-width: 0; }
+.inline-form input, .insight-form input { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; color: var(--text); padding: 8px 10px; font-size: 13px; }
+.table-wrap { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.tbl th, .tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.tbl th { color: var(--sub); font-weight: 600; }
+.insight-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin-top: 12px; align-items: end; }
+.insight-form label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--sub); }
+.insight-form input { width: 100%; }
+.improve-list { list-style: none; margin: 0; padding: 0; }
+.improve-list li { padding: 8px 2px; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.6; }
+.improve-list li:last-child { border-bottom: none; }

@@ -72,7 +72,7 @@ function Post({ post, open, onToggle, onChanged, notify }) {
 }
 
 /** 投稿セット(週ごと)。台本・キャプション・画像を見て、承認・差し戻し・投稿済みを付ける */
-export default function Content({ week, setWeek, onChanged, notify, onSay }) {
+export default function Content({ week, setWeek, onChanged, notify, onSay, platform = null }) {
   const [weeks, setWeeks] = useState(null);
   const [data, setData] = useState(null);
   const [open, setOpen] = useState(null);
@@ -97,7 +97,9 @@ export default function Content({ week, setWeek, onChanged, notify, onSay }) {
       </div>
     );
   }
-  const waiting = data ? data.posts.filter((p) => p.status === "承認待ち").length : 0;
+  const posts = data ? data.posts.filter((p) => !platform || p.platform === platform) : [];
+  const wcount = (w) => (platform ? (w.by_platform?.[platform] || {}) : w.counts)["承認待ち"] || 0;
+  const waiting = posts.filter((p) => p.status === "承認待ち").length;
   const approveAll = async () => {
     setBusy(true);
     try { const r = await approveWeek(week); notify(`${week} の ${r.approved}件を承認しました`, "ok"); changed(); }
@@ -110,7 +112,7 @@ export default function Content({ week, setWeek, onChanged, notify, onSay }) {
       <div className="seg">
         {weeks.map((w) => (
           <button key={w.week} className={week === w.week ? "on" : ""} onClick={() => setWeek(w.week)}>
-            {w.week}{w.counts["承認待ち"] ? <span className="count warn">{w.counts["承認待ち"]}</span> : null}
+            {w.week}{wcount(w) ? <span className="count warn">{wcount(w)}</span> : null}
           </button>
         ))}
       </div>
@@ -122,13 +124,13 @@ export default function Content({ week, setWeek, onChanged, notify, onSay }) {
               <h3 className="week-theme">{data.theme || "(未定)"}</h3>
               {data.summary && <p className="muted small">{data.summary}</p>}
             </div>
-            {waiting > 0 && <button className="btn primary" disabled={busy} onClick={approveAll}>承認待ち {waiting}件を全部承認</button>}
+            {waiting > 0 && !platform && <button className="btn primary" disabled={busy} onClick={approveAll}>承認待ち {waiting}件を全部承認</button>}
           </div>
-          {data.posts.map((p) => (
+          {posts.map((p) => (
             <Post key={p.path} post={p} open={open === p.path} onToggle={() => setOpen(open === p.path ? null : p.path)}
                   onChanged={changed} notify={notify} />
           ))}
-          {data.posts.length === 0 && <div className="empty">この週の投稿ファイルはまだありません。</div>}
+          {posts.length === 0 && <div className="empty">この週の{platform ? "この媒体の" : ""}投稿はまだありません。</div>}
         </>
       )}
     </div>
