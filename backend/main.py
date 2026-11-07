@@ -502,6 +502,35 @@ async def new_job(body: JobIn):
 class TtsIn(BaseModel):
     text: str
     speaker: Optional[int] = None
+    tone: Optional[str] = None
+
+
+# 声の感情: 速さ・高さ・抑揚・音量(VOICEVOX の audio_query の値)
+TONES = {
+    "": dict(speedScale=1.1, pitchScale=0.0, intonationScale=1.15, volumeScale=1.0),
+    "joy": dict(speedScale=1.13, pitchScale=0.035, intonationScale=1.4, volumeScale=1.06),
+    "excited": dict(speedScale=1.18, pitchScale=0.06, intonationScale=1.55, volumeScale=1.15),
+    "calm": dict(speedScale=1.0, pitchScale=-0.01, intonationScale=0.95, volumeScale=0.92),
+    "serious": dict(speedScale=1.03, pitchScale=-0.03, intonationScale=0.85, volumeScale=1.02),
+    "sad": dict(speedScale=0.93, pitchScale=-0.04, intonationScale=0.8, volumeScale=0.85),
+    "emph": dict(speedScale=1.05, pitchScale=0.02, intonationScale=1.45, volumeScale=1.2),
+    "soft": dict(speedScale=1.0, pitchScale=-0.015, intonationScale=1.0, volumeScale=0.9),
+}
+
+
+def apply_tone(query: dict, tone: str, text: str) -> dict:
+    query.update(TONES.get(tone or "", TONES[""]))
+    t = text.strip()
+    # 問いかけは語尾を上げる
+    if t.endswith(("?", "？")) and query.get("accent_phrases"):
+        moras = query["accent_phrases"][-1].get("moras") or []
+        for k, m in enumerate(moras[-2:]):
+            if m.get("pitch", 0) > 0:
+                m["pitch"] += 0.18 * (k + 1)
+    # 「…」は余韻を長めに
+    if t.endswith(("…", "...")):
+        query["postPhonemeLength"] = 0.45
+    return query
 
 async def voicevox_speakers():
     """VOICEVOX の声の一覧 [{id, name}]。起動していなければ []"""
@@ -539,8 +568,7 @@ async def tts(body: TtsIn):
         async with httpx.AsyncClient(timeout=60) as client:
             q = await client.post(f"{VOICEVOX_URL}/audio_query", params={"text": text, "speaker": speaker})
             q.raise_for_status()
-            query = q.json()
-            query["speedScale"] = 1.1
+            query = apply_tone(q.json(), (body.tone or "").strip(), text)
             wav = await client.post(f"{VOICEVOX_URL}/synthesis", params={"speaker": speaker}, json=query)
             wav.raise_for_status()
     except Exception as e:

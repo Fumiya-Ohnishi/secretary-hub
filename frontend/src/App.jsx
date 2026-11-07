@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { chatStream } from "./api.js";
 import { getHealth, getSummary, sendChat, decideTask, getBriefing, approveWeek, setScheduler, runCheckNow,
          readNotifications, decideRule } from "./api.js";
-import { useSpeechInput, useSpeechOutput } from "./speech.js";
-import Live2DStage from "./Live2DStage.jsx";
+import { useSpeechInput, useSpeechOutput, stripTone } from "./speech.js";
+import Live2DStage, { VIEWS } from "./Live2DStage.jsx";
 import Workspace from "./Workspace.jsx";
 import ApprovalCard from "./ApprovalCard.jsx";
 import { PostingAssistant, SearchPalette, Diagnostics, useHotkeys } from "./Extras.jsx";
@@ -115,6 +115,8 @@ export default function App() {
   const [approval, setApproval] = useState(null);
   const [deciding, setDeciding] = useState(false);
   const [handsFree, setHandsFree] = useState(() => load("hub-handsfree", false));
+  const [senaView, setSenaView] = useState(() => load("hub-sena-view", "half"));
+  const chooseView = (v) => { setSenaView(v); save("hub-sena-view", v); };
   const [muted, setMuted] = useState(() => load("hub-muted", false));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef(null);
@@ -146,12 +148,13 @@ export default function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
   }, []);
 
-  const say = useCallback((text, m = "normal", speakIt = true) => {
+  const say = useCallback((raw, m = "normal", speakIt = true) => {
+    const text = stripTone(raw);
     setInstantLine(false);
     setLine(text);
     setMood(m);
     setLog((l) => [...l, { role: "ai", text }]);
-    if (speakIt && !load("hub-muted", false)) tts.speak(text);
+    if (speakIt && !load("hub-muted", false)) tts.speak(raw);
   }, [tts]);
 
   const { recording, supported, unsupportedReason, start: startRec, stop: stopRec } = useSpeechInput(
@@ -354,7 +357,7 @@ export default function App() {
     if (!muted) tts.streamStart();
     try {
       const res = await chatStream(text, history, (ev) => {
-        if (ev.t === "text") { got += ev.v; setStreamText(got); if (!muted) tts.streamPush(ev.v); }
+        if (ev.t === "text") { got += ev.v; setStreamText(stripTone(got)); if (!muted) tts.streamPush(ev.v); }
         if (ev.t === "actions") { handleActions(ev.v.slice(seen)); seen = ev.v.length; }
       });
       if (!muted) tts.streamEnd();
@@ -506,7 +509,17 @@ export default function App() {
             <div className={`stage-bg ${timeOfDay}`} />
             {live2dFailed
               ? <img className="still" src={FACES[mood]} alt={name} draggable="false" />
-              : <Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef} state={status} onError={() => setLive2dFailed(true)} />}
+              : <div className={senaView === "body" ? "l2d-hidden" : ""}><Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef} state={status} view={senaView === "body" ? "half" : senaView} onError={() => setLive2dFailed(true)} /></div>}
+            {senaView === "body" && (
+              <div className={`sena-body ${status}`} aria-label="セナ(全身)">
+                <img src="/faces/full.png" alt="" draggable="false" />
+              </div>
+            )}
+            <div className="view-switch" role="group" aria-label="セナの映し方">
+              {[...(!live2dFailed ? Object.entries(VIEWS) : []), ["body", { label: "全身" }]].map(([k, v]) => (
+                <button key={k} className={senaView === k ? "on" : ""} onClick={() => chooseView(k)} aria-pressed={senaView === k}>{v.label}</button>
+              ))}
+            </div>
             <div className="nameplate"><span className="np-name">{name}</span><span className="np-role">統括秘書</span></div>
             {statusText && <div className={`state-chip ${status}`}><i />{statusText}</div>}
             <div className="dialogue" onClick={() => setTab("chat")}>

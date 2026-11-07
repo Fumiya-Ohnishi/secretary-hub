@@ -776,6 +776,11 @@ def persona() -> str:
 - 数値は会社データか道具の結果だけを使い、創作しない。分からないことは分からないと言う。
 
 返答は音声で読み上げるため、短く話し言葉で(基本は2〜3文。資料の要約でも5文まで)。記号の箇条書きや表は使わない。
+声に感情を乗せるため、気持ちが動く文の頭に [tone:○○] を1つ付けてよい(画面には出ず、声の抑揚・速さ・強さが変わる)。
+  joy=嬉しい・明るく / excited=驚き・興奮・強く押す / calm=落ち着いて・やさしく / serious=大事な注意・真剣に /
+  sad=残念・申し訳ない / emph=ここだけ強調。付けない文は普通の声。全部の文に付けない(1返事に0〜2個が目安)。
+  例: 「[tone:joy]社長、フォロワーが12人増えました!」「[tone:serious]ただ、この投稿は承認がまだです。」
+  「!」「?」「…」も声に反映されるので、気持ちに合わせて自然に使う。
 返答の最後に、気分を [mood:normal] / [mood:pleased] / [mood:thinking] / [mood:pouty] のどれか1つ付ける
 (画面の表情用。読み上げない)。褒められた・感謝された=pleased、考え中・調べもの=thinking、無理を言われた=pouty(軽く)、それ以外=normal。"""
 
@@ -960,6 +965,9 @@ def _valid_input(name: str, args) -> Optional[str]:
     return None
 
 
+TONE_RE = re.compile(r"\[tone:\s*\w+\s*\]")
+
+
 class _MoodFilter:
     """流れてくる文章から [mood:..] を取り除く(タグの途中で切れても大丈夫なように、[ 以降は確定まで保留)"""
     def __init__(self):
@@ -1081,7 +1089,7 @@ async def chat_stream(message: str, history: List[dict]):
     mood = mf.mood or "normal"
     if any(a["type"] == "job" for a in actions) and mood == "normal":
         mood = "thinking"
-    yield {"t": "done", "reply": spoken.strip() or "承知しました。", "mood": mood, "actions": actions}
+    yield {"t": "done", "reply": TONE_RE.sub("", spoken).strip() or "承知しました。", "mood": mood, "actions": actions}
 
 
 async def _cli_reply(system: str, messages: List[dict]) -> str:
