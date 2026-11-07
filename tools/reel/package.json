@@ -2,6 +2,10 @@
   "name": "secretary-reel",
   "private": true,
   "type": "module",
-  "description": "Live2D の秘書 + VOICEVOX の声 + テロップでリール動画を作る",
-  "dependencies": { "playwright-core": "1.48.2" }
+  "description": "リールの書き出し(Live2D の秘書・実録の場面・VOICEVOX の声)。ffmpeg も部品として入る",
+  "dependencies": {
+    "playwright-core": "1.48.2",
+    "ffmpeg-static": "5.2.0",
+    "ffprobe-static": "3.1.0"
+  }
 }
