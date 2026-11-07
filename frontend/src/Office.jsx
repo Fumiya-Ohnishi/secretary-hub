@@ -59,6 +59,7 @@ export default function Office({ data, onOpenDept }) {
   const S = useRef({ avatars: {}, flyers: [], chats: [], cam: { s: 1, x: 0, y: 0 }, prev: {}, hit: [] }).current;
   const [hover, setHover] = useState(null);
   const [nowOpen, setNowOpen] = useState(true);
+  const [card, setCard] = useState(null); // 押した社員の名刺
 
   function seat(a) { const dk = S.desks[a.name]; return [dk.gx + 0.35, dk.gy - 0.6]; }
   function route(a, to) { // 廊下(y=6.5 / 13.5)を通る
@@ -81,6 +82,26 @@ export default function Office({ data, onOpenDept }) {
     for (const [d, ms] of Object.entries(data.departments)) for (const m of ms) { info[m.name] = m; if (m.boss) deptBoss[d] = m.name; }
     S.info = info;
     S.jobs = (data.jobs || []).filter((j) => j.status === "running").map((j) => j.title);
+    // 部署ごとの今の仕事(看板用): 作業中の作業名と進み具合、24時間以内に止まった作業
+    const full = (j) => j.department_full || `${j.department}部`;
+    const dj = {}, stop = {}, day = Date.now() - 864e5;
+    for (const j of [...(data.jobs || [])].reverse()) { // 古い順。あとの作業が上書きする
+      const d = full(j);
+      if (j.status === "running") {
+        const acts = j.activity || [], done = acts.filter((a) => a.status === "done").length;
+        dj[d] = { title: j.title, done, total: Math.max(acts.length, 1), started: j.started }; delete stop[d];
+      } else if (j.status === "error" && new Date(j.finished || j.started).getTime() > day) stop[d] = j.title;
+      else if (j.status === "done") delete stop[d];
+    }
+    S.deptJob = dj; S.deptStop = stop;
+    // 社員ごとの実績(作業の記録から): 担当した数・差し戻し(エラー)の数
+    const rec = {};
+    for (const j of data.jobs || []) for (const a of j.activity || []) {
+      const r = (rec[a.agent] = rec[a.agent] || { done: 0, err: 0, last: null });
+      if (a.status === "done") r.done++; if (a.status === "error") r.err++;
+      if (!r.last || (a.started || "") > (r.last.started || "")) r.last = { desc: a.desc, started: a.started, job: j.title };
+    }
+    S.rec = rec;
     for (const [name, dk] of Object.entries(desks)) {
       const st = data.members[name], working = st?.state === "working", h = hash(name);
       let a = S.avatars[name];
@@ -269,6 +290,63 @@ export default function Office({ data, onOpenDept }) {
       }
     };
 
+    // ---- 部屋の看板: 部署名・状態・今の仕事・進み具合 ----
+    const sign = (dept, x, y, n, t) => {
+      if (dept === "ラウンジ") return;
+      const fut = document.documentElement.dataset.look === "future";
+      const p = P(x + 0.25, y + 0.25, 26), sc = Math.max(0.62, Math.min(1.2, S.cam.s * 0.95));
+      const job = S.deptJob?.[dept], stop = S.deptStop?.[dept];
+      const state = stop && !job ? "stop" : job || n ? "run" : "idle";
+      const chip = { stop: "止まっています", run: "作業中", idle: "待機" }[state];
+      const chipBg = { stop: fut ? "#ff4d8d" : "#ff8a9a", run: fut ? "#00e5ff" : "#7cc4f7", idle: "rgba(255,255,255,.12)" }[state];
+      const line2 = state === "stop" ? stop : job ? job.title : "待機中";
+      const t2 = line2.length > 17 ? line2.slice(0, 17) + "…" : line2;
+      ctx.font = `800 ${12 * sc}px "Noto Sans JP", sans-serif`; const w1 = ctx.measureText(dept).width;
+      ctx.font = `700 ${9.5 * sc}px "Noto Sans JP", sans-serif`; const wc = ctx.measureText(chip).width + 12 * sc;
+      ctx.font = `500 ${10 * sc}px "Noto Sans JP", sans-serif`; const w2 = ctx.measureText(t2).width;
+      const W = Math.max(w1 + wc + 22 * sc, w2 + 18 * sc), H = (job ? 44 : 38) * sc, bx = p.x - 6 * sc, by = p.y - H;
+      ctx.save();
+      if (state === "stop") { ctx.shadowColor = chipBg; ctx.shadowBlur = (10 + 6 * Math.sin(t * 4)) * sc; }
+      else if (fut) { ctx.shadowColor = "#00e5ff"; ctx.shadowBlur = 8 * sc; }
+      ctx.fillStyle = fut ? "rgba(4,12,26,.92)" : "rgba(16,20,42,.93)";
+      ctx.beginPath(); ctx.roundRect(bx, by, W, H, (fut ? 3 : 8) * sc); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.lineWidth = 1.2; ctx.strokeStyle = state === "stop" ? chipBg : fut ? "rgba(0,229,255,.5)" : COLORS[dept]; ctx.stroke();
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillStyle = fut ? "#e6fbff" : "#eef0fb"; ctx.font = `800 ${12 * sc}px "Noto Sans JP", sans-serif`; ctx.fillText(dept, bx + 8 * sc, by + 12 * sc);
+      const cx = bx + W - wc - 7 * sc;
+      ctx.fillStyle = chipBg; ctx.beginPath(); ctx.roundRect(cx, by + 5 * sc, wc, 14 * sc, 7 * sc); ctx.fill();
+      ctx.fillStyle = state === "idle" ? "#aab0cc" : "#0b0e1a"; ctx.font = `700 ${9.5 * sc}px "Noto Sans JP", sans-serif`; ctx.fillText(chip, cx + 6 * sc, by + 12.5 * sc);
+      ctx.fillStyle = state === "stop" ? chipBg : fut ? "#8fb8c9" : "#a8afd0"; ctx.font = `500 ${10 * sc}px "Noto Sans JP", sans-serif`; ctx.fillText(t2, bx + 8 * sc, by + 28 * sc);
+      if (job) {
+        const pw = W - 16 * sc, u = Math.min(1, (job.done + 0.3 + 0.2 * Math.sin(t * 2)) / (job.total + 0.5));
+        ctx.fillStyle = "rgba(255,255,255,.1)"; ctx.fillRect(bx + 8 * sc, by + 37 * sc, pw, 3 * sc);
+        ctx.fillStyle = fut ? "#00e5ff" : COLORS[dept]; ctx.fillRect(bx + 8 * sc, by + 37 * sc, pw * u, 3 * sc);
+      }
+      ctx.restore();
+    };
+    // ---- 仕事の流れ(企画→ライティング→デザイン→品質管理→秘書室)。床に光る点線、動いている区間だけ流れる ----
+    const FLOW = ["企画編集部", "ライティング部", "デザイン部", "品質管理部", "秘書室"];
+    const center = (d) => { const r = ROOMS.find((q) => q[0] === d); return [r[1] + r[3] / 2, r[2] + r[4] / 2]; };
+    const flow = (t) => {
+      const fut = document.documentElement.dataset.look === "future";
+      for (let i = 0; i < FLOW.length - 1; i++) {
+        const a = center(FLOW[i]), b = center(FLOW[i + 1]);
+        const live = S.deptJob?.[FLOW[i]] || S.deptJob?.[FLOW[i + 1]];
+        const pa = P(...a), pb = P(...b);
+        ctx.save();
+        ctx.strokeStyle = live ? (fut ? "rgba(0,229,255,.85)" : "rgba(185,189,250,.85)") : "rgba(185,189,250,.18)";
+        ctx.lineWidth = (live ? 3 : 2) * S.cam.s; ctx.setLineDash([8 * S.cam.s, 7 * S.cam.s]); ctx.lineDashOffset = live ? -t * 30 * S.cam.s : 0;
+        if (live && fut) { ctx.shadowColor = "#00e5ff"; ctx.shadowBlur = 10; }
+        ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+        // 向きの矢印
+        const mx = (pa.x + pb.x) / 2, my = (pa.y + pb.y) / 2, ang = Math.atan2(pb.y - pa.y, pb.x - pa.x), r = 7 * S.cam.s;
+        ctx.setLineDash([]); ctx.fillStyle = ctx.strokeStyle; ctx.beginPath();
+        ctx.moveTo(mx + Math.cos(ang) * r, my + Math.sin(ang) * r); ctx.lineTo(mx + Math.cos(ang + 2.5) * r, my + Math.sin(ang + 2.5) * r);
+        ctx.lineTo(mx + Math.cos(ang - 2.5) * r, my + Math.sin(ang - 2.5) * r); ctx.fill();
+        ctx.restore();
+      }
+    };
+
     // ---- 1コマ ----
     const draw = (t) => {
       const desks = S.desks || {}, dpr = window.devicePixelRatio || 1;
@@ -294,7 +372,8 @@ export default function Office({ data, onOpenDept }) {
         }
       }
       // 床
-      poly([P(0, 0), P(GW, 0), P(GW, GH), P(0, GH)], "#2a2f4a");
+      const FUT = document.documentElement.dataset.look === "future";
+      poly([P(0, 0), P(GW, 0), P(GW, GH), P(0, GH)], FUT ? "#06101f" : "#2a2f4a");
       const ed = [P(0, GH), P(GW, GH), P(GW, 0)], dz = 12 * S.cam.s;
       poly([ed[0], ed[1], { x: ed[1].x, y: ed[1].y + dz }, { x: ed[0].x, y: ed[0].y + dz }], "#151a30");
       poly([ed[1], ed[2], { x: ed[2].x, y: ed[2].y + dz }, { x: ed[1].x, y: ed[1].y + dz }], "#1b2038");
@@ -302,24 +381,26 @@ export default function Office({ data, onOpenDept }) {
       for (const a of Object.values(S.avatars)) if (a.working) busy[a.dept] = (busy[a.dept] || 0) + 1;
       for (const [dept, x, y, w, h, floor] of ROOMS) {
         const c = COLORS[dept];
-        const base = floor === "wood" ? "#6b5640" : floor === "lounge" ? "#7a6248" : shade(c, 0.36);
+        const base = FUT ? (floor === "lounge" ? "#0d1a33" : "#091428") : floor === "wood" ? "#6b5640" : floor === "lounge" ? "#7a6248" : shade(c, 0.36);
         poly([P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], base);
-        ctx.save(); ctx.globalAlpha = floor === "carpet" ? 0.1 : 0.22; ctx.strokeStyle = floor === "carpet" ? "#fff" : "#2d2218"; ctx.lineWidth = 1;
-        if (floor === "carpet") {
+        ctx.save(); ctx.globalAlpha = FUT ? 0.35 : floor === "carpet" ? 0.1 : 0.22; ctx.strokeStyle = FUT ? "#00e5ff" : floor === "carpet" ? "#fff" : "#2d2218"; ctx.lineWidth = 1;
+        if (floor === "carpet" || FUT) {
           for (let i = 1; i < w; i++) { const p = P(x + i, y), q = P(x + i, y + h); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
           for (let j = 1; j < h; j++) { const p = P(x, y + j), q = P(x + w, y + j); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
         } else for (let j = 0.5; j < h; j += 0.5) { const p = P(x, y + j), q = P(x + w, y + j); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
         ctx.restore();
         if (floor === "lounge") poly([P(x + 1.2, y + 3.2), P(x + 4.4, y + 3.2), P(x + 4.4, y + 5.6), P(x + 1.2, y + 5.6)], "#a4865f");
-        if (busy[dept]) { ctx.save(); ctx.globalAlpha = 0.14 + 0.06 * Math.sin(t * 2); poly([P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], c); ctx.restore(); }
+        if (busy[dept]) { ctx.save(); ctx.globalAlpha = 0.14 + 0.06 * Math.sin(t * 2); poly([P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], FUT ? "#00e5ff" : c); ctx.restore(); }
+        if (S.deptStop?.[dept] && !S.deptJob?.[dept]) { ctx.save(); ctx.globalAlpha = 0.16 + 0.1 * Math.sin(t * 4); poly([P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], "#ff4d6d", "#ff8a9a", 2); ctx.restore(); }
         const gz = 18;
         ctx.save(); ctx.globalAlpha = 0.16;
-        poly([P(x, y + h), P(x + w, y + h), P(x + w, y + h, gz), P(x, y + h, gz)], "#bfd3ff");
-        poly([P(x + w, y), P(x + w, y + h), P(x + w, y + h, gz), P(x + w, y, gz)], "#bfd3ff");
+        poly([P(x, y + h), P(x + w, y + h), P(x + w, y + h, gz), P(x, y + h, gz)], FUT ? "#00e5ff" : "#bfd3ff");
+        poly([P(x + w, y), P(x + w, y + h), P(x + w, y + h, gz), P(x + w, y, gz)], FUT ? "#00e5ff" : "#bfd3ff");
         ctx.restore();
-        ctx.strokeStyle = "rgba(200,215,255,.35)"; ctx.lineWidth = 1;
+        ctx.strokeStyle = FUT ? "rgba(0,229,255,.7)" : "rgba(200,215,255,.35)"; ctx.lineWidth = 1;
         for (const [px, py] of [[x + w, y + h], [x + w, y], [x, y + h]]) { const a = P(px, py), b = P(px, py, gz); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
       }
+      flow(t);
       // 置く物を奥から順に
       const items = [];
       for (const [name, dk] of Object.entries(desks)) items.push({ k: dk.gx + dk.gy, f: () => desk(dk, S.avatars[name]?.working, t) });
@@ -351,10 +432,7 @@ export default function Office({ data, onOpenDept }) {
         for (let i = 0; i < 3; i++) ctx.fillRect(-4 * s, (-5 + i * 3.5) * s, 8 * s, 1.4 * s);
         ctx.restore();
       }
-      for (const [dept, x, y] of ROOMS) {
-        const p = P(x + 0.25, y + 0.25, 24), n = busy[dept];
-        pill(n ? `${dept} 作業中 ${n}` : dept, p.x, p.y, n ? COLORS[dept] : "rgba(16,20,42,.88)", n ? "#0b0e1a" : "#d5d9f0", 12);
-      }
+      for (const [dept, x, y] of ROOMS) sign(dept, x, y, busy[dept], t);
       for (const h of heads) {
         const a = h.a, title = S.info?.[a.name]?.title || "";
         if (a.working && !a.walking) {
@@ -385,7 +463,7 @@ export default function Office({ data, onOpenDept }) {
     const h = pick(e); S.hover = h?.name || null; setHover(h);
   };
   const onDown = (e) => { S.drag = { x: e.clientX, y: e.clientY, moved: false }; };
-  const onUp = (e) => { const moved = S.drag?.moved; S.drag = null; if (!moved) { const h = pick(e); if (h) onOpenDept(h.dept); } };
+  const onUp = (e) => { const moved = S.drag?.moved; S.drag = null; if (!moved) { const h = pick(e); setCard(h ? h.name : null); if (h) { S.focus = h.name; } } };
   const focus = (name) => { // その社員を画面の真ん中に、少し寄せて映す
     const a = S.avatars[name]; if (!a || !cvs.current) return;
     const r = cvs.current.getBoundingClientRect(), s = Math.max(S.cam.s, 1.3), p = iso(a.gx, a.gy);
@@ -424,16 +502,37 @@ export default function Office({ data, onOpenDept }) {
           </div>
         );
       })()}
-      <div className="office-legend small">机で画面が光っている人=作業中 ・ 書類が飛ぶ=上司へ提出 ・ 休憩と立ち話は雰囲気の演出です</div>
+      <div className="office-legend small">看板=部署の今の仕事 ・ 光る点線=仕事の流れ ・ 書類が飛ぶ=上司へ提出 ・ 社員を押すと名刺 ・ 休憩と立ち話は演出です</div>
       <div className="office-zoom">
         <button onClick={() => zoom(1.2)}>＋</button><button onClick={() => zoom(1 / 1.2)}>−</button><button onClick={() => S.refit?.()}>⌂</button>
       </div>
-      {hover && (
+      {card && (() => {
+        const m2 = S.info?.[card] || {}, st2 = data.members[card], a2 = S.avatars[card], r2 = S.rec?.[card] || { done: 0, err: 0 };
+        const now2 = st2?.state === "working" ? st2.desc : { coffee: "コーヒー休憩中", sofa: "ラウンジで休憩中", chat: "立ち話中", visit: "同僚の机に寄り道中" }[a2?.act] || "待機中";
+        const rate = r2.done + r2.err ? Math.round((r2.err / (r2.done + r2.err)) * 100) : 0;
+        return (
+          <div className="office-card" role="dialog" aria-label={`${m2.title}の名刺`}>
+            <button className="office-card-x" onClick={() => { setCard(null); S.focus = null; }} aria-label="閉じる">×</button>
+            <div className="oc-top"><div className="oc-ph" style={{ background: COLORS[a2?.dept] || "#8e95f2" }}>{(m2.title || "?").slice(0, 1)}</div>
+              <div><div className="oc-nm">{m2.title}{m2.boss ? "(上司)" : ""}</div><div className="oc-rl">{a2?.dept} ・ {card}</div></div></div>
+            {m2.persona && <div className="oc-pers">性格:{m2.persona}</div>}
+            <div className="oc-now">いま:<b className={st2?.state === "working" ? "on" : ""}>{now2}</b>{st2?.job && <div className="muted small">作業:{st2.job}</div>}</div>
+            <div className="oc-kp"><div><b>{r2.done}</b><span>終えた担当</span></div><div><b>{r2.err}</b><span>止まった</span></div><div><b>{rate}%</b><span>止まった割合</span></div></div>
+            {r2.last && <div className="muted small oc-last">最近:{r2.last.desc}</div>}
+            <div className="oc-btns">
+              <button className="btn sm primary" onClick={() => onOpenDept(a2?.dept)}>この部署に頼む</button>
+              <button className="btn sm" onClick={() => focus(card)}>席を映す</button>
+            </div>
+            {m2.description && <div className="muted small oc-desc">{m2.description}</div>}
+          </div>
+        );
+      })()}
+      {hover && !card && (
         <div className="office-tip" style={{ left: Math.min(hover.ex + 14, (wrap.current?.clientWidth || 600) - 290), top: hover.ey + 12 }}>
           <strong>{m?.title}{m?.boss ? "(上司)" : ""}</strong><span className="muted small">{hover.dept}</span>
           {m?.persona && <div className="small persona">{m.persona}</div>}
           <div className="small">{doing}</div>
-          <div className="muted small">押すと部署の画面を開きます</div>
+          <div className="muted small">押すと名刺を出します</div>
         </div>
       )}
     </div>

@@ -789,3 +789,18 @@ select.status-sel { color-scheme: dark; }
 @keyframes hud-floor { from { background-position: 0 0, 0 0; } to { background-position: 0 0, 0 48px; } }
 @keyframes hud-blink { 0%, 100% { border-color: var(--ng); } 50% { border-color: rgba(255, 77, 141, .4); } }
 @media (prefers-reduced-motion: reduce) { [data-look="future"] * { animation: none !important; } }
+
+/* ---------- オフィスの名刺 ---------- */
+.office-card { position: absolute; right: 12px; top: 12px; width: min(300px, calc(100% - 24px)); z-index: 6; background: var(--panel); border: 1px solid var(--line2); border-radius: 16px; padding: 14px; box-shadow: 0 18px 40px rgba(0,0,0,.5); }
+[data-look="future"] .office-card { border-radius: 4px; background: #061022; box-shadow: 0 0 30px -8px var(--accent); }
+.office-card-x { position: absolute; right: 8px; top: 6px; background: none; border: 0; color: var(--sub); font-size: 18px; }
+.oc-top { display: flex; gap: 10px; align-items: center; }
+.oc-ph { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 900; color: #fff; font-size: 18px; flex: none; }
+.oc-nm { font-weight: 800; font-size: 15px; } .oc-rl { font-size: 11px; color: var(--sub); overflow-wrap: anywhere; }
+.oc-pers { margin-top: 8px; font-size: 12px; color: var(--sub); background: var(--panel2); border-radius: 10px; padding: 6px 9px; }
+.oc-now { margin-top: 8px; font-size: 12.5px; } .oc-now b.on { color: var(--info); }
+.oc-kp { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.oc-kp div { background: var(--panel2); border-radius: 10px; padding: 6px 8px; } .oc-kp b { display: block; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; } .oc-kp span { font-size: 10.5px; color: var(--sub); }
+[data-look="future"] .oc-kp b { font-family: var(--hud); color: var(--accent2); }
+.oc-last { margin-top: 6px; } .oc-desc { margin-top: 8px; max-height: 60px; overflow: hidden; }
+.oc-btns { display: flex; gap: 6px; margin-top: 10px; } .oc-btns .btn { flex: 1; }
