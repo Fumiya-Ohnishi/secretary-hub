@@ -5,6 +5,7 @@ import Accounts from "./Accounts.jsx";
 import { Calendar, OrgChart, Activity } from "./Extras.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 import Today from "./Today.jsx";
+import { stripTone } from "./speech.js";
 
 export const STATUSES = ["未着手", "進行中", "承認待ち", "承認済み", "完了", "差し戻し"];
 const ASSIGNEES = ["秘書", "戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析", "社長"];
@@ -452,7 +453,7 @@ function Jobs({ jobs, claudeCli, onChanged, notify }) {
 function Chat({ log, logRef }) {
   return (
     <div className="chat" ref={logRef}>
-      {log.map((m, i) => <div key={i} className={`bubble ${m.role}`}>{m.text}</div>)}
+      {log.map((m, i) => <div key={i} className={`bubble ${m.role}`}>{stripTone(m.text)}</div>)}
     </div>
   );
 }

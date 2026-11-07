@@ -225,9 +225,9 @@ export default function App() {
       setLine(text);
       try {
         const b = await getBriefing();
-        if (b.text) { text = b.text; m = b.mood || "normal"; setLine(text); setMood(m); }
+        if (b.text) { text = b.text; m = b.mood || "normal"; setLine(stripTone(text)); setMood(m); }
       } catch (e) {}
-      setLog((l) => [...l, { role: "sys", text: `── ${new Date().toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 起動 ──` }, { role: "ai", text }]);
+      setLog((l) => [...l, { role: "sys", text: `── ${new Date().toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 起動 ──` }, { role: "ai", text: stripTone(text) }]);
       pendingSpeech.current = text; // ブラウザは操作の後でないと音を出せないので、最初のクリックで読み上げる
     });
     const speakPending = () => {
@@ -366,9 +366,9 @@ export default function App() {
       if (!muted) tts.streamEnd();
       setStreamText(null);
       setInstantLine(true);
-      setLine(res.reply);
+      setLine(stripTone(res.reply));
       setMood(res.mood || "normal");
-      setLog((l) => [...l, { role: "ai", text: res.reply }]);
+      setLog((l) => [...l, { role: "ai", text: stripTone(res.reply) }]);
       handleActions((res.actions || []).slice(seen));
     } catch (e) {
       tts.stop();
@@ -533,7 +533,7 @@ export default function App() {
               {heard ? <div className="heard">「{heard}」</div>
                 : streamText ? <>{streamText}<span className="caret" /></>
                 : busy ? <div className="dots"><span /><span /><span /></div>
-                : <Typewriter text={line} instant={instantLine} />}
+                : <Typewriter text={stripTone(line)} instant={instantLine} />}
             </div>
           </div>
 

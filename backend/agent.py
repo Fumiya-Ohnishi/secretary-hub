@@ -965,7 +965,7 @@ def _valid_input(name: str, args) -> Optional[str]:
     return None
 
 
-TONE_RE = re.compile(r"\[tone:\s*\w+\s*\]")
+TONE_RE = re.compile(r"[\[［]\s*tone\s*[:：][^\]］]*[\]］]", re.I)
 
 
 class _MoodFilter:
