@@ -506,7 +506,7 @@ export default function App() {
             <div className={`stage-bg ${timeOfDay}`} />
             {live2dFailed
               ? <img className="still" src={FACES[mood]} alt={name} draggable="false" />
-              : <Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef} onError={() => setLive2dFailed(true)} />}
+              : <Live2DStage mood={mood} speaking={tts.speaking} levelRef={tts.levelRef} state={status} onError={() => setLive2dFailed(true)} />}
             <div className="nameplate"><span className="np-name">{name}</span><span className="np-role">統括秘書</span></div>
             {statusText && <div className={`state-chip ${status}`}><i />{statusText}</div>}
             <div className="dialogue" onClick={() => setTab("chat")}>
