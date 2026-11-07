@@ -1,6 +1,7 @@
 import Office from "./Office.jsx";
 import FloorPlan from "./FloorPlan.jsx";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+const Office3D = lazy(() => import("./Office3D.jsx"));
 import { getToPost, decidePost, getAllPosts, schedulePost, patchTask, getOrg, search, getDiagnostics, createJob } from "./api.js";
 
 const fileUrl = (p) => `/api/content/file?path=${encodeURIComponent(p)}`;
@@ -271,6 +272,30 @@ export function Activity({ job, members = [], titles = {} }) {
   );
 }
 
+/** オフィスの見せ方: 3D(全部3D・色は木目/白/黒) / イラスト(AIで描いた背景+3Dの社員) / 2D(軽い従来版) */
+function OfficeView({ data, onOpenDept, onShowFloor }) {
+  const read = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
+  const [mode, setModeState] = useState(() => read("officeMode", "3d"));
+  const [theme, setThemeState] = useState(() => read("officeTheme", "wood"));
+  const save = (k, v, f) => { f(v); try { localStorage.setItem(k, v); } catch (e) {} };
+  return (
+    <div className="office-host">
+      <div className="office-mode">
+        {[["3d", "3D"], ["art", "イラスト"], ["2d", "2D(軽量)"]].map(([k, l]) => (
+          <button key={k} className={mode === k ? "on" : ""} onClick={() => save("officeMode", k, setModeState)}>{l}</button>
+        ))}
+        {mode === "3d" && <span className="office-theme">
+          {[["wood", "木目"], ["white", "白"], ["dark", "黒"]].map(([k, l]) => (
+            <button key={k} className={theme === k ? "on" : ""} onClick={() => save("officeTheme", k, setThemeState)} title={`オフィスの色: ${l}`}><i className={`sw sw-${k}`} />{l}</button>
+          ))}
+        </span>}
+      </div>
+      {mode === "2d" ? <Office data={data} onOpenDept={onOpenDept} onShowFloor={onShowFloor} />
+        : <Suspense fallback={<div className="office"><div className="empty">オフィスを読み込み中…</div></div>}><Office3D key={mode + theme} data={data} mode={mode} theme={theme} onShowFloor={onShowFloor} /></Suspense>}
+    </div>
+  );
+}
+
 export function OrgChart({ onSay, notify, onOpenLibrary }) {
   const [data, setData] = useState(null);
   const [dept, setDept] = useState(null);
@@ -307,7 +332,7 @@ export function OrgChart({ onSay, notify, onOpenLibrary }) {
         </div>
       </div>
       {view === "floor" && <FloorPlan key={floorFocus || "fp"} data={data} onOpenDept={setDept} focusName={floorFocus} onOpenLibrary={onOpenLibrary} />}
-      {view === "office" && <Office data={data} onOpenDept={setDept} onShowFloor={(name) => { setFloorFocus(name); setView("floor"); }} />}
+      {view === "office" && <OfficeView data={data} onOpenDept={setDept} onShowFloor={(name) => { setFloorFocus(name); setView("floor"); }} />}
       {view === "list" && <>
       {workingAll.length > 0 && (
         <section className="card now-working">
