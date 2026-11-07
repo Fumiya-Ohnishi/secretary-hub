@@ -125,7 +125,12 @@ async def _exchange(tok: str) -> dict:
 async def _find_ig(token: Optional[str] = None) -> dict:
     """トークンから、つながった Instagram プロアカウントを探す。見つからなければ、何が見えたかを添えて IGError"""
     fields = "name,access_token,instagram_business_account{id,username},connected_instagram_account{id,username}"
-    pages = (await _get("me/accounts", {"fields": fields, "limit": 100}, token=token)).get("data", [])
+    try:
+        pages = (await _get("me/accounts", {"fields": fields, "limit": 100}, token=token)).get("data", [])
+    except IGError as e:
+        if "accounts" not in str(e):
+            raise
+        pages = []  # ページ用のトークン(me がページ自身)のときは一覧が無い。下で me に直接聞く
     for p in pages:
         ig = p.get("instagram_business_account") or p.get("connected_instagram_account")
         if not ig and p.get("access_token"):  # 一覧に出ないときは、ページのトークンでページ自身に聞く
