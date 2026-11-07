@@ -12,6 +12,50 @@ function Asset({ path }) {
   return <a className="btn sm" href={fileUrl(path)} target="_blank" rel="noreferrer">{path.split("/").pop()}</a>;
 }
 
+function Thumb({ item }) {
+  if (!item.exists) return <div className="m-missing">ドライブに<br />まだありません</div>;
+  if (item.kind === "image") return <a href={fileUrl(item.path)} target="_blank" rel="noreferrer"><img src={fileUrl(item.path)} alt={item.name} /></a>;
+  if (item.kind === "video") return <video src={fileUrl(item.path)} controls preload="metadata" />;
+  return <a className="btn sm" href={fileUrl(item.path)} target="_blank" rel="noreferrer">{item.name}</a>;
+}
+
+/** 投稿する素材(どの画像・動画を、どの順で上げるか)と表紙 */
+function MediaPanel({ post }) {
+  const { media = [], cover } = post;
+  if (!media.length && !cover) return null;
+  const missing = media.filter((m) => !m.exists).length + (cover && !cover.exists && !media.some((m) => m.is_cover) ? 1 : 0);
+  return (
+    <div className="media-panel">
+      {cover && (
+        <div className="m-cover">
+          <div className="sec-title">表紙</div><div className="muted small">プロフィールの一覧に出る1枚</div>
+          <div className="m-tile cover"><Thumb item={{ ...cover, kind: "image" }} /></div>
+          <div className="m-name">{cover.name}</div>
+          {cover.how && <div className="muted small">{cover.how}</div>}
+          {!cover.how && post.cover_note && <div className="muted small">{post.cover_note}</div>}
+        </div>
+      )}
+      {media.length > 0 && (
+        <div className="m-list">
+          <div className="sec-title">投稿する素材<span className="muted small">({media.length}点・この順で選ぶ)</span>
+            {missing > 0 && <span className="badge s-ng">未保存 {missing}</span>}</div>
+          <div className="m-grid">
+            {media.map((m) => (
+              <div key={m.path} className="m-item">
+                <div className={`m-tile ${m.kind}`}>
+                  <span className="m-no">{m.label}{m.is_cover ? "・表紙" : ""}</span>
+                  <Thumb item={m} />
+                </div>
+                <div className="m-name">{m.name}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Post({ post, open, onToggle, onChanged, notify }) {
   const [rejecting, setRejecting] = useState(false);
   const [comment, setComment] = useState("");
@@ -33,6 +77,7 @@ function Post({ post, open, onToggle, onChanged, notify }) {
   return (
     <div className={`card post ${open ? "open" : ""}`}>
       <div className="post-head" onClick={onToggle}>
+        {post.cover?.exists && <img className="head-cover" src={fileUrl(post.cover.path)} alt="" />}
         <span className={`plat plat-${post.platform}`}>{post.platform_ja}</span>
         <span className="muted small">{FORMAT_JA[post.format] || post.format}</span>
         <span className="ttl">{post.title}</span>
@@ -42,7 +87,8 @@ function Post({ post, open, onToggle, onChanged, notify }) {
       </div>
       {open && (
         <div className="post-body">
-          {post.assets.length > 0 && <div className="assets">{post.assets.map((a) => <Asset key={a} path={a} />)}</div>}
+          {post.media || post.cover ? <MediaPanel post={post} />
+            : post.assets.length > 0 && <div className="assets">{post.assets.map((a) => <Asset key={a} path={a} />)}</div>}
           {post.sections.map((s, i) => (
             <div key={i} className={`post-sec ${s.title.includes("社長コメント") ? "comment" : ""}`}>
               {s.title && <div className="sec-title">{s.title}

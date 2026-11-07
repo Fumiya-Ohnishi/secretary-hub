@@ -68,6 +68,7 @@ def _post(path: Path) -> dict:
     meta, body = parse(path.read_text())
     secs = sections(body)
     assets = [a.strip() for a in meta.get("assets", "").split(",") if a.strip()]
+    media, cover, cover_note = _media(meta, assets)
     return {
         "path": str(path.relative_to(company.COMPANY_DIR)),
         "file": path.name,
@@ -81,9 +82,52 @@ def _post(path: Path) -> dict:
         "posted": meta.get("posted", ""),
         "pr": meta.get("pr", "false").lower() == "true",
         "assets": assets,
+        "media": media,
+        "cover": cover,
+        "cover_note": cover_note,
         "sections": secs,
         "caption": next((s["text"] for s in secs if "キャプション" in s["title"]), ""),
     }
+
+
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+VIDEO_EXT = {".mp4", ".mov", ".webm"}
+
+
+def _exists(rel: str) -> bool:
+    try:
+        safe_path(rel)
+        return True
+    except Exception:
+        return False
+
+
+def _media(meta: Dict[str, str], assets: List[str]) -> Tuple[List[dict], Optional[dict], str]:
+    """投稿する素材を、投稿する順に並べる。表紙(プロフィールの一覧に出る1枚)も見分ける。
+    表紙は front matter の cover_image(パス)か、名前に cover が入った画像。カルーセルで指定が無ければ1枚目"""
+    fmt = meta.get("format", "")
+    raw_cover = meta.get("cover_image", "").strip() or meta.get("cover", "").strip()
+    cover_path = raw_cover if Path(raw_cover).suffix.lower() in IMAGE_EXT else ""
+    cover_note = "" if cover_path else meta.get("cover", "").strip()
+    if not cover_path:
+        cover_path = next((a for a in assets if "cover" in Path(a).stem.lower() and Path(a).suffix.lower() in IMAGE_EXT), "")
+    if not cover_path and fmt == "carousel":
+        cover_path = next((a for a in assets if Path(a).suffix.lower() in IMAGE_EXT), "")
+    items, n = [], 0
+    for a in assets:
+        ext = Path(a).suffix.lower()
+        kind = "video" if ext in VIDEO_EXT else "image" if ext in IMAGE_EXT else "file"
+        # リールのカバーは「投稿する素材」ではなく表紙として別に出す
+        if fmt == "reel" and a == cover_path and kind == "image":
+            continue
+        n += 1
+        label = f"{n}枚目" if fmt == "carousel" else "動画" if kind == "video" else f"素材{n}"
+        items.append({"path": a, "name": Path(a).name, "kind": kind, "label": label,
+                      "is_cover": a == cover_path, "exists": _exists(a)})
+    cover = {"path": cover_path, "name": Path(cover_path).name, "exists": _exists(cover_path),
+             "how": "1枚目として投稿(一覧に出るのはこの1枚)" if fmt == "carousel" else
+                    "投稿画面の「カバーを編集」→「カメラロールから追加」で選ぶ" if fmt == "reel" else ""} if cover_path else None
+    return items, cover, cover_note
 
 
 def list_weeks() -> List[dict]:
