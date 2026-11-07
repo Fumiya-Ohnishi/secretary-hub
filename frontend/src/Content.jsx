@@ -23,7 +23,7 @@ const IG_HANDLE = "ai_hisho_sena";
 const AVATAR = "/faces/normal.jpg";
 
 /** Instagram の投稿画面に近い見え方(スマホの枠)。カルーセルは左右で送る、リールは縦の全画面 */
-function PostPreview({ post, start = 0, onClose }) {
+export function PostPreview({ post, start = 0, onClose }) {
   const items = (post.media || []).filter((m) => m.exists && m.kind !== "file");
   const [i, setI] = useState(Math.min(start, Math.max(0, items.length - 1)));
   const [more, setMore] = useState(false);

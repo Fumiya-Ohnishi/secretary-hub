@@ -116,6 +116,9 @@ export default function App() {
   const [deciding, setDeciding] = useState(false);
   const [handsFree, setHandsFree] = useState(() => load("hub-handsfree", false));
   const [senaView, setSenaView] = useState(() => load("hub-sena-view", "half"));
+  // デザイン: 標準 / 近未来(HUD 風)。html の data-look に入れて CSS で切り替える
+  const [look, setLook] = useState(() => load("hub-look", "standard"));
+  useEffect(() => { document.documentElement.dataset.look = look; save("hub-look", look); }, [look]);
   const chooseView = (v) => { setSenaView(v); save("hub-sena-view", v); };
   const [muted, setMuted] = useState(() => load("hub-muted", false));
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -475,6 +478,10 @@ export default function App() {
             : <button key={p.label} className={`pill pill-btn ${p.ok ? "ok" : ""}`} title={`${p.title}(押すと接続の診断)`} onClick={() => setDiagOpen(true)}><i />{p.label}</button>)}
         </div>
         <div className="settings-wrap" ref={settingsRef}>
+          <div className="look-switch" role="group" aria-label="画面のデザイン">
+            <button className={look === "standard" ? "on" : ""} onClick={() => setLook("standard")} aria-pressed={look === "standard"}>標準</button>
+            <button className={look === "future" ? "on" : ""} onClick={() => setLook("future")} aria-pressed={look === "future"}>近未来</button>
+          </div>
           <button className="icon-btn wide" onClick={() => setSettingsOpen(!settingsOpen)} aria-label="声と設定">⚙ 声・設定</button>
           {settingsOpen && (
             <div className="settings">

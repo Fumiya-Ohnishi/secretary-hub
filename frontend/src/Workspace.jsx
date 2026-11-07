@@ -4,6 +4,7 @@ import { Blocks } from "./DocView.jsx";
 import Accounts from "./Accounts.jsx";
 import { Calendar, OrgChart, Activity } from "./Extras.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
+import Today from "./Today.jsx";
 
 export const STATUSES = ["未着手", "進行中", "承認待ち", "承認済み", "完了", "差し戻し"];
 const ASSIGNEES = ["秘書", "戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析", "社長"];
@@ -457,7 +458,7 @@ function Chat({ log, logRef }) {
 }
 
 export const TABS = [
-  ["home", "ホーム"], ["content", "アカウント"], ["calendar", "予定"], ["tasks", "タスク"], ["docs", "資料"], ["jobs", "部署の作業"],
+  ["home", "今日"], ["content", "アカウント"], ["calendar", "予定"], ["tasks", "タスク"], ["docs", "資料"], ["jobs", "部署の作業"],
   ["org", "組織図"], ["chat", "会話"],
 ];
 
@@ -487,8 +488,16 @@ export default function Workspace(props) {
         {summary && !summary.company_found && tab !== "docs" && (
           <div className="warnbox">会社リポジトリ(ai-company)が見つかりません。backend/.env の AI_COMPANY_DIR を確認してください。</div>
         )}
-        {summary && tab === "home" && <Home summary={summary} jobs={jobs} onApprove={onApprove} onSay={onSay} onTab={goTab} onOpenTask={openTask}
-                                            onChanged={refresh} notify={notify} onOpenWeek={(w) => { setWeek(w); setTab("content"); }} onRule={onRule} />}
+        {summary && tab === "home" && (
+          <Today summary={summary} jobs={jobs} onApprove={onApprove} onSay={onSay} onTab={goTab} onOpenTask={openTask}
+                 onChanged={refresh} notify={notify} onOpenWeek={(w) => { setWeek(w); setTab("content"); }} onRule={onRule}>
+            <details className="t-more">
+              <summary>数字の記録・タスク・話しかけ方(これまでのホーム)</summary>
+              <Home summary={summary} jobs={jobs} onApprove={onApprove} onSay={onSay} onTab={goTab} onOpenTask={openTask}
+                    onChanged={refresh} notify={notify} onOpenWeek={(w) => { setWeek(w); setTab("content"); }} onRule={onRule} />
+            </details>
+          </Today>
+        )}
         {summary && tab === "calendar" && <Calendar summary={summary} refresh={refresh} notify={notify} onOpenTask={openTask}
                                                     onOpenWeek={(w) => { setWeek(w); setTab("content"); }} />}
         {tab === "org" && <OrgChart onSay={onSay} notify={notify} />}
