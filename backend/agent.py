@@ -102,6 +102,9 @@ def _roster(dept_full: str) -> List[dict]:
         return []
 
 
+OPINION_DEPARTMENTS = {"企画", "ライティング", "デザイン", "戦略"}  # いろんな意見を出させてから上司がまとめる部署
+
+
 def _job_prompt(job: dict) -> str:
     dept = DEPT_FULL.get(job["department"], job["department"])
     members = _roster(dept)
@@ -111,7 +114,13 @@ def _job_prompt(job: dict) -> str:
     lines = [f"あなたは AI会社の秘書室として、{dept}の作業を進めます。部署の社員はサブエージェントとして定義されています。",
              f"作業: {job['instruction']}", "", f"## {dept}の社員", roster or "(定義なし。あなた自身が部署として作業する)", "",
              "## 進め方"]
-    if staff:
+    if staff and job["department"] in OPINION_DEPARTMENTS and len(staff) >= 2:
+        lines.append("1. 案出しの段階では、性格・視点の違う担当2〜3名に、互いの案を見せずに別々に案を出させる(各社員の定義の「性格・視点」を参照)。"
+                     "清書・仕上げは採用した案の担当1名に任せる(費用を抑えるため、意見を広げるのは案出しだけ)")
+        if bosses:
+            lines.append(f"1b. 上司「{bosses[0]['name']}」が案を比べ、良いところを合わせて1つにまとめる。方向がずれた案は理由を添えて軌道修正する。"
+                         "採らなかった案と理由・少数意見は作業フォルダの _discussion.md に1行ずつ残す")
+    elif staff:
         lines.append("1. 作業に合う担当(複数可)のサブエージェントに作らせる")
     else:
         lines.append("1. 部署のサブエージェントに作業させる")

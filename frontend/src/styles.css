@@ -519,3 +519,5 @@ select.status-sel { color-scheme: dark; }
               box-shadow: var(--shadow); max-width: 280px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .mini-row.clickable { cursor: pointer; }
 @media (max-width: 720px) { .office { height: 420px; } }
+.office-legend { position: absolute; left: 12px; bottom: 10px; color: var(--sub); background: rgba(11,14,26,.7); padding: 4px 10px; border-radius: 99px; }
+.office-tip .persona { color: var(--accent2); }

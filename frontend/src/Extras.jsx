@@ -340,6 +340,7 @@ export function OrgChart({ onSay, notify }) {
                     <span className={`avatar ${st?.state === "working" ? "on" : ""}`}>{m.boss ? "★" : m.title.slice(0, 1)}</span>
                     <div className="om-text">
                       <div>{m.title}{m.boss && <span className="muted small">(上司)</span>}</div>
+                      {m.persona && <div className="muted small">{m.persona}</div>}
                       {st?.state === "working" && <div className="ms working small"><i />{st.desc}</div>}
                     </div>
                   </div>
