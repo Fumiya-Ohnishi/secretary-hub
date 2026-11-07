@@ -56,6 +56,19 @@ async def start_scheduler():
     asyncio.create_task(scheduler.loop())  # 決まった時間に動く係
     asyncio.create_task(media_loop())       # 完成した画像・動画を Google ドライブへ写す
     asyncio.create_task(reels_loop())       # 声なしのリールを声入りに書き出し直す
+    asyncio.create_task(watch_loop())       # 参考アカウントの評価・確認の結果を台帳と Notion に反映
+
+
+async def watch_loop():
+    import watch
+    while True:
+        try:
+            n = await watch.sync_updates()
+            if n:
+                print(f"参考アカウントを {n} 件反映しました")
+        except Exception as e:
+            print("参考アカウントの反映でエラー:", e)
+        await asyncio.sleep(600)
 
 
 async def reels_loop():

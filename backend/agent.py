@@ -485,6 +485,11 @@ TOOLS = [
           "社長の気づき・分析部の金曜の見直しの結論を残すときに使う。",
           {"platform": {"type": "string", "enum": company.PLATFORMS},
            "text": {"type": "string", "description": "改善点(1〜2文)"}}, ["platform", "text"]),
+    _tool("watch_account", "社長や秘書が見つけた気になるアカウント(競合・お手本)を参考アカウントの台帳(Notion と data/watch_accounts.csv)に入れて監視対象にし、"
+          "経営戦略部に評価(長所・短所・投稿の型・当社との違い・取り入れること・差別化)を頼む。以後は毎週月曜のリサーチで確認する。",
+          {"url": {"type": "string", "description": "アカウントの URL(https://...)"},
+           "found_by": {"type": "string", "enum": ["社長", "秘書"], "description": "見つけた人"},
+           "memo": {"type": "string", "description": "社長が気になった点など(任意)"}}, ["url"]),
     _tool("register_account", "開設したSNSアカウントのURLを台帳(data/accounts.md と Notion)に記録する。URLだけを扱う。",
           {"platform": {"type": "string", "enum": company.PLATFORMS},
            "url": {"type": "string", "description": "https:// から始まるプロフィールURL"},
@@ -645,6 +650,18 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         actions.append({"type": "refresh"})
         return f"{company.PLATFORM_JA[args['platform']]} の改善点に記録しました: {r['text']}"
 
+    if name == "watch_account":
+        import watch
+        row = await watch.add(args["url"], args.get("found_by") or "社長", args.get("memo") or "")
+        job = start_job("戦略", watch.evaluation_instruction(row, args.get("memo") or ""), f"参考アカウントの評価: {row['account']}", f"watch:{row['url']}")
+        actions.append({"type": "job", "job": job})
+        actions.append({"type": "refresh"})
+        note = "" if row["notion"] in (True, None) else f"(Notion への記録は失敗: {row['notion']}。控えの台帳には入れました)"
+        if row["notion"] is None:
+            note = "(この秘書ハブは Notion に未接続のため、控えの台帳 data/watch_accounts.csv に入れました)"
+        return (f"{'台帳に追加し' if row['created'] else '監視対象にし'}、経営戦略部に評価を頼みました: {row['platform']} {row['account']}{note}。"
+                "評価が終わると台帳と Notion に反映されます。")
+
     if name == "register_account":
         r = await company.register_account(args["platform"], args["url"], args.get("opened"))
         note = "" if r["notion"] in (True, None) else f"(Notion への記録は失敗: {r['notion']})"
@@ -772,6 +789,7 @@ def context_text(data: dict) -> str:
         f"- Notion: {'接続済み' if notion.configured() else '未接続(タスクは控えファイルで管理)'}",
         f"- 支払い: 部署の作業は{'API の残高' if os.getenv('JOBS_USE_API_KEY', '').strip() in ('1', 'true', 'yes') else 'Claude Code にログイン中のプラン(Pro)の枠'}で動く。"
         "API の残高を使うのは秘書(あなた)との会話だけ。部署の作業が「残高不足」で止まったのは、プランで動く設定にする前(秘書ハブの更新前)の作業",
+        __import__("watch").summary_text(),
         "- 定例の仕事(秘書ハブが自動で頼む): " + " / ".join(f"{r['when']} {r['title']}" for r in scheduler.summary()["routines"]) + "。結果は strategy/research/ に保存される",
         f"- 部署の作業の制限時間: {_job_timeout_min()}分(時間切れのときは作業の記録に「時間切れ」と書く)",
     ])

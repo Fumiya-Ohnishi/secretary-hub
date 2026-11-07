@@ -37,7 +37,11 @@ ROUTINES = [
                     "(1) AIジャンル(会社員向けのAI活用)で、この1週間に伸びている投稿の型を Instagram・X・Threads・note それぞれ最大5件"
                     "(どんな形式か・1行目のフック・なぜ伸びたと思うか・見えている反応の数)。"
                     "(2) 生成AIの新機能・ニュース・情勢(公式発表を優先)で、会社員の仕事に関係するものを最大5件(何が変わったか・当社で試せるか)。"
-                    "(3) 当社への示唆: 来週試す企画案3つと、避けること1つ。"
+                    "(3) 監視中の参考アカウント(data/watch_accounts.csv の monitor=y)を全部確認する: フォロワー数・投稿数(公開ページで見える範囲)と、"
+                    "この1週間のカルーセル・リールの型(フック・構成・デザイン)、伸びた投稿。1アカウントにつき strategy/research/accounts/_updates/YYYY-MM-DD_<アカウント>.json を書く"
+                    "(キーは url, account, platform, followers, posts, checked, rating, patterns, adopt, memo, source。見えない数字は空にする)。"
+                    "調べる中で新しく見つけた良いアカウントは found_by=秘書 で同じ形で足す(最大3件)。"
+                    "(4) 当社への示唆: 来週試す企画案3つと、避けること1つ。監視アカウントとの差と改善点を1つ以上入れる。"
                     "結果は strategy/research/YYYY-MM-DD_週次リサーチ.md に保存し、企画編集部が月曜の企画で読めるようにする。" + RESEARCH_RULES},
     {"id": "news_check", "weekday": 3, "time": "08:30", "department": "戦略", "title": "AIニュースの中間チェック",
      "instruction": "トレンドウォッチャーが、月曜のリサーチ以降の生成AIの新機能・ニュースを確認する(短く、最大5件)。"
