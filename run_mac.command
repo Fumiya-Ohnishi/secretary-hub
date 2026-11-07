@@ -1,6 +1,12 @@
 #!/bin/bash
 # ダブルクリックで秘書ハブを起動(Mac用)
 cd "$(dirname "$0")"
+# 最新版を取り込む(秘書ハブと会社のリポジトリ)。手元の変更とぶつかるときや、手元に独自の記録があるときは取り込まずに続ける
+for d in . ../ai-company; do
+  if [ -d "$d/.git" ]; then
+    (git -C "$d" fetch -q && git -C "$d" merge --ff-only -q '@{u}' 2>/dev/null) || echo "ℹ $(basename "$(cd "$d" && pwd)") は最新版を自動で取り込めませんでした(手元の変更とぶつかるため)。秘書に伝えてください"
+  fi
+done
 if [ ! -d backend/venv ]; then
   python3 -m venv backend/venv
 fi
@@ -22,7 +28,7 @@ else
   echo "⚠ npm が見つかりません。画面のビルドには Node.js が必要です(https://nodejs.org)"
 fi
 # リールの声入れに使う部品(初回だけ)
-if command -v npm >/dev/null 2>&1 && { [ ! -d tools/reel/node_modules/playwright-core ] || [ ! -d tools/reel/node_modules/ffmpeg-static ]; }; then
+if command -v npm >/dev/null 2>&1 && { [ ! -d tools/reel/node_modules/playwright-core ] || [ ! -d tools/reel/node_modules/ffmpeg-static ] || [ ! -d tools/reel/node_modules/node ]; }; then
   (cd tools/reel && npm install --silent) || echo "⚠ リール書き出しの部品を入れられませんでした(声入れは後で自動で再試行します)"
 fi
 if [ ! -f frontend/public/live2d/core/live2dcubismcore.js ]; then

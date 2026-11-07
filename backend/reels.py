@@ -52,7 +52,7 @@ def _ready() -> Optional[str]:
     if not shutil.which("node"):
         return "Node.js が見つかりません(https://nodejs.org から入れると、リールに声が入ります)"
     nm = RENDER.parent / "node_modules"
-    if not (nm / "playwright-core").exists() or not (nm / "ffmpeg-static").exists():
+    if not all((nm / x).exists() for x in ("playwright-core", "ffmpeg-static", "node")):
         npm = shutil.which("npm")
         if not npm:
             return "npm が見つかりません"
