@@ -917,3 +917,28 @@ select.status-sel { color-scheme: dark; }
 .fp-meet-start input { flex: 1; min-width: 140px; background: var(--panel2); border: 1px solid var(--line2); border-radius: 8px; padding: 5px 8px; }
 .fp-min { padding: 5px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 1px; } .fp-min:first-child { border-top: 0; }
 .fp-min a { font-size: 12px; }
+
+/* ---------- オフィス(3D / イラスト / 2D の切り替え) ---------- */
+.office-host { position: relative; }
+.office-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+.office-mode button { background: var(--panel2); border: 1px solid var(--line2); color: var(--sub); border-radius: 99px; padding: 4px 12px; font-size: 12px; }
+.office-mode button.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.office-theme { display: inline-flex; gap: 4px; margin-left: 8px; padding-left: 10px; border-left: 1px solid var(--line2); }
+.office-theme .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; border: 1px solid rgba(255,255,255,.4); }
+.sw-wood { background: #b98a5c; } .sw-white { background: #eeeae3; } .sw-dark { background: #2b2d33; }
+.o3 { user-select: none; touch-action: none; }
+.o3-art { background: #e9ebee; }
+.o3-stage { position: absolute; inset: 0; }
+.o3-art .o3-stage { inset: auto; left: 0; top: 0; transform-origin: 0 0; }
+.o3-bg { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; pointer-events: none; }
+.o3-art .o3-canvas { position: absolute; left: 0; top: 0; }
+.o3-tint { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: multiply; transition: background 2s; }
+.o3-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.o3-overlay > div { position: absolute; left: 0; top: 0; white-space: nowrap; will-change: transform; }
+.o3-label { font-size: 11px; font-weight: 700; color: #222; background: rgba(255,255,255,.86); padding: 2px 9px; border-radius: 99px; letter-spacing: .04em; }
+.o3-bub { font-size: 11px; color: #222; background: #fff; padding: 4px 9px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.25); max-width: 220px; }
+.o3-bub.work { background: #1d2333; color: #fff; border: 1px solid #ffd166; }
+.o3-bub.work::before { content: "●"; color: #ffd166; margin-right: 5px; animation: pulse 1.4s infinite; }
+.o3 .office-legend { color: #eee; }
+.o3-art .office-legend { background: rgba(20,22,28,.6); }
+[data-look="future"] .o3-label { background: rgba(6,16,34,.85); color: var(--accent); border: 1px solid var(--accent); }
