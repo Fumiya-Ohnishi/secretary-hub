@@ -175,6 +175,7 @@ def _job_prompt(job: dict) -> str:
               "- 完成した画像・動画は git に入れない。既存の動画・画像は環境変数 MEDIA_DIR の Google ドライブ(週ごとのフォルダ)にある。"
               "比べるときはそこから読み、新しく書き出したものは content/output/YYYY-WW/ に置く(秘書ハブがドライブへ写す)",
               "- 上司・品質管理部のチェックは、作った担当とは別のサブエージェントにさせる(自分で作ったものを自分で合格にしない)",
+              f"- 制限時間は{_job_timeout_min()}分。1本(1ファイル)できるごとに保存し、全部を最後にまとめて書かない。時間が足りなそうなら、終わった分だけ仕上げて「残り」を書いて終える",
               "- 最後に、誰が何をして、どのファイルに保存したか、チェックの結果を日本語で3行以内でまとめる"]
     return "\n".join(lines)
 
@@ -281,7 +282,13 @@ def _run_claude_streaming(job: dict, prompt: str):
                              "--allowedTools", *ALLOWED_TOOLS, "--disallowedTools", *DISALLOWED_TOOLS],
                             cwd=str(company.COMPANY_DIR), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             text=True, encoding="utf-8", errors="replace", env=_job_env())
-    timer = threading.Timer(1800, proc.kill)
+    limit_min = _job_timeout_min()
+    timed_out = threading.Event()
+
+    def _kill():
+        timed_out.set()
+        proc.kill()
+    timer = threading.Timer(limit_min * 60, _kill)
     timer.start()
     result_text, is_error, plain = None, False, []
     by_id = {}
@@ -327,10 +334,36 @@ def _run_claude_streaming(job: dict, prompt: str):
         if act["status"] == "running":
             act.update(status="error" if proc.returncode else "done", finished=datetime.datetime.now().isoformat(timespec="seconds"))
     out = result_text if result_text is not None else "\n".join(plain) or err
-    ok = proc.returncode == 0 and not is_error
+    ok = proc.returncode == 0 and not is_error and not timed_out.is_set()
     job.update(status="done" if ok else "error", output=(out or "")[-6000:] + ("" if ok or not err else f"\n{err[-1000:]}"))
-    if not ok:
+    if timed_out.is_set():
+        job["output"] = (job["output"] + "\n\n" if job["output"].strip() else "") + _timeout_note(job, limit_min)
+    elif not ok:
+        if not (out or "").strip() and not err:  # 中身が空のまま止まったとき、途中経過を残す
+            job["output"] = _progress_note(job) or f"(終了コード {proc.returncode}。出力なし)"
         job["output"] += _job_hint((out or "") + " " + err)
+
+
+def _job_timeout_min() -> int:
+    """部署の作業の制限時間(分)。.env の JOB_TIMEOUT_MIN で変えられる(既定 90 分)"""
+    try:
+        return max(10, int(os.getenv("JOB_TIMEOUT_MIN", "90")))
+    except ValueError:
+        return 90
+
+
+def _progress_note(job: dict) -> str:
+    """止まるまでに誰が何をしたか(作業タブで原因を追えるように)"""
+    acts = job.get("activity", [])
+    lines = [f"- {a['agent']}: {a['desc']}({'済' if a['status'] == 'done' else '途中' if a['status'] == 'running' else '失敗'})" for a in acts[-12:]]
+    logs = [f"> {t}" for t in job.get("log", [])[-3:]]
+    return "\n".join((["## 止まるまでの作業"] + lines if lines else []) + (["## 最後のメモ"] + logs if logs else []))
+
+
+def _timeout_note(job: dict, limit_min: int) -> str:
+    return (f"【秘書より】{limit_min}分の制限時間で止めました(エラーではなく時間切れです)。"
+            "途中までに保存したファイルは残っています。作業が大きすぎるので、媒体ごと・1本ずつなどに分けて頼み直してください"
+            "(制限時間は .env の JOB_TIMEOUT_MIN で変えられます)。\n\n" + _progress_note(job))
 
 
 def _job_hint(text: str) -> str:
@@ -736,6 +769,9 @@ def context_text(data: dict) -> str:
         corrections.summary_text(),
         f"- 定時チェック: {'オン' if scheduler.settings()['auto'] else 'オフ'}({'・'.join(scheduler.settings()['times'])})",
         f"- Notion: {'接続済み' if notion.configured() else '未接続(タスクは控えファイルで管理)'}",
+        f"- 支払い: 部署の作業は{'API の残高' if os.getenv('JOBS_USE_API_KEY', '').strip() in ('1', 'true', 'yes') else 'Claude Code にログイン中のプラン(Pro)の枠'}で動く。"
+        "API の残高を使うのは秘書(あなた)との会話だけ。部署の作業が「残高不足」で止まったのは、プランで動く設定にする前(秘書ハブの更新前)の作業",
+        f"- 部署の作業の制限時間: {_job_timeout_min()}分(時間切れのときは作業の記録に「時間切れ」と書く)",
     ])
 
 
