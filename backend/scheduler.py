@@ -45,6 +45,14 @@ ROUTINES = [
                     "調べる中で新しく見つけた良いアカウントは found_by=秘書 で同じ形で足す(最大3件)。"
                     "(4) 当社への示唆: 来週試す企画案3つと、避けること1つ。監視アカウントとの差と改善点を1つ以上入れる。"
                     "結果は strategy/research/YYYY-MM-DD_週次リサーチ.md に保存し、企画編集部が月曜の企画で読めるようにする。" + RESEARCH_RULES},
+    {"id": "meeting_planning", "weekday": 0, "time": "10:30", "department": "秘書", "title": "企画会議(週次)", "meeting": "planning"},
+    {"id": "meeting_review", "weekday": 4, "time": "17:30", "department": "秘書", "title": "振り返り会議(週次)", "meeting": "review"},
+    {"id": "meeting_allhands", "weekday": 0, "time": "11:30", "department": "秘書", "title": "全体会議(月次)", "meeting": "allhands", "first_week": True},
+    {"id": "knowledge_review", "weekday": 4, "time": "18:30", "department": "秘書", "title": "資料室の整理(週次)",
+     "instruction": "資料室長(knowledge-manager)が knowledge/README.md の手順で資料室を整理する。今週増えた知見(knowledge/lessons.md・data/corrections.md・"
+                    "content/drafts/*/_check.md・strategy/research/)を読み、重複をまとめ、同じ失敗が2回以上あるものはルール案にする(確定は社長)。"
+                    "knowledge/preferences.md の確認待ちは、アカウントの軸(strategy/concept.md)とどこが食い違うかを1行ずつ添える(確定にはしない)。"
+                    "伸びた投稿の数字があれば knowledge/winning_patterns.md に出典つきで足す。最後に、来週の作業で特に読むべき知見3つをまとめる。"},
     {"id": "news_check", "weekday": 3, "time": "08:30", "department": "戦略", "title": "AIニュースの中間チェック",
      "instruction": "トレンドウォッチャーが、月曜のリサーチ以降の生成AIの新機能・ニュースを確認する(短く、最大5件)。"
                     "会社員の仕事に大きく関わるもの(すぐ投稿にする価値があるもの)があれば「速報候補」と書く。"
@@ -246,7 +254,8 @@ def _routines_due(now: datetime.datetime, s: dict) -> List[dict]:
     if not s.get("routines", True):
         return []
     today, last = now.date().isoformat(), s.get("routine_last", {}) or {}
-    return [r for r in ROUTINES if now.weekday() == r["weekday"] and now.strftime("%H:%M") >= r["time"] and last.get(r["id"]) != today]
+    return [r for r in ROUTINES if now.weekday() == r["weekday"] and now.strftime("%H:%M") >= r["time"] and last.get(r["id"]) != today
+            and (not r.get("first_week") or now.day <= 7)]
 
 
 def start_routines(now: Optional[datetime.datetime] = None) -> List[dict]:
@@ -260,7 +269,8 @@ def start_routines(now: Optional[datetime.datetime] = None) -> List[dict]:
         _save(SETTINGS_FILE, s)
         if f"routine:{r['id']}" in running:
             continue
-        job = agent.start_job(r["department"], r["instruction"], r["title"], f"routine:{r['id']}")
+        instr = r.get("instruction") or __import__("meetings").instruction(r["meeting"])
+        job = agent.start_job(r["department"], instr, r["title"], f"meeting:{r['meeting']}" if r.get("meeting") else f"routine:{r['id']}")
         notify("定例の仕事を頼みました", f"{r['title']}を{agent.DEPT_FULL.get(r['department'], r['department'] + '部')}に頼みました。", "info")
         started.append(job)
     return started
@@ -291,4 +301,4 @@ def summary() -> dict:
     nxt = next((t for t in s["times"] if t > now), s["times"][0] if s["times"] else "")
     wd = "月火水木金土日"
     return {"auto": s["auto"], "times": s["times"], "next": nxt, "unread": notifications(unread_only=True),
-            "routines": [{"title": r["title"], "when": f"毎週{wd[r['weekday']]}曜 {r['time']}", "on": s.get("routines", True)} for r in ROUTINES]}
+            "routines": [{"title": r["title"], "when": f"{'毎月第1' if r.get('first_week') else '毎週'}{wd[r['weekday']]}曜 {r['time']}", "on": s.get("routines", True)} for r in ROUTINES]}

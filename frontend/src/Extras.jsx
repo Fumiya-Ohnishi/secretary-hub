@@ -271,7 +271,7 @@ export function Activity({ job, members = [], titles = {} }) {
   );
 }
 
-export function OrgChart({ onSay, notify }) {
+export function OrgChart({ onSay, notify, onOpenLibrary }) {
   const [data, setData] = useState(null);
   const [dept, setDept] = useState(null);
   const [view, setViewState] = useState(() => { try { const v = localStorage.getItem("orgview2"); return v || "floor"; } catch (e) { return "floor"; } });
@@ -306,7 +306,7 @@ export function OrgChart({ onSay, notify }) {
           <button className={view === "list" ? "on" : ""} onClick={() => setView("list")}>一覧</button>
         </div>
       </div>
-      {view === "floor" && <FloorPlan key={floorFocus || "fp"} data={data} onOpenDept={setDept} focusName={floorFocus} />}
+      {view === "floor" && <FloorPlan key={floorFocus || "fp"} data={data} onOpenDept={setDept} focusName={floorFocus} onOpenLibrary={onOpenLibrary} />}
       {view === "office" && <Office data={data} onOpenDept={setDept} onShowFloor={(name) => { setFloorFocus(name); setView("floor"); }} />}
       {view === "list" && <>
       {workingAll.length > 0 && (

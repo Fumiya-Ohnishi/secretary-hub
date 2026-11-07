@@ -1,4 +1,5 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { getKnowledge, getMeetings, startMeeting } from "./api.js";
 
 /* フロア図(平面): いま会社がどう動いているかを確かめる画面
  * ・部屋ごとの看板(状態・今の仕事・進み具合・止まっている)
@@ -57,7 +58,14 @@ function NameCard({ m, dept, st, rec, onClose, onOpenDept }) {
   );
 }
 
-export default function FloorPlan({ data, onOpenDept, focusName }) {
+export default function FloorPlan({ data, onOpenDept, focusName, onOpenLibrary }) {
+  const [lib, setLib] = useState(null);
+  const [mt, setMt] = useState(null);
+  const [mtOpen, setMtOpen] = useState(false);
+  const [topic, setTopic] = useState("");
+  useEffect(() => { getKnowledge().then(setLib).catch(() => {}); }, []);
+  useEffect(() => { const l = () => getMeetings().then(setMt).catch(() => {}); l(); const id = setInterval(l, 4000); return () => clearInterval(id); }, []);
+  const hold = async (kind) => { try { await startMeeting(kind, topic); setTopic(""); getMeetings().then(setMt); } catch (e) {} };
   const [card, setCard] = useState(focusName || null);
   const wrap = useRef(null), refs = useRef({});
   const [pts, setPts] = useState([]);
@@ -130,6 +138,56 @@ export default function FloorPlan({ data, onOpenDept, focusName }) {
             </section>
           );
         })}
+        {mt && (() => {
+          const live = mt.running[0];
+          return (
+            <section className={`fp-room meet ${live ? "run" : "idle"}`} style={{ "--rc": "#f3b562" }}>
+              <button className="fp-sign" onClick={() => setMtOpen(!mtOpen)} title="会議室を開く">
+                <span className="fp-n">会議室<em className={`fp-st ${live ? "run" : "idle"}`}>{live ? "会議中" : "空き"}</em></span>
+                <span className="fp-w">{live ? live.title : mt.minutes[0] ? `前回:${mt.minutes[0].title}` : "企画会議=月 ・ 振り返り=金 ・ 全体=月初"}</span>
+              </button>
+              {live ? (
+                <div className="fp-talk" aria-live="polite">
+                  {(live.activity || []).slice(-4).map((a, i) => <div key={i} className={a.status}><b>{info[a.agent]?.m.title || a.agent}</b> {cut(a.desc, 30)}</div>)}
+                  {!(live.activity || []).length && <div className="muted small">参加者を集めています…</div>}
+                </div>
+              ) : (
+                <div className="fp-table" aria-hidden="true"><i /><span /><span /><span /><span /><span /><span /></div>
+              )}
+              {mtOpen && (
+                <div className="fp-meet-panel">
+                  {live && <div className="fp-meet-log">{(live.log || []).slice(-6).map((l, i) => <p key={i}>{l}</p>)}</div>}
+                  <div className="fp-meet-start">
+                    <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="議題(臨時会議)" aria-label="議題" />
+                    <button className="btn sm" disabled={!!live} onClick={() => hold(topic ? "adhoc" : "planning")}>{topic ? "臨時会議を開く" : "企画会議を開く"}</button>
+                    <button className="btn sm ghost" disabled={!!live} onClick={() => hold("review")}>振り返り会議</button>
+                  </div>
+                  <div className="fp-minutes">
+                    {mt.minutes.slice(0, 5).map((m) => (
+                      <div key={m.file} className="fp-min">
+                        <b>{m.title}</b>{m.notion ? <a href={m.notion} target="_blank" rel="noreferrer">Notion で見る ›</a> : <span className="muted small">Notion へ反映待ち</span>}
+                        {m.decisions.slice(0, 2).map((d, i) => <div key={i} className="muted small">・{d}</div>)}
+                      </div>
+                    ))}
+                    {!mt.minutes.length && <div className="muted small">まだ議事録はありません。</div>}
+                  </div>
+                </div>
+              )}
+            </section>
+          );
+        })()}
+        {lib && (
+          <section className="fp-room lib" style={{ "--rc": "#c9a77c" }}>
+            <button className="fp-sign" onClick={onOpenLibrary} title="資料室を開く">
+              <span className="fp-n">資料室<em className={`fp-st ${lib.prefs.pending.length ? "stop" : "idle"}`}>{lib.prefs.pending.length ? `確認待ち ${lib.prefs.pending.length}` : "知見の棚"}</em></span>
+              <span className="fp-w">作業の前に、ここで過去の失敗と社長の好みを確認</span>
+            </button>
+            <button className="fp-shelves" onClick={onOpenLibrary}>
+              {lib.shelves.map((s) => <span key={s.key} className="fp-book"><i style={{ height: `${Math.min(100, 20 + s.count)}%` }} /><em>{s.name}</em><b>{s.count}</b></span>)}
+            </button>
+            {lib.recent_lessons[0] && <div className="fp-lib-new muted small">最新:{cut(lib.recent_lessons[0], 46)}</div>}
+          </section>
+        )}
       </div>
       {sel && <NameCard m={sel.m} dept={sel.d} st={data.members[card]} rec={rec[card]} onClose={() => setCard(null)} onOpenDept={onOpenDept} />}
     </div>
