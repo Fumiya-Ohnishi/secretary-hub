@@ -1,3 +1,4 @@
+import Office from "./Office.jsx";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getToPost, decidePost, getAllPosts, schedulePost, patchTask, getOrg, search, getDiagnostics, createJob } from "./api.js";
 
@@ -272,6 +273,7 @@ export function Activity({ job, members = [], titles = {} }) {
 export function OrgChart({ onSay, notify }) {
   const [data, setData] = useState(null);
   const [dept, setDept] = useState(null);
+  const [view, setViewState] = useState(() => { try { return localStorage.getItem("orgview") || "office"; } catch (e) { return "office"; } });
   useEffect(() => {
     const load = () => getOrg().then(setData).catch(() => {});
     load();
@@ -287,6 +289,8 @@ export function OrgChart({ onSay, notify }) {
   }
   const workingAll = Object.entries(data.members).filter(([, st]) => st.state === "working");
   const titleOf = Object.fromEntries(depts.flatMap(([, ms]) => ms.map((m) => [m.name, m.title])));
+  const deptOf = Object.fromEntries(depts.flatMap(([d, ms]) => ms.map((m) => [m.name, d])));
+  const setView = (v) => { setViewState(v); try { localStorage.setItem("orgview", v); } catch (e) {} };
   return (
     <div className="org">
       <div className="org-top card">
@@ -294,7 +298,24 @@ export function OrgChart({ onSay, notify }) {
         <div className="org-line" />
         <div><div className="muted small">秘書室</div><strong>統括秘書セナ</strong></div>
         <span className="muted small org-count">社員 {total}名 ・ {depts.length}部署 ・ 作業中 {workingAll.length}名</span>
+        <div className="seg org-view">
+          <button className={view === "office" ? "on" : ""} onClick={() => setView("office")}>オフィス</button>
+          <button className={view === "list" ? "on" : ""} onClick={() => setView("list")}>一覧</button>
+        </div>
       </div>
+      {view === "office" && (
+        <>
+          <Office data={data} onOpenDept={setDept} />
+          <section className="card now-working">
+            <div className="card-head"><h3>いま作業中の社員</h3><span className="muted small">机に座っている社員が作業中。終わると書類が上司の机へ飛びます</span></div>
+            {workingAll.length === 0 && <div className="empty">いまは全員待機中です。部署に仕事を頼むと、担当が机に向かって作業を始めます。</div>}
+            {workingAll.map(([name, st]) => (
+              <div key={name} className="mini-row clickable" onClick={() => setDept(deptOf[name])}><span className="job-dot running" /><strong>{titleOf[name] || name}</strong><span className="muted small">{deptOf[name]}</span><span className="ttl">{st.desc}({st.job})</span><span className="due">{hm(st.at)}〜</span></div>
+            ))}
+          </section>
+        </>
+      )}
+      {view === "list" && <>
       {workingAll.length > 0 && (
         <section className="card now-working">
           <div className="card-head"><h3>いま作業中の社員</h3></div>
@@ -319,6 +340,7 @@ export function OrgChart({ onSay, notify }) {
                     <span className={`avatar ${st?.state === "working" ? "on" : ""}`}>{m.boss ? "★" : m.title.slice(0, 1)}</span>
                     <div className="om-text">
                       <div>{m.title}{m.boss && <span className="muted small">(上司)</span>}</div>
+                      {m.persona && <div className="muted small">{m.persona}</div>}
                       {st?.state === "working" && <div className="ms working small"><i />{st.desc}</div>}
                     </div>
                   </div>
@@ -329,6 +351,7 @@ export function OrgChart({ onSay, notify }) {
           );
         })}
       </div>
+      </>}
     </div>
   );
 }
