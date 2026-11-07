@@ -211,7 +211,11 @@ export function useSpeechOutput() {
     u.lang = "ja-JP";
     u.rate = 1.05;
     u.pitch = 1.2;
-    u.onend = u.onerror = () => resolve();
+    // Chrome は読み上げの終わりを知らせないことがある。長さから見て終わっているはずの時間で、次へ進める
+    let done = false;
+    const finish = () => { if (!done) { done = true; clearTimeout(guard); resolve(); } };
+    const guard = setTimeout(() => { try { speechSynthesis.cancel(); } catch (e) {} finish(); }, 4000 + text.length * 250);
+    u.onend = u.onerror = finish;
     speechSynthesis.speak(u);
   });
 
