@@ -35,6 +35,7 @@ from fastapi.responses import StreamingResponse
 import agent
 import company
 import accounts
+import reels
 import content
 import corrections
 import notion
@@ -54,6 +55,28 @@ app = FastAPI(title="AI-Secretary Hub")
 async def start_scheduler():
     asyncio.create_task(scheduler.loop())  # 決まった時間に動く係
     asyncio.create_task(media_loop())       # 完成した画像・動画を Google ドライブへ写す
+    asyncio.create_task(reels_loop())       # 声なしのリールを声入りに書き出し直す
+
+
+async def reels_loop():
+    await asyncio.sleep(60)  # 起動直後は画面の表示を優先
+    while True:
+        try:
+            ok = False
+            async with httpx.AsyncClient(timeout=3) as client:
+                try:
+                    ok = (await client.get(f"{VOICEVOX_URL}/version")).status_code == 200
+                except Exception:
+                    ok = False
+            done = await asyncio.to_thread(reels.render_pending, f"http://127.0.0.1:{os.getenv('HUB_PORT', '8000')}", ok)
+            if done:
+                await asyncio.to_thread(content.sync_media)
+                scheduler.notify("リールに声を入れました", "、".join(done) + " を声入りにしました(Google ドライブも更新済み)。", "info")
+            elif reels.last_error:
+                print("  ⚠ リールの声入れ:", reels.last_error)
+        except Exception as e:
+            print("  ⚠ リールの声入れに失敗:", e)
+        await asyncio.sleep(900)
 
 
 async def media_loop():
@@ -551,6 +574,13 @@ async def diagnostics():
     agents_dir = COMPANY_DIR / ".claude" / "agents"
     n = len(list(agents_dir.glob("*.md"))) if agents_dir.exists() else 0
     add("agents", "部署の人材定義", n > 0, f"{n}名", "ai-company で git pull(.claude/agents/ が必要)")
+    waiting_reels = reels.pending()
+    add("reels", "リールの声入れ", not waiting_reels and not reels.last_error,
+        "すべて声入り" if not waiting_reels else f"声入り待ち {len(waiting_reels)}本" + (f"(止まっている理由: {reels.last_error})" if reels.last_error else ""),
+        "VOICEVOX を起動しておくと、15分以内に自動で声入りになります(Node.js と Google Chrome が必要)")
+    md = content.media_dir()
+    add("media", "Google ドライブ(画像・動画の置き場所)", bool(md and md.parent.exists()), str(md) if md else "見つかりません",
+        "Mac に Google ドライブのアプリを入れてログイン(または .env の MEDIA_DIR で場所を指定)")
     core = BASE.parent / "frontend" / "public" / "live2d" / "core" / "live2dcubismcore.js"
     add("live2d", "Live2D(Cubism Core)", core.exists(), "配置済み" if core.exists() else "未配置(静止画で表示中)",
         "README「Live2D の秘書」の手順で live2dcubismcore.js を置く")
