@@ -521,3 +521,14 @@ select.status-sel { color-scheme: dark; }
 @media (max-width: 720px) { .office { height: 420px; } }
 .office-legend { position: absolute; left: 12px; bottom: 10px; color: var(--sub); background: rgba(11,14,26,.7); padding: 4px 10px; border-radius: 99px; }
 .office-tip .persona { color: var(--accent2); }
+
+.office-now { position: absolute; left: 12px; top: 12px; width: 250px; max-height: 38%; overflow: auto; background: rgba(13,17,36,.86); border: 1px solid var(--line2);
+              border-radius: 12px; padding: 8px 10px; backdrop-filter: blur(6px); }
+.office-now.closed { max-height: none; width: auto; }
+.office-now-head { font-weight: 700; font-size: 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: none; border: none; color: var(--text); padding: 0; }
+.office-now-head .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mute); }
+.office-now-head .dot.on { background: #ffd166; box-shadow: 0 0 8px #ffd166; animation: pulse 1.4s infinite; }
+.office-now-row { display: block; width: 100%; text-align: left; background: none; border: none; border-top: 1px solid var(--line); color: var(--sub);
+                  padding: 4px 2px; font-size: 11.5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.office-now-row strong { color: var(--text); margin-right: 6px; }
+.office-now-row:hover strong { color: #ffd166; }

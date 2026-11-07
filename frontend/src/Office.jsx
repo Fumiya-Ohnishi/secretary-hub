@@ -58,6 +58,7 @@ export default function Office({ data, onOpenDept }) {
   const wrap = useRef(null), cvs = useRef(null);
   const S = useRef({ avatars: {}, flyers: [], chats: [], cam: { s: 1, x: 0, y: 0 }, prev: {}, hit: [] }).current;
   const [hover, setHover] = useState(null);
+  const [nowOpen, setNowOpen] = useState(true);
 
   function seat(a) { const dk = S.desks[a.name]; return [dk.gx + 0.35, dk.gy - 0.6]; }
   function route(a, to) { // 廊下(y=6.5 / 13.5)を通る
@@ -201,6 +202,11 @@ export default function Office({ data, onOpenDept }) {
       const bob = a.walking ? Math.abs(Math.sin(t * 10 + a.phase)) * 2.2 * s : a.working ? Math.sin(t * 14 + a.phase) * 0.5 * s : Math.sin(t * 1.6 + a.phase) * 0.6 * s;
       const y0 = p.y - bob - (seated ? 0 : 6 * s), hov = S.hover === a.name;
       ctx.fillStyle = "rgba(0,0,0,.32)"; ctx.beginPath(); ctx.ellipse(p.x, p.y, 9 * s, 3.8 * s, 0, 0, 7); ctx.fill();
+      if (a.working || S.focus === a.name) { // 作業中(または選んだ人)は足元が光る
+        const k2 = 1 + 0.25 * Math.sin(t * 4);
+        ctx.save(); ctx.strokeStyle = a.working ? "#ffd166" : "#9aa0f5"; ctx.lineWidth = 2.4 * s; ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 12 * s;
+        ctx.beginPath(); ctx.ellipse(p.x, p.y, 14 * s * k2, 6 * s * k2, 0, 0, 7); ctx.stroke(); ctx.restore();
+      }
       if (!seated) {
         const sw = a.walking ? Math.sin(t * 10 + a.phase) * 3.2 * s : 0;
         ctx.strokeStyle = a.boss ? "#2b2f45" : "#30375c"; ctx.lineWidth = 3.4 * s; ctx.lineCap = "round";
@@ -380,6 +386,12 @@ export default function Office({ data, onOpenDept }) {
   };
   const onDown = (e) => { S.drag = { x: e.clientX, y: e.clientY, moved: false }; };
   const onUp = (e) => { const moved = S.drag?.moved; S.drag = null; if (!moved) { const h = pick(e); if (h) onOpenDept(h.dept); } };
+  const focus = (name) => { // その社員を画面の真ん中に、少し寄せて映す
+    const a = S.avatars[name]; if (!a || !cvs.current) return;
+    const r = cvs.current.getBoundingClientRect(), s = Math.max(S.cam.s, 1.3), p = iso(a.gx, a.gy);
+    S.cam = { s, x: r.width / 2 - p.x * s, y: r.height / 2 - p.y * s + 40 };
+    S.focus = name; setTimeout(() => { if (S.focus === name) S.focus = null; }, 4000);
+  };
   const zoom = (f, cx, cy) => {
     const r = cvs.current.getBoundingClientRect(); cx = cx ?? r.width / 2; cy = cy ?? r.height / 2;
     const s = Math.max(0.35, Math.min(2.6, S.cam.s * f)), k = s / S.cam.s;
@@ -398,6 +410,20 @@ export default function Office({ data, onOpenDept }) {
     <div className="office" ref={wrap}>
       <canvas ref={cvs} onMouseMove={onMove} onMouseDown={onDown} onMouseUp={onUp}
               onMouseLeave={() => { S.drag = null; S.hover = null; setHover(null); }} style={{ cursor: hover ? "pointer" : "grab" }} />
+      {(() => {
+        const working = Object.entries(data.members).filter(([n, st]) => st.state === "working" && S.info?.[n]);
+        return (
+          <div className={`office-now ${nowOpen ? "" : "closed"}`}>
+            <button className="office-now-head" onClick={() => setNowOpen(!nowOpen)}><span className={`dot ${working.length ? "on" : ""}`} />いま作業中 {working.length}名 {nowOpen ? "▴" : "▾"}</button>
+            {nowOpen && working.length === 0 && <div className="muted small">全員待機中です</div>}
+            {nowOpen && working.map(([n, st]) => (
+              <button key={n} className="office-now-row" onClick={() => focus(n)} title="押すとその社員の席を映します">
+                <strong>{S.info[n].title}</strong><span>{st.desc}</span>
+              </button>
+            ))}
+          </div>
+        );
+      })()}
       <div className="office-legend small">机で画面が光っている人=作業中 ・ 書類が飛ぶ=上司へ提出 ・ 休憩と立ち話は雰囲気の演出です</div>
       <div className="office-zoom">
         <button onClick={() => zoom(1.2)}>＋</button><button onClick={() => zoom(1 / 1.2)}>−</button><button onClick={() => S.refit?.()}>⌂</button>

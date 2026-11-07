@@ -95,12 +95,32 @@ def err(e: Exception, code: int = 502):
 
 
 # ---------- 状態 ----------
+_tools_cache = {"at": 0.0, "v": None}
+
+
+def video_tools() -> dict:
+    """動画の道具(ffmpeg・Node.js 22)がそろっているか。1分ごとに確かめ直す"""
+    import time
+    if _tools_cache["v"] and time.time() - _tools_cache["at"] < 60:
+        return _tools_cache["v"]
+    env = agent._job_env()
+    ff = shutil.which("ffmpeg", path=env["PATH"])
+    try:
+        nv = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=5, env=env).stdout.strip()
+    except Exception:
+        nv = ""
+    major = int(nv.lstrip("v").split(".")[0]) if nv[1:2].isdigit() else 0
+    v = {"ffmpeg": ff or "", "node": nv, "node_ok": major >= 22, "ok": bool(ff) and major >= 22}
+    _tools_cache.update(at=time.time(), v=v)
+    return v
+
+
 @app.get("/api/health")
 def health():
     return {"ok": True, "secretary": SECRETARY_NAME, "company_dir": str(COMPANY_DIR),
             "company_found": COMPANY_DIR.exists(), "api_key_set": bool(agent.API_KEY), "model": agent.MODEL,
             "notion": notion.configured(), "claude_cli": bool(shutil.which("claude")),
-            "agents": (COMPANY_DIR / ".claude" / "agents").exists()}
+            "agents": (COMPANY_DIR / ".claude" / "agents").exists(), "video_tools": video_tools()}
 
 
 @app.get("/api/company/summary")
@@ -574,18 +594,12 @@ async def diagnostics():
     agents_dir = COMPANY_DIR / ".claude" / "agents"
     n = len(list(agents_dir.glob("*.md"))) if agents_dir.exists() else 0
     add("agents", "部署の人材定義", n > 0, f"{n}名", "ai-company で git pull(.claude/agents/ が必要)")
-    import agent as _ag
-    env = _ag._job_env()
-    ffm = shutil.which("ffmpeg", path=env["PATH"])
-    add("ffmpeg", "ffmpeg(動画の書き出し)", bool(ffm), ffm or "見つかりません",
-        "秘書ハブを起動し直すと自動で入ります(tools/reel の部品)。入らないときは `brew install ffmpeg`")
-    try:
-        nv = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=5, env=env).stdout.strip()
-    except Exception:
-        nv = ""
-    major = int(nv.lstrip("v").split(".")[0]) if nv[1:2].isdigit() else 0
-    add("node", "Node.js(リール・HyperFrames)", major >= 22, nv or "見つかりません",
-        "HyperFrames には Node.js 22 以上が必要です(https://nodejs.org の LTS を入れる)")
+    _tools_cache["v"] = None
+    vt = video_tools()
+    add("ffmpeg", "動画の道具: ffmpeg(動画の書き出し)", bool(vt["ffmpeg"]), vt["ffmpeg"] or "見つかりません",
+        "秘書ハブを起動し直すと自動で入ります(tools/reel の部品)。入らないときはターミナルで `brew install ffmpeg`")
+    add("node", "動画の道具: Node.js 22 以上(HyperFrames)", vt["node_ok"], vt["node"] or "見つかりません",
+        "ターミナルで `brew install node@22` → `brew link --overwrite --force node@22`(または https://nodejs.org から 22 LTS を入れる)")
     waiting_reels = reels.pending()
     add("reels", "リールの声入れ", not waiting_reels and not reels.last_error,
         "すべて声入り" if not waiting_reels else f"声入り待ち {len(waiting_reels)}本" + (f"(止まっている理由: {reels.last_error})" if reels.last_error else ""),
