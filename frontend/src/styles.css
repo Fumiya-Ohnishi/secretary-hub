@@ -507,3 +507,15 @@ select.status-sel { color-scheme: dark; }
 .improve-list { list-style: none; margin: 0; padding: 0; }
 .improve-list li { padding: 8px 2px; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.6; }
 .improve-list li:last-child { border-bottom: none; }
+
+/* オフィス(組織図) */
+.org-view { margin: 0 0 0 12px; }
+.office { position: relative; height: 620px; margin-bottom: 14px; border-radius: var(--radius); overflow: hidden;
+          background: radial-gradient(ellipse at 50% 40%, #1a2048 0%, #0b0e1a 75%); border: 1px solid var(--line); }
+.office canvas { display: block; touch-action: none; }
+.office-zoom { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; }
+.office-zoom button { width: 32px; height: 32px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line2); color: var(--text); font-size: 15px; }
+.office-tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line2); border-radius: 12px; padding: 8px 12px;
+              box-shadow: var(--shadow); max-width: 280px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.mini-row.clickable { cursor: pointer; }
+@media (max-width: 720px) { .office { height: 420px; } }
