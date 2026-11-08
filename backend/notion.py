@@ -5,6 +5,7 @@ Notion で「AI会社」ページにそのインテグレーションを接続�
 未設定なら configured() が False になり、呼び出し側は data/tasks.md の控えに切り替える。
 """
 import datetime
+import asyncio
 import os
 import re
 from typing import Dict, List, Optional
@@ -191,30 +192,112 @@ async def create_task(title: str, assignee: str = "秘書", due: Optional[str] =
 
 
 # ---------- 資料(ページ) ----------
+async def _search_all(kind: str, limit: int = 1000) -> List[dict]:
+    out, cursor = [], None
+    while len(out) < limit:
+        body = {"filter": {"property": "object", "value": kind},
+                "sort": {"direction": "descending", "timestamp": "last_edited_time"}, "page_size": 100}
+        if cursor:
+            body["start_cursor"] = cursor
+        data = await _req("POST", "/search", json=body)
+        out += data.get("results", [])
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+    return out
+
+
+def _icon(p: dict) -> str:
+    icon = p.get("icon") or {}
+    return icon.get("emoji", "") if icon.get("type") == "emoji" else ""
+
+
 async def list_documents() -> List[dict]:
-    """インテグレーションが見られるページの一覧(タスク等のデータベースの行は除く)。新しい順"""
-    data = await _req("POST", "/search", json={
-        "filter": {"property": "object", "value": "page"},
-        "sort": {"direction": "descending", "timestamp": "last_edited_time"},
-        "page_size": 100,
-    })
+    """インテグレーションが見られるページとデータベースの一覧(新しい順)。
+    データベースの行(タスク・議事録など)は一覧に出さず、データベースを開くと表で見られる"""
+    pages, dbs = await asyncio.gather(_search_all("page"), _search_all("database", 300))
     docs = []
-    for p in data.get("results", []):
-        if p.get("archived") or p.get("parent", {}).get("type") == "database_id":
+    for d in dbs:
+        if d.get("archived") or d.get("in_trash"):
             continue
-        icon = p.get("icon") or {}
+        docs.append({"id": d["id"].replace("-", ""), "kind": "database", "title": plain(d.get("title", [])) or "(無題のデータベース)",
+                     "icon": _icon(d) or "🗂", "edited": d.get("last_edited_time", ""), "url": d.get("url", ""), "is_root": False})
+    for p in pages:
+        if p.get("archived") or p.get("in_trash") or p.get("parent", {}).get("type") == "database_id":
+            continue
         docs.append({
             "id": p["id"].replace("-", ""),
+            "kind": "page",
             "title": page_title(p),
-            "icon": icon.get("emoji", "") if icon.get("type") == "emoji" else "",
+            "icon": _icon(p),
             "edited": p.get("last_edited_time", ""),
             "url": p.get("url", ""),
             "is_root": p["id"].replace("-", "") == ROOT_PAGE,
         })
+    docs.sort(key=lambda d: d["edited"], reverse=True)
     return docs
 
 
-MAX_BLOCKS = 500
+def prop_text(pr: dict) -> str:
+    """データベースの1マスを文字にする"""
+    t = pr.get("type")
+    v = pr.get(t)
+    if v is None:
+        return ""
+    if t in ("title", "rich_text"):
+        return plain(v)
+    if t in ("select", "status"):
+        return v.get("name", "")
+    if t == "multi_select":
+        return "・".join(x.get("name", "") for x in v)
+    if t == "date":
+        return (v.get("start") or "")[:16].replace("T", " ") + (f"〜{v['end'][:10]}" if v.get("end") else "")
+    if t == "checkbox":
+        return "✓" if v else ""
+    if t in ("number", "url", "email", "phone_number"):
+        return str(v)
+    if t in ("created_time", "last_edited_time"):
+        return v[:10]
+    if t == "people":
+        return "・".join(x.get("name", "") for x in v)
+    if t == "relation":
+        return f"{len(v)}件" if v else ""
+    if t == "formula":
+        return str(v.get(v.get("type"), "") or "")
+    if t == "rollup":
+        return str(v.get("number", "") or "")
+    if t == "unique_id":
+        return f"{v.get('prefix') or ''}-{v.get('number')}" if v.get("prefix") else str(v.get("number", ""))
+    return ""
+
+
+ORDER = {"title": 0, "status": 1, "select": 2, "date": 3, "number": 4, "multi_select": 5, "checkbox": 6, "url": 7, "rich_text": 8}
+
+
+async def read_database(db_id: str, limit: int = 300) -> dict:
+    """データベースを表で見るための中身(列は大事なものから最大7つ)"""
+    db = await _req("GET", f"/databases/{db_id}")
+    props = [(name, p.get("type")) for name, p in db.get("properties", {}).items() if p.get("type") in ORDER]
+    props.sort(key=lambda x: ORDER[x[1]])
+    cols = [n for n, _ in props][:7]
+    rows, cursor = [], None
+    while len(rows) < limit:
+        body = {"page_size": 100, "sorts": [{"timestamp": "last_edited_time", "direction": "descending"}]}
+        if cursor:
+            body["start_cursor"] = cursor
+        data = await _req("POST", f"/databases/{db_id}/query", json=body)
+        for r in data.get("results", []):
+            pr = r.get("properties", {})
+            rows.append({"id": r["id"].replace("-", ""), "icon": _icon(r), "url": r.get("url", ""),
+                         "cells": [prop_text(pr.get(c, {})) for c in cols]})
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+    return {"id": db_id, "kind": "database", "title": plain(db.get("title", [])) or "(無題のデータベース)", "icon": _icon(db) or "🗂",
+            "url": db.get("url", ""), "edited": db.get("last_edited_time", ""), "columns": cols, "rows": rows, "more": len(rows) >= limit}
+
+
+MAX_BLOCKS = 1500
 CHILD_TYPES = {"bulleted_list_item", "numbered_list_item", "to_do", "toggle", "callout", "quote",
                "table", "column_list", "column", "synced_block", "paragraph"}
 
@@ -252,7 +335,8 @@ async def _block(b: dict, depth: int, counter: List[int]) -> dict:
         node["text"] = [{"t": body.get("title", "")}]
         node["page_id"] = b["id"].replace("-", "")
     if t == "child_database":
-        node["text"] = [{"t": body.get("title", "")}]
+        node["text"] = [{"t": body.get("title", "") or "データベース"}]
+        node["db_id"] = b["id"].replace("-", "")
     if t == "table_row":
         node["cells"] = [rich_segments(c) for c in body.get("cells", [])]
     if t == "table":
@@ -274,12 +358,29 @@ async def read_page(page_id: str) -> dict:
     icon = page.get("icon") or {}
     return {
         "id": page_id,
+        "kind": "page",
         "title": page_title(page),
         "icon": icon.get("emoji", "") if icon.get("type") == "emoji" else "",
         "url": page.get("url", ""),
         "edited": page.get("last_edited_time", ""),
         "blocks": blocks,
     }
+
+
+async def read_any(doc_id: str) -> dict:
+    """ページでもデータベースでも開く(どちらか分からない ID 用)"""
+    try:
+        return await read_page(doc_id)
+    except NotionError as e:
+        if "database" in str(e).lower():
+            return await read_database(doc_id)
+        raise
+
+
+def database_to_text(db: dict) -> str:
+    lines = [" | ".join(db["columns"])]
+    lines += [" | ".join(r["cells"]) for r in db["rows"]]
+    return "\n".join(lines)
 
 
 def blocks_to_text(blocks: List[dict], indent: int = 0) -> str:

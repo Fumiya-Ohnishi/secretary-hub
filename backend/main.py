@@ -288,10 +288,18 @@ async def docs():
         return err(e)
 
 
+@app.get("/api/docs/db/{db_id}")
+async def doc_db(db_id: str):
+    try:
+        return await notion.read_database(notion.page_id_from(db_id) or db_id)
+    except Exception as e:
+        return err(e)
+
+
 @app.get("/api/docs/{page_id}")
 async def doc(page_id: str):
     try:
-        return await notion.read_page(notion.page_id_from(page_id) or page_id)
+        return await notion.read_any(notion.page_id_from(page_id) or page_id)
     except Exception as e:
         return err(e)
 
@@ -682,7 +690,7 @@ async def search(q: str):
         try:
             for d in await notion.list_documents():
                 if q in d["title"].lower():
-                    hits.append({"kind": "doc", "title": d["title"], "sub": "Notion の資料", "id": d["id"]})
+                    hits.append({"kind": "doc", "title": d["title"], "sub": "Notion のデータベース" if d.get("kind") == "database" else "Notion の資料", "id": d["id"]})
         except Exception:
             pass
     for j in agent.job_list():

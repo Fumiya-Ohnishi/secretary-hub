@@ -603,7 +603,7 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
             return "Notion が未接続です(backend/.env に NOTION_TOKEN が必要)。"
         actions.append({"type": "show_panel", "panel": "docs"})
         docs = await notion.list_documents()
-        return json.dumps([{"title": d["title"], "id": d["id"]} for d in docs[:40]], ensure_ascii=False)
+        return json.dumps([{"title": d["title"], "id": d["id"], "kind": "データベース" if d.get("kind") == "database" else "ページ"} for d in docs[:80]], ensure_ascii=False)
 
     if name == "open_document":
         if not notion.configured():
@@ -611,9 +611,9 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         doc = await _find_doc(args["query"])
         if not doc:
             return f"「{args['query']}」に当たる資料が見つかりません。list_documents で一覧を確認してください。"
-        page = await notion.read_page(doc["id"])
+        page = await notion.read_any(doc["id"])
         actions.append({"type": "open_doc", "id": page["id"], "title": page["title"]})
-        text = notion.blocks_to_text(page["blocks"])
+        text = notion.database_to_text(page) if page.get("kind") == "database" else notion.blocks_to_text(page["blocks"])
         return f"資料「{page['title']}」を画面に開きました。内容:\n{text[:12000]}"
 
     if name == "show_panel":

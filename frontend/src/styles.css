@@ -942,3 +942,16 @@ select.status-sel { color-scheme: dark; }
 .o3 .office-legend { color: #eee; }
 .o3-art .office-legend { background: rgba(20,22,28,.6); }
 [data-look="future"] .o3-label { background: rgba(6,16,34,.85); color: var(--accent); border: 1px solid var(--accent); }
+
+/* 資料: ページ/データベースの切り替えと表 */
+.doc-kinds { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; }
+.doc-kinds button { background: var(--panel2); border: 1px solid var(--line2); color: var(--sub); border-radius: 99px; padding: 3px 10px; font-size: 11px; }
+.doc-kinds button.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.doc-kind { margin-left: 6px; font-size: 10px; padding: 0 6px; border-radius: 6px; background: var(--panel2); color: var(--sub); border: 1px solid var(--line2); }
+.doc-note { padding: 8px 6px; line-height: 1.5; }
+.doc-db-bar { display: flex; align-items: center; gap: 10px; }
+.doc-db-bar .search { max-width: 320px; }
+.doc-db tbody tr { cursor: pointer; }
+.doc-db tbody tr:hover td { background: var(--panel); }
+.doc-db td { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-row-title { font-weight: 600; color: var(--text); }
