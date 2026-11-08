@@ -81,6 +81,7 @@ def _post(path: Path) -> dict:
         "status": meta.get("status", "下書き"),
         "posted": meta.get("posted", ""),
         "pr": meta.get("pr", "false").lower() == "true",
+        "author": meta.get("author", ""),
         "assets": assets,
         "media": media,
         "cover": cover,

@@ -101,7 +101,7 @@ function PostItem({ post, open, onToggle, now, notify, onChanged, onOpenWeek }) 
         {post.cover?.exists && <img className="tp-mini" src={fileUrl(post.cover.path)} alt="" />}
         <span className={`pf pf-${post.platform}`}>{PJA[post.platform] || post.platform}</span>
         <span className={`tp-time ${!posted && open ? "now" : ""} ${late ? "late" : ""}`}>{time}{!posted && due ? ` ${due}` : ""}</span>
-        <span className="tp-ttl">{FMT[post.format] ? `${FMT[post.format]}「${post.title}」` : post.title}</span>
+        <span className="tp-ttl">{FMT[post.format] ? `${FMT[post.format]}「${post.title}」` : post.title}{post.author === "codex" && <span className="by-codex">Codex案</span>}</span>
         {posted ? <span className="chip2 c-ok">投稿済み</span>
           : <span className="tp-dots" aria-label={`${doneCount}/${steps.length} 済み`}>{steps.map((st, i) => <i key={i} className={isDone(st) ? "d" : ""} />)}</span>}
       </button>

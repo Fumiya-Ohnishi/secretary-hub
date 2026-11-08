@@ -91,7 +91,8 @@ def usage_summary() -> dict:
 # 部署(Notion の担当名 → 組織図の部署名)。旧部署名は新しい部署に読み替える
 DEPT_FULL = {"戦略": "経営戦略部", "収益化": "収益化部", "企画": "企画編集部", "ライティング": "ライティング部",
              "デザイン": "デザイン部", "画像": "画像制作部", "映像": "映像制作部", "SNS運用": "SNS運用部",
-             "品質管理": "品質管理部", "分析": "データ分析部", "制作": "ライティング部", "メディア": "SNS運用部", "秘書": "秘書室"}
+             "品質管理": "品質管理部", "分析": "データ分析部", "制作": "ライティング部", "メディア": "SNS運用部", "秘書": "秘書室",
+             "Codex": "社外制作室(Codex)"}
 # 作るAIとチェックするAI: 投稿の中身を作る部署は、部内の上司のあと品質管理部(独立)が見てから承認待ちにする
 CHECKED_DEPARTMENTS = ("企画編集部", "ライティング部", "デザイン部", "画像制作部", "映像制作部", "SNS運用部", "収益化部")
 
@@ -202,6 +203,8 @@ def _save_jobs():
 
 def _run_job(job_id: str):
     job = jobs[job_id]
+    if job["department"] == "Codex":
+        return _run_codex_job(job)
     prompt = _job_prompt(job)
     try:
         if not shutil.which("claude"):
@@ -225,6 +228,29 @@ def _run_job(job_id: str):
             asyncio.run(finish())
         except Exception:
             pass
+
+
+def _run_codex_job(job: dict):
+    """社外制作室(Codex): 別の会社のAIが投稿の別案を作る → 秘書ハブが画像・動画を作る → 当社の品質管理部が点検"""
+    import codex
+    try:
+        codex.run(job, codex.prompt(job["instruction"], _knowledge_brief(job, "社外制作室")), _job_timeout_min())
+        media = codex.make_media(job)
+        wk = codex.current_week()
+        drafts = sorted((company.COMPANY_DIR / "content" / "drafts" / wk).glob("*_codex.md"))
+        job["output"] = (job.get("output") or "") + f"\n\n— 秘書ハブ: {media}。別案 {len(drafts)}本。"
+        job["status"] = "done"
+        if drafts:
+            names = "、".join(p.name for p in drafts)
+            qa = start_job("品質管理", f"社外制作室(Codex=別の会社のAI)が作った投稿の別案 content/drafts/{wk}/ の {names} を、当社の投稿と同じ基準"
+                           "(CLAUDE.md・playbooks/visual_standard.md・社長の好みの確定分)で点検する。画像・動画は MEDIA_DIR か content/output で確認。"
+                           "合格した別案だけ status を「承認待ち」にし、不合格は「下書き」のまま理由を _check.md に残す。"
+                           "当社案と比べて良い点があれば knowledge/lessons.md に1行残す(出典: Codex案)", "Codex案の点検", job.get("task_key"))
+            job["output"] += f" 品質管理部に点検を頼みました(作業ID {qa['id']})。"
+    except Exception as e:
+        job.update(status="error", output=(job.get("output") or "") + f"\n{e}")
+    job["finished"] = datetime.datetime.now().isoformat(timespec="seconds")
+    _save_jobs()
 
 
 SUBAGENT_TOOLS = ("Task", "Agent")  # Claude Code がサブエージェントを呼ぶ道具の名前(版によって違う)
@@ -432,7 +458,7 @@ def job_list() -> List[dict]:
 
 # ---------- 道具の定義 ----------
 EDITABLE = ["未着手", "進行中", "承認待ち", "完了"]
-DEPARTMENTS = ["戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析"]
+DEPARTMENTS = ["戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析", "Codex"]
 PANELS = ["home", "content", "calendar", "tasks", "docs", "jobs", "org", "chat"]
 
 
@@ -464,6 +490,7 @@ TOOLS = [
           "jobs=部署の作業, org=組織図(社員と稼働状況), chat=会話履歴",
           {"panel": {"type": "string", "enum": PANELS}}, ["panel"]),
     _tool("delegate_work", "部署(Claude Code)に作業を依頼する。企画・リサーチ・原稿作成・分析など、時間のかかる作業に使う。"
+          "department=Codex は社外制作室(別の会社のAI=OpenAI Codex)。投稿の『別案』を作らせ、当社案と比べたいときに使う(画像・動画も作る。点検は自動で品質管理部へ)。"
           "依頼と同時にタスクを起票(進行中)し、完了すると画面に通知される。",
           {"department": {"type": "string", "enum": DEPARTMENTS},
            "title": {"type": "string", "description": "タスク名(短く)"},
