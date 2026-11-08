@@ -211,3 +211,106 @@ def make_media(job: dict) -> str:
     if failed:
         msg += f"(失敗{len(failed)}件: " + " / ".join(failed)[:400] + ")"
     return msg
+
+
+# ---------- 社外顧問(読むだけ。会議・品質の最終チェック・戦略の判断で「別の会社の目」の意見を出す) ----------
+ADVISOR_RULES = ("あなたは AI会社の「社外顧問(Codex)」です。当社のAI(Claude)とは別の会社のAIとして、当社の結論に流されず、"
+                 "違う角度の意見・見落とし・反対意見を出します。ファイルは読むだけで、書き換え・コマンド実行・外部アクセスはしません。"
+                 "CLAUDE.md(就業規則)と strategy/concept.md(アカウントの軸)、knowledge/preferences.md の「確定」(社長の好み)を前提にします。"
+                 "根拠(どのファイルのどこか)を添え、日本語で簡潔に。")
+
+
+def advisor_enabled() -> bool:
+    return bool(cli()) and os.getenv("CODEX_ADVISOR", "1").strip() not in ("0", "false", "no")
+
+
+def opinion(task: str, limit_min: int = 15) -> str:
+    """読むだけの設定で Codex に意見を出させ、最後の答えを返す"""
+    exe = cli()
+    if not exe:
+        raise RuntimeError("Codex CLI がありません")
+    import tempfile
+    out_file = Path(tempfile.mkdtemp(prefix="codex_")) / "last.txt"
+    cmd = [exe, "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--output-last-message", str(out_file), ADVISOR_RULES + "\n\n" + task]
+    try:
+        r = subprocess.run(cmd, cwd=str(company.COMPANY_DIR), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=limit_min * 60, env=job_env())
+        text = out_file.read_text(encoding="utf-8").strip() if out_file.exists() else ""
+        if not text:
+            text = (r.stdout or "").strip()[-6000:]
+        if r.returncode != 0 and not text:
+            raise RuntimeError((r.stderr or "")[-300:] or f"終了コード {r.returncode}")
+        return text
+    finally:
+        try:
+            out_file.unlink()
+        except Exception:
+            pass
+
+
+def meeting_advice(kind_name: str, topic: str) -> Optional[str]:
+    """会議の前に社外顧問の意見をファイルにしておく(司会が2周目の前に読み上げる)。保存先を返す"""
+    today = datetime.date.today().isoformat()
+    text = opinion(f"これから当社の{kind_name}が開かれます。議題: {topic}\n"
+                   "meetings/ の直近の議事録、data/improvements.md、knowledge/lessons.md、strategy/research/ の最新を読み、"
+                   "社外顧問として (1) 当社が見落としていそうなこと (2) 反対意見・別の打ち手 (3) 会議で決めるべき問い を、各1〜3行で出してください。")
+    path = company.COMPANY_DIR / "meetings" / f"_advisor_{today}_{kind_name}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"# 社外顧問(Codex)の意見 {today} {kind_name}\n\n{text}\n", encoding="utf-8")
+    return str(path.relative_to(company.COMPANY_DIR))
+
+
+REVIEW_HEAD = "## 社外顧問(Codex)の見立て"
+
+
+def review_posts() -> int:
+    """承認待ちの投稿(当社案・別案とも)に、社外顧問のもう一つの目の見立てを書き足す(合否は変えない)。書いた本数を返す"""
+    wk = current_week()
+    d = company.COMPANY_DIR / "content" / "drafts" / wk
+    targets = []
+    for p in sorted(d.glob("[0-9]*.md")) if d.exists() else []:
+        t = p.read_text(encoding="utf-8")
+        if "status: 承認待ち" in t and REVIEW_HEAD not in t and "author: codex" not in t:  # Codex 自身の別案は見立てない
+            targets.append(p)
+    if not targets:
+        return 0
+    files = "\n".join(f"- {p.relative_to(company.COMPANY_DIR)}" for p in targets)
+    text = opinion("次の投稿は当社の品質管理部が合格にし、社長の承認待ちです。社外顧問として、もう一つの目で見てください。\n" + files + "\n"
+                   "playbooks/visual_standard.md の基準、strategy/concept.md の軸、knowledge/preferences.md の確定を前提に、"
+                   "投稿ごとに『見る側として最後まで見るか・保存するか』『直すならここ(1〜2点)』を出し、10点満点の点数を付けてください。"
+                   "答えは JSON の配列だけ: [{\"file\": \"ファイルのパス\", \"score\": 7, \"comment\": \"2〜4行\"}]")
+    m = text[text.find("["): text.rfind("]") + 1] if "[" in text else ""
+    try:
+        items = json.loads(m)
+    except Exception:
+        items = []
+    n = 0
+    today = datetime.date.today().isoformat()
+    for it in items:
+        p = company.COMPANY_DIR / str(it.get("file", ""))
+        if p in targets and p.exists():
+            body = p.read_text(encoding="utf-8").rstrip()
+            p.write_text(f"{body}\n\n{REVIEW_HEAD}\n({today}・{it.get('score', '?')}/10・合否は当社の品質管理部が判定済み。参考意見)\n{str(it.get('comment', '')).strip()}\n", encoding="utf-8")
+            n += 1
+    if not n and text:  # 形が崩れたときは週のフォルダにまとめて残す
+        (d / "_codex_review.md").write_text(f"# 社外顧問(Codex)の見立て {today}\n\n{text}\n", encoding="utf-8")
+    return n
+
+
+STRATEGY_WORDS = ("Phase", "フェーズ", "転換", "撤退", "移行", "月次", "戦略レビュー", "方向")
+
+
+def strategy_review(job: dict) -> Optional[str]:
+    """戦略の判断(Phase 移行・方向転換・月次レビュー)のあと、社外顧問が反対の立場から検討する。保存先を返す"""
+    if job.get("department") != "戦略" or not any(w in (job.get("title", "") + job.get("instruction", "")) for w in STRATEGY_WORDS):
+        return None
+    today = datetime.date.today().isoformat()
+    text = opinion("当社の経営戦略部が、次の作業で戦略の判断をしました。\n"
+                   f"作業: {job.get('title')}\n指示: {job.get('instruction', '')[:1500]}\n結果のまとめ: {(job.get('output') or '')[-1500:]}\n"
+                   "strategy/ の最新のファイル(roadmap.md・proposals/・research/)と data/*.csv・reports/ の最新を読み、社外顧問として "
+                   "(1) この判断がうまくいかない場合のシナリオ (2) 判断の根拠の弱いところ (3) 代わりの案 (4) やめる・見直す基準 を各1〜3行で出してください。")
+    path = company.COMPANY_DIR / "strategy" / "reviews" / f"{today}_codex.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old = path.read_text(encoding="utf-8") + "\n" if path.exists() else ""
+    path.write_text(old + f"# 社外顧問(Codex)の反対検討 {today}: {job.get('title')}\n\n{text}\n", encoding="utf-8")
+    return str(path.relative_to(company.COMPANY_DIR))

@@ -205,13 +205,16 @@ def _run_job(job_id: str):
     job = jobs[job_id]
     if job["department"] == "Codex":
         return _run_codex_job(job)
-    prompt = _job_prompt(job)
+    advisor = _codex_before(job)
+    prompt = _job_prompt(job) + advisor
     try:
         if not shutil.which("claude"):
             raise RuntimeError("Claude Code CLI が見つかりません。ターミナルで `npm install -g @anthropic-ai/claude-code` → `claude` で一度ログインしてください。")
         _run_claude_streaming(job, prompt)
     except Exception as e:
         job.update(status="error", output=(job.get("output") or "") + f"\n{e}")
+    if job["status"] == "done":
+        _codex_after(job)
     job["finished"] = datetime.datetime.now().isoformat(timespec="seconds")
     _save_jobs()
     if job.get("task_key"):
@@ -228,6 +231,58 @@ def _run_job(job_id: str):
             asyncio.run(finish())
         except Exception:
             pass
+
+
+def _codex_note(job: dict, desc: str, status: str = "running"):
+    job.setdefault("activity", []).append({"agent": "codex", "desc": desc, "status": status,
+                                           "started": datetime.datetime.now().isoformat(timespec="seconds")})
+
+
+def _codex_before(job: dict) -> str:
+    """会議の前に、社外顧問(Codex)の意見を用意して指示に足す(Codex が無ければ何もしない)"""
+    import codex
+    key = job.get("task_key") or ""
+    if not key.startswith("meeting:") or not codex.advisor_enabled():
+        return ""
+    try:
+        import meetings
+        k = meetings.KINDS.get(key.split(":", 1)[1], meetings.KINDS["adhoc"])
+        _codex_note(job, "社外顧問として会議の前に意見を用意")
+        path = codex.meeting_advice(k["name"], job.get("instruction", "")[:600])
+        job["activity"][-1]["status"] = "done"
+        return ("\n\n## 社外顧問(Codex=別の会社のAI)\n"
+                f"- 会議の前に用意した意見が {path} にある。2周目の前に司会が読み上げ、参加者に賛否を言わせる\n"
+                "- 議事録の参加者に「社外顧問(Codex)」を入れ、発言に要点を書く。少数意見の節に、採った/採らなかった と理由を残す")
+    except Exception as e:
+        if job.get("activity"):
+            job["activity"][-1]["status"] = "error"
+        return f"\n\n(社外顧問の意見は用意できませんでした: {str(e)[:120]})"
+
+
+def _codex_after(job: dict):
+    """品質管理の最終チェックと戦略の判断のあと、社外顧問がもう一つの目で見る(合否・結論は変えない)"""
+    import codex
+    if not codex.advisor_enabled():
+        return
+    dept = job.get("department_full") or DEPT_FULL.get(job["department"], "")
+    try:
+        if dept in CHECKED_DEPARTMENTS or job["department"] == "品質管理":
+            _codex_note(job, "社外顧問として承認待ちの投稿を見立て")
+            n = codex.review_posts()
+            job["activity"][-1]["status"] = "done"
+            if n:
+                job["output"] = (job.get("output") or "") + f"\n\n— 社外顧問(Codex)が承認待ちの投稿{n}本に見立てを書き足しました(投稿の末尾)。"
+        path = codex.strategy_review(job) if job["department"] == "戦略" else None
+        if path:
+            job["output"] = (job.get("output") or "") + f"\n\n— 社外顧問(Codex)の反対検討: {path}"
+            try:
+                scheduler.notify("社外顧問(Codex)の反対検討", f"{job['title']} について、別の会社のAIの反対意見を {path} に残しました", "info")
+            except Exception:
+                pass
+    except Exception as e:
+        if job.get("activity"):
+            job["activity"][-1]["status"] = "error"
+        job["output"] = (job.get("output") or "") + f"\n\n(社外顧問の確認はできませんでした: {str(e)[:160]})"
 
 
 def _run_codex_job(job: dict):
