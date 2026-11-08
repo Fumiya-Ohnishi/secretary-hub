@@ -353,6 +353,8 @@ function Docs({ docId, setDocId, notify }) {
   const [docs, setDocs] = useState(null);
   const [doc, setDoc] = useState(null);
   const [q, setQ] = useState("");
+  const [kind, setKind] = useState("all");
+  const [rowQ, setRowQ] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -360,27 +362,36 @@ function Docs({ docId, setDocId, notify }) {
   }, []);
   useEffect(() => {
     if (!docId) { setDoc(null); return; }
-    setLoading(true);
+    setLoading(true); setRowQ("");
     getDoc(docId).then(setDoc).catch((e) => { notify(e.message, "error"); setDocId(null); }).finally(() => setLoading(false));
   }, [docId]);
 
   if (!docs) return <div className="empty">読み込み中…</div>;
   if (!docs.configured) return <NotionSetup />;
-  const shown = docs.docs.filter((d) => d.title.toLowerCase().includes(q.toLowerCase()));
+  const ql = q.toLowerCase();
+  const shown = docs.docs.filter((d) => d.title.toLowerCase().includes(ql) && (kind === "all" || (d.kind || "page") === kind));
+  const nDb = docs.docs.filter((d) => d.kind === "database").length, nPage = docs.docs.length - nDb;
+  const rowsShown = doc?.kind === "database" ? doc.rows.filter((r) => !rowQ || r.cells.join(" ").toLowerCase().includes(rowQ.toLowerCase())) : [];
 
   return (
     <div className={`docs ${docId ? "reading" : ""}`}>
       <aside className="doc-list">
         <input className="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="資料を検索" />
+        <div className="doc-kinds">
+          {[["all", `すべて ${docs.docs.length}`], ["page", `ページ ${nPage}`], ["database", `データベース ${nDb}`]].map(([k, l]) => (
+            <button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{l}</button>
+          ))}
+        </div>
         {docs.error && <div className="warnbox">{docs.error}</div>}
         {shown.map((d) => (
-          <button key={d.id} className={`doc-item ${docId === d.id ? "on" : ""}`} onClick={() => setDocId(d.id)}>
+          <button key={d.id} className={`doc-item ${docId === d.id ? "on" : ""} ${d.kind === "database" ? "db" : ""}`} onClick={() => setDocId(d.id)}>
             <span className="doc-icon">{d.icon || "📄"}</span>
-            <span className="doc-title">{d.title}</span>
+            <span className="doc-title">{d.title}{d.kind === "database" && <span className="doc-kind">表</span>}</span>
             <span className="muted small">{d.edited?.slice(5, 10).replace("-", "/")}</span>
           </button>
         ))}
         {shown.length === 0 && <div className="empty">資料がありません。</div>}
+        <div className="muted small doc-note">秘書ハブに接続したページの中だけが出ます。足りないときは Notion でそのページの「•••」→「接続」→「秘書ハブ」。</div>
       </aside>
       <article className="doc-reader">
         {!docId && <div className="empty big">左の一覧から選ぶか、「企画書を開いて」と話しかけてください。</div>}
@@ -392,7 +403,29 @@ function Docs({ docId, setDocId, notify }) {
               <h2>{doc.icon} {doc.title}</h2>
               <a className="btn ghost sm" href={doc.url} target="_blank" rel="noreferrer">Notion で開く</a>
             </div>
-            <div className="doc-body"><Blocks blocks={doc.blocks} onOpenPage={setDocId} /></div>
+            {doc.kind === "database" ? (
+              <div className="doc-body">
+                <div className="doc-db-bar">
+                  <input className="search" value={rowQ} onChange={(e) => setRowQ(e.target.value)} placeholder="この表の中を検索" />
+                  <span className="muted small">{rowsShown.length}件{doc.more ? "(新しい300件まで)" : ""}</span>
+                </div>
+                <div className="doc-table-wrap">
+                  <table className="doc-table doc-db">
+                    <thead><tr>{doc.columns.map((c) => <th key={c}>{c}</th>)}</tr></thead>
+                    <tbody>
+                      {rowsShown.map((r) => (
+                        <tr key={r.id} onClick={() => setDocId(r.id)} title="押すとこの行のページを開きます">
+                          {r.cells.map((c, j) => <td key={j}>{j === 0 ? <span className="doc-row-title">{r.icon} {c || "(無題)"}</span> : c}</td>)}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {rowsShown.length === 0 && <div className="empty">行がありません。</div>}
+              </div>
+            ) : (
+              <div className="doc-body"><Blocks blocks={doc.blocks} onOpenPage={setDocId} /></div>
+            )}
           </>
         )}
       </article>

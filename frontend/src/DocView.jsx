@@ -77,6 +77,8 @@ export function Blocks({ blocks, onOpenPage }) {
       case "column": return <div key={i} className="column">{kids}</div>;
       case "child_page":
         return <button key={i} className="child-page" onClick={() => onOpenPage?.(b.page_id)}>📄 <Rich segs={b.text} /></button>;
+      case "child_database":
+        return <button key={i} className="child-page" onClick={() => onOpenPage?.(b.db_id)}>🗂 <Rich segs={b.text} /> を表で開く</button>;
       case "image": return <figure key={i}><img src={b.url} alt="" /><figcaption><Rich segs={b.text} /></figcaption></figure>;
       case "bookmark": case "embed": case "link_preview": case "file": case "pdf": case "video":
         return b.url ? <a key={i} className="bookmark" href={b.url} target="_blank" rel="noreferrer">🔗 {b.url}</a> : null;
