@@ -11,16 +11,17 @@ import React, { useEffect, useRef, useState } from "react";
 const TW = 56, TH = 28;   // 1マスの幅・高さ
 const K = 1.45;           // 人・小物の大きさ
 const SPEED = 2.2;        // 歩く速さ(マス/秒)
-const GW = 28, GH = 21;   // フロアの広さ(マス)
+const GW = 28, GH = 28;   // フロアの広さ(マス)
 const ROOMS = [
   // 部署, x, y, 幅, 奥行き, 床
   ["秘書室", 0, 0, 6, 6, "wood"], ["経営戦略部", 7, 0, 6, 6, "carpet"], ["収益化部", 14, 0, 7, 6, "carpet"], ["企画編集部", 22, 0, 6, 6, "wood"],
   ["ライティング部", 0, 7, 6, 6, "carpet"], ["デザイン部", 7, 7, 6, 6, "wood"], ["画像制作部", 14, 7, 7, 6, "carpet"], ["映像制作部", 22, 7, 6, 6, "carpet"],
   ["SNS運用部", 0, 14, 8, 7, "carpet"], ["品質管理部", 9, 14, 7, 7, "wood"], ["データ分析部", 17, 14, 5, 7, "carpet"], ["ラウンジ", 23, 14, 5, 7, "lounge"],
+  ["経理・税務部", 0, 22, 8, 6, "wood"], ["広報部", 9, 22, 8, 6, "carpet"], ["人事部", 18, 22, 10, 6, "wood"],
 ];
 const COLORS = {
   秘書室: "#9aa0f5", 経営戦略部: "#5aa7e8", 収益化部: "#e8b84e", 企画編集部: "#e58a5e", ライティング部: "#c690de", デザイン部: "#ec7fa3",
-  画像制作部: "#4fc7b2", 映像制作部: "#8090f2", SNS運用部: "#4bb6e6", 品質管理部: "#e86e6e", データ分析部: "#7cc977", ラウンジ: "#c9a77c",
+  画像制作部: "#4fc7b2", 映像制作部: "#8090f2", SNS運用部: "#4bb6e6", 品質管理部: "#e86e6e", データ分析部: "#7cc977", ラウンジ: "#c9a77c", 経理・税務部: "#d0b25c", 広報部: "#f08ac0", 人事部: "#6cc3a8",
 };
 const SKIN = ["#f6dcc8", "#efc9ae", "#e3b591", "#f3d2bd", "#d9a582"];
 const HAIR = ["#262a3f", "#4a3426", "#17171f", "#6b4b2e", "#3a3f66", "#8a5a3a", "#5a2f35", "#2f3b2b"];
@@ -76,11 +77,17 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
   };
 
   function seat(a) { const dk = S.desks[a.name]; return [dk.gx + 0.35, dk.gy - 0.6]; }
-  function route(a, to) { // 廊下(y=6.5 / 13.5)を通る
-    const cy = a.gy < 6.5 ? 6.5 : 13.5, ty = to[1] < 6.5 ? 6.5 : 13.5;
-    const pts = [[a.gx, cy]];
-    if (cy !== ty) pts.push([a.gx < 13 ? 6.5 : 13.5, cy], [a.gx < 13 ? 6.5 : 13.5, ty]);
-    pts.push([to[0], ty], to);
+  function route(a, to) { // 廊下(y=6.5 / 13.5 / 21.5)を通る。廊下の間は決まった通り道(x)で上下する
+    const lv = (y) => (y < 6.5 ? 0 : y < 21.5 ? 1 : 2), LY = [6.5, 13.5, 21.5];
+    let li = lv(a.gy), x = a.gx;
+    const ti = lv(to[1]);
+    const pts = [[x, LY[li]]];
+    while (li !== ti) {
+      const ni = li + (ti > li ? 1 : -1);
+      const cx = Math.min(li, ni) === 0 ? (x < 13 ? 6.5 : 13.5) : 22.5;
+      pts.push([cx, LY[li]], [cx, LY[ni]]); li = ni; x = cx;
+    }
+    pts.push([to[0], LY[ti]], to);
     return pts;
   }
   function endChat(a) {

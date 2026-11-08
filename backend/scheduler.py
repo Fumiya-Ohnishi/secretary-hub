@@ -53,6 +53,24 @@ ROUTINES = [
                     "content/drafts/*/_check.md・strategy/research/)を読み、重複をまとめ、同じ失敗が2回以上あるものはルール案にする(確定は社長)。"
                     "knowledge/preferences.md の確認待ちは、アカウントの軸(strategy/concept.md)とどこが食い違うかを1行ずつ添える(確定にはしない)。"
                     "伸びた投稿の数字があれば knowledge/winning_patterns.md に出典つきで足す。最後に、来週の作業で特に読むべき知見3つをまとめる。"},
+    {"id": "monthly_close", "weekday": 0, "time": "09:30", "department": "経理", "title": "月次決算(経理・税務部)", "first_week": True,
+     "instruction": "前月の月次決算をする。記帳担当が data/revenue.csv・data/expenses.csv の前月分を点検し(重複・抜け・要確認)、"
+                    "税務チェック担当が年の累計の所得と申告に関係する線・期限(finance/tax_calendar.md)を確認し、"
+                    "経理・税務部長が finance/YYYY-MM_月次.md(媒体別の売上・経費の内訳・利益・目標 strategy/roadmap.md との差・来月の予算・社長に確認したいこと)にまとめる。"
+                    "税の判断は断定せず、出典か『税理士・税務署に確認』を添える。最後に社長への報告を3行で。"},
+    {"id": "pr_weekly", "weekday": 0, "time": "09:00", "department": "広報", "title": "広報の週次(企画参加・交流の下書き)",
+     "instruction": "お金をかけない広報の週次作業。企画参加担当が今週参加できる企画・コンテストを探して strategy/pr/contests.md を更新し、"
+                    "交流担当が社長が手で送る返信・引用の下書きを最大5件 strategy/pr/engagement_YYYY-MM-DD.md に書く。"
+                    "広報部長が今週やることを3つに絞り、企画会議で使えるよう strategy/pr/ の最新にまとめる(月初は広報計画も)。"
+                    "費用のかかる施策は出さない。送信・応募は社長が行う。" + RESEARCH_RULES},
+    {"id": "pr_engagement", "weekday": 3, "time": "09:30", "department": "広報", "title": "交流の下書き(木曜)",
+     "instruction": "交流担当が、参考アカウントや同じジャンルの新しい投稿から交流する価値がある投稿を最大5件選び、"
+                    "社長が手で送る返信・引用の下書きを strategy/pr/engagement_YYYY-MM-DD.md に書く(URL・下書き・なぜ価値があるか)。"
+                    "宣伝・リンクの貼りつけ・フォローのお願いはしない。" + RESEARCH_RULES},
+    {"id": "hr_weekly", "weekday": 4, "time": "16:30", "department": "人事", "title": "社員の声のまとめ(人事部)",
+     "instruction": "社員の声担当が data/employee_voice.md の今週の声をテーマごとに数えて hr/voice_YYYY-WW.md にまとめ、"
+                    "育成担当が差し戻し(data/corrections.md)と声から指示書(.claude/agents/*.md)の直し案を差分で hr/coaching_YYYY-WW.md に書く(自分で書き換えない)。"
+                    "人事部長が組織の改善案を最大3つに絞り、目安箱 meetings/_suggestions.md に足す(17:30の振り返り会議の議題になる)。"},
     {"id": "news_check", "weekday": 3, "time": "08:30", "department": "戦略", "title": "AIニュースの中間チェック",
      "instruction": "トレンドウォッチャーが、月曜のリサーチ以降の生成AIの新機能・ニュースを確認する(短く、最大5件)。"
                     "会社員の仕事に大きく関わるもの(すぐ投稿にする価値があるもの)があれば「速報候補」と書く。"
