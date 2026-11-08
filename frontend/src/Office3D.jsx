@@ -320,7 +320,7 @@ export default function Office3D({ data, mode = "3d", theme = "wood", onShowFloo
     if (S.auto && !(S.focusUntil > T)) { a = Math.PI / 4 + Math.sin(T * 0.06) * 0.35; zoom = 1.05 + 0.2 * (0.5 + 0.5 * Math.sin(T * 0.045)); tx = Math.sin(T * 0.03) * 3; tz = Math.cos(T * 0.025) * 2; v.a = a; }
     if (S.focus && S.focusUntil > T) { const f = S.avatars[S.focus]?.obj.position; if (f) { tx = f.x; tz = f.z; zoom = 2.4; } }
     else if (S.focusUntil && S.focusUntil <= T) { S.focusUntil = 0; S.focus = null; }
-    const h = Math.max(12.5, 22 / aspect) / zoom;
+    const h = Math.max(13.5, 27 / aspect) / zoom;
     Object.assign(cam, { left: -h * aspect, right: h * aspect, top: h, bottom: -h });
     const R = 60, e = 0.6155;
     cam.position.set(tx + Math.sin(a) * Math.cos(e) * R, Math.sin(e) * R, tz + Math.cos(a) * Math.cos(e) * R);

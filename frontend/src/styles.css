@@ -955,3 +955,5 @@ select.status-sel { color-scheme: dark; }
 .doc-db tbody tr:hover td { background: var(--panel); }
 .doc-db td { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doc-row-title { font-weight: 600; color: var(--text); }
+
+.by-codex { margin-left: 6px; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 6px; background: #10a37f22; color: #19c37d; border: 1px solid #19c37d66; vertical-align: 1px; }

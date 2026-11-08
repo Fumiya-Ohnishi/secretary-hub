@@ -742,6 +742,10 @@ async def diagnostics():
         "ターミナルで npm install -g @anthropic-ai/claude-code → claude で一度ログイン")
     agents_dir = COMPANY_DIR / ".claude" / "agents"
     n = len(list(agents_dir.glob("*.md"))) if agents_dir.exists() else 0
+    import codex
+    cs = codex.status()
+    add("codex", "社外制作室(Codex)", cs["cli"] or not cs["media_api"], ("Codex CLI あり" + ("・画像/動画API あり" if cs["media_api"] else "・画像/動画は OPENAI_API_KEY が未設定")) if cs["cli"] else "codex コマンドがありません(使わないなら問題なし)",
+        "ターミナルで npm install -g @openai/codex → codex login(ChatGPT のアカウント)。画像・動画は backend/.env に OPENAI_API_KEY=...")
     add("agents", "部署の人材定義", n > 0, f"{n}名", "ai-company で git pull(.claude/agents/ が必要)")
     _tools_cache["v"] = None
     vt = video_tools()

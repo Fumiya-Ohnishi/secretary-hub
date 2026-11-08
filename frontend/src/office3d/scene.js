@@ -6,14 +6,16 @@ import { DEPT_COLOR } from "./avatar.js";
  * 3Dのオフィス(全部コードで組み立てる。外部の素材は使わない)
  * 部署ごとに長机の島。奥の壁に壁画とコーヒーカウンター、左の壁に資料室の本棚、右手前にラウンジ。
  */
-export const FW = 36, FD = 28;
-const COLS = [-12.6, -4.2, 4.5, 13.5], ROWS = [-8.6, -0.4, 8.2];
+export const FW = 45, FD = 28;
+const COLS = [-17.2, -8.6, 0, 8.6, 17.4], ROWS = [-8.6, -0.4, 8.2];
 export const AISLES = [-4.6, 3.9];         // 机の島の間の通路(z)
-export const CORRIDORS = [-8.4, 0.15, 9];       // 島の間の縦の通路(x)
+export const CORRIDORS = [-12.9, -4.3, 4.3, 12.9];
+export const LX = 17.6, LZ = 8.4;         // ラウンジ(右手前)
+const LOUNGE_AX = LX - 4.5;                // ラウンジへ入る縦の通り道(x)       // 島の間の縦の通路(x)
 export const DEPT_SLOTS = [
-  ["秘書室", 0, 0], ["経営戦略部", 1, 0], ["収益化部", 2, 0], ["企画編集部", 3, 0],
-  ["ライティング部", 0, 1], ["デザイン部", 1, 1], ["画像制作部", 2, 1], ["映像制作部", 3, 1],
-  ["SNS運用部", 0, 2], ["品質管理部", 1, 2], ["データ分析部", 2, 2],
+  ["秘書室", 0, 0], ["経営戦略部", 1, 0], ["収益化部", 2, 0], ["企画編集部", 3, 0], ["経理・税務部", 4, 0],
+  ["ライティング部", 0, 1], ["デザイン部", 1, 1], ["画像制作部", 2, 1], ["映像制作部", 3, 1], ["広報部", 4, 1],
+  ["SNS運用部", 0, 2], ["品質管理部", 1, 2], ["データ分析部", 2, 2], ["人事部", 3, 2],
 ];
 export const THEMES = {
   wood: { name: "木目", bg: 0x23262d, floor: 0xb98a5c, floorB: 0xa97a4e, wall: 0xeee9e1, wall2: 0x3b3f46, ceil: 0x8a5a32, table: 0x7a4f2c, metal: 0x2a2c31, rug: 0x55606b,
@@ -71,15 +73,15 @@ export function buildOffice(scene, themeKey, departments) {
   }
   mg.fillStyle = cols[3]; mg.font = "bold 64px sans-serif"; mg.fillText("AI COMPANY", 60, 440);
   const mt = new THREE.CanvasTexture(mc); mt.colorSpace = THREE.SRGBColorSpace;
-  const mural = new THREE.Mesh(new THREE.PlaneGeometry(14, 4.2), M(0xffffff, { map: mt, roughness: 0.9 })); mural.position.set(5, 3.2, -FD / 2 + 0.16); root.add(mural);
+  const mural = new THREE.Mesh(new THREE.PlaneGeometry(14, 4.2), M(0xffffff, { map: mt, roughness: 0.9 })); mural.position.set(8, 3.2, -FD / 2 + 0.16); root.add(mural);
   // 窓(奥の壁の左)
   const winM = new THREE.MeshStandardMaterial({ color: 0xbfe0ff, emissive: 0xcfe6ff, emissiveIntensity: 0.6 });
   for (let i = 0; i < 3; i++) {
-    const w = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.6), winM); w.position.set(-15 + i * 3.6, 3.1, -FD / 2 + 0.17); root.add(w);
-    box(0.12, 3.8, 0.1, mat.metal, -13.3 + i * 3.6, 3.1, -FD / 2 + 0.2, 0);
+    const w = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.6), winM); w.position.set(-FW / 2 + 3.5 + i * 3.6, 3.1, -FD / 2 + 0.17); root.add(w);
+    box(0.12, 3.8, 0.1, mat.metal, -FW / 2 + 5.3 + i * 3.6, 3.1, -FD / 2 + 0.2, 0);
   }
   // 天井の木のルーバー(壁ぞいだけ)
-  for (let i = 0; i < 55; i++) box(0.18, 0.25, 2.4, mat.slat, -FW / 2 + 0.5 + i * 0.64, 6.0, -FD / 2 + 1.2, 0.02);
+  for (let i = 0; i < 69; i++) box(0.18, 0.25, 2.4, mat.slat, -FW / 2 + 0.5 + i * 0.64, 6.0, -FD / 2 + 1.2, 0.02);
   for (let i = 0; i < 42; i++) box(2.4, 0.25, 0.18, mat.slat, -FW / 2 + 1.2, 6.0, -FD / 2 + 0.6 + i * 0.64, 0.02);
 
   const lamps = [];
@@ -171,28 +173,27 @@ export function buildOffice(scene, themeKey, departments) {
   }
 
   // ラウンジ(右手前)と会議の輪
-  const LX = 13.6, LZ = 8.4;
   const lr = new THREE.Mesh(new THREE.CylinderGeometry(3.3, 3.3, 0.03, 48), mat.rug); lr.position.set(LX, 0.02, LZ); lr.receiveShadow = true; root.add(lr);
   sofa(LX, LZ - 2.4, 4, P.sofa[0], 0); sofa(LX + 2.8, LZ, 3, P.sofa[1], -Math.PI / 2); sofa(LX - 2.8, LZ, 3, P.sofa[2], Math.PI / 2);
   box(1.8, 0.4, 1.1, mat.wood, LX, 0.4, LZ, 0.08); box(0.3, 0.04, 0.3, mat.white, LX - 0.3, 0.62, LZ, 0.02);
   labels.push({ text: "ラウンジ", pos: new THREE.Vector3(LX, 0.1, LZ + 3.9) });
   // コーヒーカウンター(奥の壁)
-  box(4.5, 1.1, 0.8, mat.wood, -2, 0.55, -FD / 2 + 0.7, 0.04); box(0.6, 0.7, 0.5, mat.black, -3.2, 1.45, -FD / 2 + 0.65, 0.05);
-  labels.push({ text: "コーヒー", pos: new THREE.Vector3(-2, 0.1, -FD / 2 + 2.0) });
+  box(4.5, 1.1, 0.8, mat.wood, -4.3, 0.55, -FD / 2 + 0.7, 0.04); box(0.6, 0.7, 0.5, mat.black, -5.5, 1.45, -FD / 2 + 0.65, 0.05);
+  labels.push({ text: "コーヒー", pos: new THREE.Vector3(-4.3, 0.1, -FD / 2 + 2.0) });
   // 資料室(左の壁の本棚と読書椅子)
   shelf(-FW / 2 + 0.45, -2.6, 4.6, Math.PI / 2); shelf(-FW / 2 + 0.45, 2.4, 4.6, Math.PI / 2); shelf(-FW / 2 + 0.45, 7.4, 4.6, Math.PI / 2);
   sofa(-FW / 2 + 2.3, 5.0, 1.6, 0x3b3f46, Math.PI / 2);
   labels.push({ text: "資料室", pos: new THREE.Vector3(-FW / 2 + 1.6, 0.1, 4.0) });
   // 植物
-  plant(-FW / 2 + 0.7, -FD / 2 + 0.8, 1.1, true); tallPlant(1.6, -FD / 2 + 0.9); tallPlant(FW / 2 - 0.9, 3.0); plant(9.2, 12.6, 0.9);
-  plant(-0.2, 12.6, 1); tallPlant(-FW / 2 + 0.9, 11.8); plant(FW / 2 - 0.8, 12.8, 1.1, true); plant(-9, -12.8, 0.8); plant(9, -12.8, 0.8, true);
-  for (let i = 0; i < 4; i++) plant(7 + i * 3, -FD / 2 + 0.7, 0.6);
+  plant(-FW / 2 + 0.7, -FD / 2 + 0.8, 1.1, true); tallPlant(-1.2, -FD / 2 + 0.9); tallPlant(FW / 2 - 0.9, 3.0); plant(12.9, 12.6, 0.9);
+  plant(-4.3, 12.6, 1); tallPlant(-FW / 2 + 0.9, 11.8); plant(FW / 2 - 0.8, 12.8, 1.1, true); plant(-12.9, -12.8, 0.8); plant(12.9, -12.8, 0.8, true);
+  for (let i = 0; i < 4; i++) plant(10 + i * 3, -FD / 2 + 0.7, 0.6);
 
   const spots = {
-    coffee: [[-3.0, -FD / 2 + 1.7, Math.PI], [-1.2, -FD / 2 + 1.8, Math.PI], [-0.2, -FD / 2 + 2.6, -Math.PI / 2]],
-    sofa: [[LX - 1.0, LZ - 2.3, 0, "sofa", 9.9], [LX + 0.6, LZ - 2.3, 0, "sofa", 9.9], [LX + 2.7, LZ - 0.6, -Math.PI / 2, "sofa", 17.5], [LX - 2.7, LZ + 0.5, Math.PI / 2, "sofa", 9.9]],
+    coffee: [[-5.3, -FD / 2 + 1.7, Math.PI], [-3.5, -FD / 2 + 1.8, Math.PI], [-1.5, -FD / 2 + 2.6, -Math.PI / 2]],
+    sofa: [[LX - 1.0, LZ - 2.3, 0, "sofa", LOUNGE_AX], [LX + 0.6, LZ - 2.3, 0, "sofa", LOUNGE_AX], [LX + 2.7, LZ - 0.6, -Math.PI / 2, "sofa", FW / 2 - 0.6], [LX - 2.7, LZ + 0.5, Math.PI / 2, "sofa", LOUNGE_AX]],
     library: [[-FW / 2 + 1.3, -4.4, -Math.PI / 2], [-FW / 2 + 1.3, 3.3, -Math.PI / 2], [-FW / 2 + 2.3, 5.0, Math.PI / 2, "sofa"]],
-    chat: [[[-9, -4.6, Math.PI / 2], [-8.1, -4.6, -Math.PI / 2]], [[0.4, 3.9, Math.PI / 2], [1.3, 3.9, -Math.PI / 2]], [[9, -4.6, 0], [9, -3.7, Math.PI]]],
+    chat: [[[-12.9, -4.6, Math.PI / 2], [-12.0, -4.6, -Math.PI / 2]], [[4.3, 3.9, Math.PI / 2], [5.2, 3.9, -Math.PI / 2]], [[12.9, -4.6, 0], [12.9, -3.7, Math.PI]]],
     meet: [LX, LZ],
   };
   return { root, seats, labels, monitors, lamps, spots, theme: P };
@@ -207,9 +208,9 @@ export function routeFromSeat(s, to, opts = {}) {
   const corr = nearest(CORRIDORS, endX);
   const tAisle = to[1] < AISLES[0] ? AISLES[0] : to[1] > AISLES[1] ? AISLES[1] : nearest(AISLES, to[1]);
   if (tAisle !== s.aisle) pts.push([corr, s.aisle], [corr, tAisle]);
-  if (opts.front) pts.push([9.9, tAisle], [9.9, 12.4], [to[0], 12.4]);
+  if (opts.front) pts.push([LOUNGE_AX, tAisle], [LOUNGE_AX, 12.4], [to[0], 12.4]);
   else if (Math.abs(to[1] - tAisle) > 0.4) {
-    const vx = opts.ax ?? (to[0] < -15 ? to[0] + 0.6 : nearest(CORRIDORS, to[0]));
+    const vx = opts.ax ?? (to[0] < -FW / 2 + 3 ? to[0] + 0.6 : nearest(CORRIDORS, to[0]));
     pts.push([vx, tAisle], [vx, to[1]]);
   } else pts.push([to[0], tAisle]);
   pts.push([to[0], to[1]]);

@@ -166,7 +166,7 @@ function Post({ post, open, onToggle, onChanged, notify }) {
         {post.cover?.exists && <img className="head-cover" src={fileUrl(post.cover.path)} alt="" />}
         <span className={`plat plat-${post.platform}`}>{post.platform_ja}</span>
         <span className="muted small">{FORMAT_JA[post.format] || post.format}</span>
-        <span className="ttl">{post.title}</span>
+        <span className="ttl">{post.title}{post.author === "codex" && <span className="by-codex" title="別の会社のAI(OpenAI Codex)が作った別案">Codex案</span>}</span>
         {post.pr && <span className="badge s-wait">PR</span>}
         <span className="muted small">{post.scheduled}</span>
         <span className={`badge ${POST_CLASS[post.status] || ""}`}>{post.status}</span>

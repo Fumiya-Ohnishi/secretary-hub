@@ -7,6 +7,7 @@ export const HAIR = [0x262a3f, 0x4a3426, 0x17171f, 0x6b4b2e, 0x3a3f66, 0x8a5a3a,
 export const DEPT_COLOR = {
   秘書室: 0x8f96f0, 経営戦略部: 0x3f7fc4, 収益化部: 0xe0a93a, 企画編集部: 0xe0784a, ライティング部: 0xa877c9, デザイン部: 0xe2668f,
   画像制作部: 0x35ad9a, 映像制作部: 0x6c7ce0, SNS運用部: 0x35a3d6, 品質管理部: 0xd65a5a, データ分析部: 0x5fae5a,
+  経理・税務部: 0xc9a53e, 広報部: 0xe778b4, 人事部: 0x4fb59a,
 };
 export const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 
