@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { createTask, patchTask, getDocs, getDoc, getWorklog, getDocTree, createJob, recordRevenue, recordFollowers, getOrg } from "./api.js";
 import { Blocks } from "./DocView.jsx";
+import Md from "./Md.jsx";
 import Accounts from "./Accounts.jsx";
 import { Calendar, OrgChart, Activity } from "./Extras.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
@@ -584,7 +585,9 @@ function Jobs({ jobs, claudeCli, onChanged, notify }) {
 function Chat({ log, logRef }) {
   return (
     <div className="chat" ref={logRef}>
-      {log.map((m, i) => <div key={i} className={`bubble ${m.role}`}>{stripTone(m.text)}</div>)}
+      {log.map((m, i) => m.role === "ai"
+        ? <div key={i} className="bubble ai md-bubble"><Md text={stripTone(m.text)} /></div>
+        : <div key={i} className={`bubble ${m.role}`}>{stripTone(m.text)}</div>)}
     </div>
   );
 }

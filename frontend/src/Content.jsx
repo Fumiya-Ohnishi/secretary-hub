@@ -1,3 +1,4 @@
+import Md from "./Md.jsx";
 import React, { useEffect, useState } from "react";
 import { getContentWeeks, getContentWeek, decidePost, approveWeek } from "./api.js";
 
@@ -179,7 +180,7 @@ function Post({ post, open, onToggle, onChanged, notify }) {
             <div key={i} className={`post-sec ${s.title.includes("社長コメント") ? "comment" : ""}`}>
               {s.title && <div className="sec-title">{s.title}
                 {s.title.includes("キャプション") && <button className="btn ghost sm" onClick={copy}>コピー</button>}</div>}
-              <div className="sec-text">{s.text}</div>
+              <Md className="sec-text" text={s.text} />
             </div>
           ))}
           {rejecting ? (
@@ -254,7 +255,7 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
             <div>
               <div className="muted small">{data.week} のテーマ{data.task ? ` ・ タスク ${data.task}` : ""}</div>
               <h3 className="week-theme">{data.theme || "(未定)"}</h3>
-              {data.summary && <p className="muted small">{data.summary}</p>}
+              {data.summary && <WeekNote text={data.summary} />}
             </div>
             {waiting > 0 && !platform && <button className="btn primary" disabled={busy} onClick={approveAll}>承認待ち {waiting}件を全部承認</button>}
           </div>
@@ -265,6 +266,18 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
           {posts.length === 0 && <div className="empty">この週の{platform ? "この媒体の" : ""}投稿はまだありません。</div>}
         </>
       )}
+    </div>
+  );
+}
+
+/** 週のテーマの説明(長いので最初は畳んでおく) */
+function WeekNote({ text }) {
+  const [open, setOpen] = React.useState(false);
+  const long = text.length > 400;
+  return (
+    <div className={`week-note ${open || !long ? "open" : ""}`}>
+      <Md text={text} />
+      {long && <button className="btn ghost sm week-more" onClick={() => setOpen(!open)}>{open ? "たたむ ▴" : "全部読む ▾"}</button>}
     </div>
   );
 }
