@@ -29,17 +29,25 @@ def _out_for(spec: Path) -> Path:
     return company.COMPANY_DIR / "content" / "output" / spec.parent.name / f"{name}.mp4"
 
 
+waiting_scene: List[str] = []  # 台本はあるが、場面の HTML がまだ無いリール
+
+
 def pending() -> List[Path]:
     """声入りになっていない(または台本が直された)リールの台本"""
     d = content.drafts_dir()
     if not d.exists():
         return []
     out = []
+    waiting_scene.clear()
     for spec in sorted(d.glob("*/*.reel.json")):
         try:
-            if "scene" not in json.loads(spec.read_text()):
+            sc = json.loads(spec.read_text()).get("scene")
+            if not sc:
                 continue  # 旧形式(Live2D+テロップ)は render_reel.mjs の担当
         except Exception:
+            continue
+        if not (spec.parent / sc).exists():  # 場面の HTML がまだ無い(映像制作部が作るまで待つ。エラーにしない)
+            waiting_scene.append(f"{spec.parent.name}/{spec.name} → {sc}")
             continue
         mark = _out_for(spec).with_suffix(".voice.json")
         if not mark.exists() or spec.stat().st_mtime > mark.stat().st_mtime:
@@ -106,7 +114,9 @@ def render_pending(hub_url: str, voicevox_ok: bool) -> List[str]:
         r = subprocess.run(["node", str(RENDER), str(spec), str(out)], cwd=RENDER.parent, env=env,
                            capture_output=True, text=True, timeout=1800)
         if r.returncode != 0:
-            last_error = f"{spec.parent.name}/{spec.name}: {(r.stderr or r.stdout)[-300:]}"
+            err = (r.stderr or r.stdout or "").strip()
+            first = next((l for l in err.splitlines() if "Error" in l or "エラー" in l), err[:200])
+            last_error = f"{spec.parent.name}/{spec.name}: {first[:300]}"
             continue
         out.with_suffix(".voice.json").write_text(json.dumps({"voiced": True, "spec": spec.name}, ensure_ascii=False))
         rel = str(out.relative_to(company.COMPANY_DIR))
