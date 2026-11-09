@@ -18,6 +18,7 @@ SHELVES = [
     ("reviews", "審査の記録", ["content/drafts/*/_check.md", "playbooks/visual_standard.md"]),
     ("research", "リサーチ", ["strategy/research/*.md", "strategy/research/accounts/*.md"]),
     ("numbers", "数字と改善点", ["data/improvements.md", "reports/weekly_*.md"]),
+    ("external", "外部の知見", ["knowledge/external_insights.md"]),
     ("prefs", "社長の好み", ["knowledge/preferences.md"]),
 ]
 PREFS = "knowledge/preferences.md"
