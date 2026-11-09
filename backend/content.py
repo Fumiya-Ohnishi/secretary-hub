@@ -242,9 +242,9 @@ def _set_status(rel: str, status: str, comment: str = "") -> dict:
 
 
 async def decide(rel: str, decision: str, comment: str = "") -> dict:
-    status = {"approve": "承認済み", "reject": "差し戻し", "posted": "投稿済み"}.get(decision)
+    status = {"approve": "承認済み", "reject": "差し戻し", "posted": "投稿済み", "draft": "下書き", "wait": "承認待ち"}.get(decision)
     if not status:
-        raise ValueError("decision は approve / reject / posted")
+        raise ValueError("decision は approve / reject / posted / draft / wait")
     post = _set_status(rel, status, comment)
     await sync_week_task(Path(rel).parent.name, comment if decision == "reject" else "")
     return post

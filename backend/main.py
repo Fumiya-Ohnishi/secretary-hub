@@ -364,7 +364,7 @@ async def doc(page_id: str):
 # ---------- 投稿セット ----------
 class PostDecision(BaseModel):
     path: str
-    decision: str  # approve / reject / posted
+    decision: str  # approve / reject / posted / draft(下書きに戻す) / wait(承認待ちに戻す)
     comment: str = ""
 
 
