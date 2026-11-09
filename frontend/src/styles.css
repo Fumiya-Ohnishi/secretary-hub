@@ -976,3 +976,4 @@ select.status-sel { color-scheme: dark; }
 .ft-tg { width: 18px; flex: none; background: none; border: none; color: var(--sub); font-size: 11px; padding: 0; }
 .doc-views button { white-space: nowrap; font-size: 11px; }
 .wl-item .doc-title, .ft .doc-title { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
+.fcount { margin-left: 5px; font-size: 10px; opacity: .7; }

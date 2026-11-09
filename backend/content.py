@@ -272,7 +272,9 @@ async def sync_week_task(week: str, reject_comment: str = ""):
         today = f"{datetime.date.today():%m/%d}"
         if reject_comment:
             await company.update_task(task["key"], status="差し戻し", append_note=f"{today} 投稿の差し戻し:{reject_comment}")
-        elif statuses and all(s in ("承認済み", "投稿済み") for s in statuses) and task["status"] != "承認済み":
+        elif statuses and all(s == "投稿済み" for s in statuses) and task["status"] != "完了":
+            await company.update_task(task["key"], status="完了", append_note=f"{today} 投稿セットを全部投稿済み(秘書が完了と判定)")
+        elif statuses and all(s in ("承認済み", "投稿済み") for s in statuses) and task["status"] not in ("承認済み", "完了"):
             await company.update_task(task["key"], status="承認済み", append_note=f"{today} 社長が秘書ハブで投稿セットを承認")
         elif "承認待ち" in statuses and task["status"] in ("未着手", "進行中", "差し戻し"):
             await company.update_task(task["key"], status="承認待ち", append_note=f"{today} 投稿セットが承認待ちになりました")

@@ -60,6 +60,21 @@ async def start_scheduler():
     asyncio.create_task(meeting_loop())     # 会議の議事録を Notion に載せ、やることを起票して通知
     asyncio.create_task(instagram_loop())   # Meta 公式の仕組みで、自社のフォロワー数(毎日)と参考アカウントの数字(毎週月曜)を取る
     asyncio.create_task(worklog_backfill())  # 作業ログが無い直近の作業を、作業ログに載せる(最初の1回)
+    asyncio.create_task(task_tidy_loop())    # 「進行中」のまま止まったタスクを、作業の結果に合わせて直す(30分ごと)
+
+
+async def task_tidy_loop():
+    await asyncio.sleep(60)
+    while True:
+        try:
+            r = await agent.tidy_tasks()
+            n = sum(r.values())
+            if n:
+                parts = [f"{k}{v}件" for k, v in r.items() if v]
+                scheduler.notify("タスクの状態を整えました", "進行中のまま止まっていたタスク: " + "・".join(parts), "info")
+        except Exception as e:
+            print("タスクの整理でエラー:", e)
+        await asyncio.sleep(1800)
 
 
 async def worklog_backfill():
