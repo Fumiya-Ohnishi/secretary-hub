@@ -61,6 +61,27 @@ async def start_scheduler():
     asyncio.create_task(instagram_loop())   # Meta 公式の仕組みで、自社のフォロワー数(毎日)と参考アカウントの数字(毎週月曜)を取る
     asyncio.create_task(worklog_backfill())  # 作業ログが無い直近の作業を、作業ログに載せる(最初の1回)
     asyncio.create_task(task_tidy_loop())    # 「進行中」のまま止まったタスクを、作業の結果に合わせて直す(30分ごと)
+    asyncio.create_task(git_sync_loop())     # 会社のフォルダを GitHub と自動でそろえる(10分ごと。作業中は待つ)
+
+
+async def git_sync_loop():
+    import gitsync
+    await asyncio.sleep(30)
+    last_ok = True
+    while True:
+        try:
+            busy = any(j.get("status") == "running" for j in agent.jobs.values())
+            if gitsync.enabled() and not busy:
+                r = await asyncio.to_thread(gitsync.sync)
+                if r.get("conflicts"):
+                    scheduler.notify("会社のフォルダを自動保存しました", "GitHub 側と同じ所が変わっていたので、Mac 側を優先しました: "
+                                     + "、".join(r["conflicts"][:5]), "info")
+                if not r.get("ok") and last_ok:
+                    scheduler.notify("会社のフォルダの自動保存が止まっています", r.get("detail", ""), "warn")
+                last_ok = bool(r.get("ok"))
+        except Exception as e:
+            print("自動保存でエラー:", e)
+        await asyncio.sleep(600)
 
 
 async def task_tidy_loop():
@@ -810,6 +831,12 @@ async def diagnostics():
         "秘書ハブを起動し直すと自動で入ります(tools/reel の部品)。入らないときはターミナルで `brew install ffmpeg`")
     add("node", "動画の道具: Node.js 22 以上(HyperFrames)", vt["node_ok"], vt["node"] or "見つかりません",
         "ターミナルで `brew install node@22` → `brew link --overwrite --force node@22`(または https://nodejs.org から 22 LTS を入れる)")
+    import gitsync
+    gs = gitsync.state
+    add("gitsync", "会社のフォルダの自動保存(GitHub)", gs["ok"] is not False,
+        ("10分ごとに自動で保存・取り込み" if gitsync.enabled() else "止めています(AUTO_GIT_SYNC=0)")
+        + (f" ・ 前回 {gs['last'][5:16].replace('T', ' ')}: {gs['detail']}" if gs.get("last") else ""),
+        "GitHub にログインできているか確認(ターミナルで ai-company フォルダの git push が通るか)")
     waiting_reels = reels.pending()
     scene_wait = f" ・ 場面のファイル待ち {len(reels.waiting_scene)}本({'、'.join(reels.waiting_scene[:3])})" if reels.waiting_scene else ""
     add("reels", "リールの声入れ", not waiting_reels and not reels.last_error,
