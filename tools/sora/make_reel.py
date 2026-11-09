@@ -6,7 +6,7 @@
     --dry   : Sora に送る指示と、生成する秒数だけを表示する(お金はかからない)
     --join  : 生成済みの場面をつなぎ直すだけ(テロップを直したとき)
 
-- OpenAI のキーは環境変数 OPENAI_API_KEY か、~/secretary-hub/.env の OPENAI_API_KEY を使う(画面には出さない)
+- OpenAI のキーは環境変数 OPENAI_API_KEY か、秘書ハブの backend/.env の OPENAI_API_KEY を使う(画面には出さない)
 - 場面ごとに Sora で生成 → 出来た場面は保存して、2回目からは作り直さない(やり直したい場面は、その mp4 を消す)
 - 最後に ffmpeg で、場面をつなぎ、テロップ・記録カード・まとめの画面を重ねる
 - 必要なもの: Python 3(標準のまま)と ffmpeg(brew install ffmpeg)
@@ -29,13 +29,14 @@ HUB = Path(__file__).resolve().parents[2]
 
 def api_key() -> str:
     k = os.getenv("OPENAI_API_KEY", "").strip()
-    env = HUB / ".env"
-    if not k and env.exists():
+    for env in (HUB / "backend" / ".env", HUB / ".env"):  # 秘書ハブの設定は backend/.env
+        if k or not env.exists():
+            continue
         for line in env.read_text(encoding="utf-8").splitlines():
             if line.strip().startswith("OPENAI_API_KEY="):
                 k = line.split("=", 1)[1].strip().strip('"').strip("'")
     if not k:
-        sys.exit("OPENAI_API_KEY が見つかりません(~/secretary-hub/.env に書いてください)")
+        sys.exit(f"OPENAI_API_KEY が見つかりません({HUB / 'backend' / '.env'} に OPENAI_API_KEY=... の行を書いてください)")
     return k
 
 
