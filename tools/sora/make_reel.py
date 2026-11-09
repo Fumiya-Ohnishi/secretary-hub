@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Sora(OpenAI の動画生成)で、人物が動いてしゃべるリールを作る。
 
+※ OpenAI の動画 API(Sora 2)は 2026-09-24 に終了したため、今は生成できない(404)。
+  場面の mp4 が手元にあるときの「--join」(つなぎと画像の重ね合わせ)だけは使える。
+
 使い方(会社のフォルダ ai-company で):
     python3 ~/secretary-hub/tools/sora/make_reel.py content/drafts/2026-47/honne01/sora/spec.json
     --dry   : Sora に送る指示と、生成する秒数だけを表示する(お金はかからない)
