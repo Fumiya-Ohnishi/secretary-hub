@@ -1030,17 +1030,30 @@ async def on_correction(target: str, comment: str) -> Optional[dict]:
 
 
 # ---------- 起動時の報告 ----------
-_briefing_cache: dict = {}
+BRIEFING_FILE = DATA_DIR / "briefing.json"
+BRIEFING_MIN_GAP_H = 3  # 中身が少し変わっても、前の報告から3時間は作り直さない(費用を抑える)
 
 
-async def briefing() -> dict:
-    """秘書ハブを開いたときの報告(3行+本日のおすすめ)。同じ内容なら1時間は使い回す"""
+def _briefing_digest(data: dict) -> str:
+    """報告の中身に効く数字だけ(時刻や細かな変化では作り直さない)"""
+    tasks = data.get("tasks", [])
+    appr = sorted(t.get("id") or "" for t in tasks if t.get("status") == "承認待ち")
+    open_n = sum(1 for t in tasks if t.get("status") not in ("完了", "承認済み"))
+    return json.dumps([data["revenue"].get("month_total"), appr, open_n], ensure_ascii=False)
+
+
+async def briefing(force: bool = False) -> dict:
+    """秘書ハブを開いたときの報告(3行+本日のおすすめ)。AIで作るのは原則1日1回。
+    同じ日は、収益・承認待ち・未完了の数が変わり、かつ前の報告から3時間たったときだけ作り直す。ハブを再起動しても使い回す"""
     data = await company.summary()
+    today = datetime.date.today().isoformat()
+    digest = _briefing_digest(data)
+    hit = _load_json(BRIEFING_FILE, {})
+    if hit.get("date") == today and not force:
+        age_h = (datetime.datetime.now() - datetime.datetime.fromisoformat(hit["at"])).total_seconds() / 3600
+        if hit.get("digest") == digest or age_h < BRIEFING_MIN_GAP_H:
+            return {**hit["result"], "cached": True, "at": hit["at"]}
     ctx = context_text(data)
-    key = (datetime.date.today().isoformat(), hash(ctx))
-    hit = _briefing_cache.get(key)
-    if hit and (datetime.datetime.now() - hit["at"]).seconds < 3600:
-        return hit["result"]
     text = await _one_shot(
         persona(),
         f"{ctx}\n\n社長が秘書ハブを開きました。起動時の報告をしてください。"
@@ -1048,9 +1061,9 @@ async def briefing() -> dict:
         "合計5文以内の話し言葉で。道具は使えません。", 1500)
     body, mood = split_mood(text)
     result = {"text": body, "mood": mood}
-    _briefing_cache.clear()
-    _briefing_cache[key] = {"at": datetime.datetime.now(), "result": result}
-    return result
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    _save_json(BRIEFING_FILE, {"date": today, "digest": digest, "at": now, "result": result})
+    return {**result, "cached": False, "at": now}
 
 
 # ---------- 週次レポート ----------

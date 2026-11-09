@@ -221,12 +221,16 @@ export default function App() {
   useEffect(() => {
     getHealth().then(setHealth).catch(() => setHealth({ offline: true }));
     refresh().then(async (s) => {
+      // 画面を開き直すたびに挨拶しない: 起動時の報告は、前に聞いてから3時間たつまでは出さない・話さない(AIの費用と、同じ言葉の繰り返しを防ぐ)
+      const last = load("hub-briefed", null), fresh = !last || Date.now() - last.t > 3 * 3600e3;
+      if (!fresh) { setLine(stripTone(last.text || greeting(s, name))); setMood(last.mood || "normal"); return; }
       let text = greeting(s, name), m = "normal";
       setLine(text);
       try {
         const b = await getBriefing();
         if (b.text) { text = b.text; m = b.mood || "normal"; setLine(stripTone(text)); setMood(m); }
       } catch (e) {}
+      save("hub-briefed", { t: Date.now(), text, mood: m });
       setLog((l) => [...l, { role: "sys", text: `── ${new Date().toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 起動 ──` }, { role: "ai", text: stripTone(text) }]);
       pendingSpeech.current = text; // ブラウザは操作の後でないと音を出せないので、最初のクリックで読み上げる
     });
