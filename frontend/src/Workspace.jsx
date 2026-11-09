@@ -9,7 +9,7 @@ import Library from "./Library.jsx";
 import { stripTone } from "./speech.js";
 
 export const STATUSES = ["未着手", "進行中", "承認待ち", "承認済み", "完了", "差し戻し"];
-const ASSIGNEES = ["秘書", "戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析", "社長"];
+const ASSIGNEES = ["秘書", "戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析", "経理", "広報", "人事", "Codex", "社長"];
 const DEPARTMENTS = ["戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析", "経理", "広報", "人事", "Codex"];
 const DEPT_FULL = { 戦略: "経営戦略部", 収益化: "収益化部", 企画: "企画編集部", ライティング: "ライティング部", デザイン: "デザイン部",
   画像: "画像制作部", 映像: "映像制作部", SNS運用: "SNS運用部", 品質管理: "品質管理部", 分析: "データ分析部", 経理: "経理・税務部", 広報: "広報部", 人事: "人事部", Codex: "社外制作室(Codex)" };
@@ -198,7 +198,7 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, n
 }
 
 /* ---------------- タスク ---------------- */
-const FILTERS = ["未完了", "承認待ち", "完了", "すべて"];
+const FILTERS = ["未完了", "未着手", "進行中", "承認待ち", "承認済み", "差し戻し", "完了", "すべて"];
 
 /** 期限の変更(日付を選んで「変更」。「期限なし」で消す) */
 function DueEditor({ task, onChanged, notify, onDone, autoFocus }) {
@@ -273,7 +273,7 @@ function Tasks({ summary, filter, setFilter, onApprove, onChanged, onOpenDoc, fo
   useEffect(() => setOpen(focusKey), [focusKey]);
 
   const list = summary.tasks.filter((t) =>
-    filter === "すべて" ? true : filter === "未完了" ? !["完了", "承認済み"].includes(t.status) : filter === "完了" ? ["完了", "承認済み"].includes(t.status) : t.status === filter);
+    filter === "すべて" ? true : filter === "未完了" ? !["完了", "承認済み"].includes(t.status) : t.status === filter);
 
   const add = async (e) => {
     e.preventDefault();
@@ -299,7 +299,10 @@ function Tasks({ summary, filter, setFilter, onApprove, onChanged, onOpenDoc, fo
         <button className="btn primary" disabled={saving || !form.title.trim()}>起票</button>
       </form>
       <div className="seg">
-        {FILTERS.map((f) => <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>{f}</button>)}
+        {FILTERS.map((f) => {
+          const n = f === "すべて" ? summary.tasks.length : f === "未完了" ? summary.tasks.filter((t) => !["完了", "承認済み"].includes(t.status)).length : summary.tasks.filter((t) => t.status === f).length;
+          return <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>{f}<span className="fcount">{n}</span></button>;
+        })}
         <span className="muted small src">{summary.task_source === "notion" ? "Notion と同期" : "控えファイル(Notion 未接続)"}</span>
       </div>
       {summary.task_error && <div className="warnbox">Notion に接続できないため控えを表示中:{summary.task_error}</div>}

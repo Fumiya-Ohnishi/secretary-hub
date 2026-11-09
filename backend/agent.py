@@ -210,6 +210,7 @@ def _publish_worklog(job: dict, before: Optional[dict]):
     import worklog
     try:
         files = worklog.changed(before) if before is not None else []
+        job["changed_files"] = files[:80]
         r = asyncio.run(worklog.publish(job, files))
         job["worklog"] = r
         if r.get("url") or r.get("local"):
@@ -240,20 +241,88 @@ def _run_job(job_id: str):
     job["finished"] = datetime.datetime.now().isoformat(timespec="seconds")
     _publish_worklog(job, before)
     _save_jobs()
-    if job.get("task_key"):
-        ok = job["status"] == "done"
-        mark = "作業完了" if ok else "作業エラー"
+    key = job.get("task_key") or ""
+    if key and not key.startswith(("meeting:", "routine:")):
         try:
             async def finish():
-                auto = scheduler.plan_for_task(job["task_key"]) is not None
-                # 逆算プランの工程は、終わったら完了にして次の工程へ(秘書の完了判定)
-                await company.update_task(job["task_key"], status="完了" if (ok and auto) else None,
-                                          append_note=f"{mark}({job['finished'][5:16]}・秘書ハブの作業タブに結果)")
-                if ok and auto:
+                status, note = decide_task_status(job, job.get("changed_files") or [])
+                auto = scheduler.plan_for_task(key) is not None
+                await company.update_task(key, status=status, append_note=f"{note}({job['finished'][5:16]})")
+                if status == "完了" and auto:  # 逆算プランの工程は、終わったら次の工程へ
                     await scheduler.advance()
             asyncio.run(finish())
         except Exception:
             pass
+
+
+POST_FILE_RE = re.compile(r"^content/drafts/\d{4}-\d{2}/\d+[^/]*\.md$")
+NEEDS_PRESIDENT = ("社長の承認", "社長に確認", "社長が決め", "社長の判断", "承認待ちにする")
+
+
+def decide_task_status(job: dict, files: List[str]) -> tuple:
+    """作業が終わったタスクの状態を、秘書が決める(完了判定は秘書の仕事: 就業規則)
+    - 作業が止まった(エラー・時間切れ) → 未着手(やり直しが必要)
+    - 投稿の中身を作り、承認待ちの投稿がある、または社長の判断が要る作業 → 承認待ち(承認は社長だけ)
+    - それ以外(秘書・部署だけで完結した作業)→ 完了"""
+    if job.get("status") != "done":
+        why = "時間切れ" if "制限時間" in (job.get("output") or "") else "エラー"
+        return "未着手", f"作業が途中で止まりました({why})。やり直しが必要・秘書が再依頼"
+    waiting = []
+    for f in files:
+        if POST_FILE_RE.match(f):
+            try:
+                if "status: 承認待ち" in (company.COMPANY_DIR / f).read_text(encoding="utf-8")[:600]:
+                    waiting.append(Path(f).name)
+            except Exception:
+                pass
+    if waiting:
+        return "承認待ち", f"作業完了。承認待ちの投稿 {len(waiting)}本(投稿タブで確認・承認は社長)"
+    text = (job.get("title") or "") + (job.get("instruction") or "")
+    if any(w in text for w in NEEDS_PRESIDENT):
+        return "承認待ち", "作業完了。社長の判断待ち(作業タブ・作業ログで結果を確認)"
+    return "完了", "作業完了(秘書が完了と判定。結果は作業ログ)"
+
+
+async def tidy_tasks() -> dict:
+    """「進行中」のまま止まっているタスクを、終わった作業の結果に合わせて直す(社長の担当は触らない)"""
+    data = await company.summary()
+    running = {j.get("task_key") for j in jobs.values() if j.get("status") == "running"}
+    latest: Dict[str, dict] = {}
+    for j in sorted(jobs.values(), key=lambda j: j.get("started") or ""):
+        if j.get("task_key"):
+            latest[j["task_key"]] = j
+    week_tasks = {}
+    for wk in sorted((company.COMPANY_DIR / "content" / "drafts").glob("20*-*/_week.md")):
+        m = re.search(r"^task:\s*(\S+)", wk.read_text(encoding="utf-8"), re.M)
+        if m:
+            week_tasks[m.group(1)] = wk.parent
+    changed = {"完了": 0, "承認待ち": 0, "未着手": 0}
+    for t in data["tasks"]:
+        if t.get("status") != "進行中" or t.get("assignee") == "社長" or t["key"] in running:
+            continue
+        note = (t.get("title") or "") + " " + (t.get("note") or "")  # 控えファイルではメモが件名の後ろに付く
+        j = latest.get(t["key"])
+        if j and j.get("status") in ("done", "error"):
+            status, why = decide_task_status(j, j.get("changed_files") or [])
+        elif "作業完了(" in note or "作業エラー(" in note:
+            last_ok, last_ng = note.rfind("作業完了("), note.rfind("作業エラー(")
+            if last_ng > last_ok:
+                status, why = "未着手", "作業が途中で止まっていました。やり直しが必要・秘書が再依頼"
+            else:
+                wd = week_tasks.get(t.get("id") or "")
+                pending = wd and any("status: 承認待ち" in p.read_text(encoding="utf-8")[:600] for p in wd.glob("[0-9]*.md"))
+                if pending or any(w in t.get("title", "") for w in NEEDS_PRESIDENT):
+                    status, why = "承認待ち", "作業は終わっています。社長の承認待ち"
+                else:
+                    status, why = "完了", "作業は終わっています(秘書が完了と判定)"
+        else:
+            continue
+        try:
+            await company.update_task(t["key"], status=status, append_note=f"{why}({datetime.datetime.now():%m/%d %H:%M} 秘書が整理)")
+            changed[status] += 1
+        except Exception:
+            pass
+    return changed
 
 
 def _codex_note(job: dict, desc: str, status: str = "running"):
