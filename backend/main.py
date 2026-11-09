@@ -59,6 +59,22 @@ async def start_scheduler():
     asyncio.create_task(watch_loop())       # 参考アカウントの評価・確認の結果を台帳と Notion に反映
     asyncio.create_task(meeting_loop())     # 会議の議事録を Notion に載せ、やることを起票して通知
     asyncio.create_task(instagram_loop())   # Meta 公式の仕組みで、自社のフォロワー数(毎日)と参考アカウントの数字(毎週月曜)を取る
+    asyncio.create_task(worklog_backfill())  # 作業ログが無い直近の作業を、作業ログに載せる(最初の1回)
+
+
+async def worklog_backfill():
+    """この仕組みより前の作業(直近14日)も、作業ログ(Notion・worklog/日付フォルダ)に載せておく"""
+    import worklog
+    await asyncio.sleep(20)
+    since = (datetime.datetime.now() - datetime.timedelta(days=14)).isoformat()
+    for j in list(agent.jobs.values()):
+        if j.get("status") == "running" or j.get("worklog") or (j.get("started") or "") < since:
+            continue
+        try:
+            j["worklog"] = await worklog.publish(j, [])
+        except Exception as e:
+            j["worklog"] = {"error": str(e)[:200]}
+    agent._save_jobs()
 
 
 async def instagram_loop():
@@ -286,6 +302,26 @@ async def docs():
         return {"configured": True, "docs": await notion.list_documents()}
     except Exception as e:
         return err(e)
+
+
+@app.get("/api/worklog")
+async def worklog_list(days: int = 60):
+    if not notion.configured():
+        return {"configured": False, "rows": []}
+    try:
+        return {"configured": True, "rows": await notion.list_worklog(days)}
+    except Exception as e:
+        return {"configured": True, "rows": [], "error": str(e)[:200]}
+
+
+@app.get("/api/docs/tree")
+async def docs_tree():
+    if not notion.configured():
+        return {"configured": False, "tree": []}
+    try:
+        return {"configured": True, "tree": await notion.tree()}
+    except Exception as e:
+        return {"configured": True, "tree": [], "error": str(e)[:200]}
 
 
 @app.get("/api/docs/db/{db_id}")

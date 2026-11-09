@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { createTask, patchTask, getDocs, getDoc, createJob, recordRevenue, recordFollowers, getOrg } from "./api.js";
+import { createTask, patchTask, getDocs, getDoc, getWorklog, getDocTree, createJob, recordRevenue, recordFollowers, getOrg } from "./api.js";
 import { Blocks } from "./DocView.jsx";
 import Accounts from "./Accounts.jsx";
 import { Calendar, OrgChart, Activity } from "./Extras.jsx";
@@ -356,9 +356,17 @@ function Docs({ docId, setDocId, notify }) {
   const [kind, setKind] = useState("all");
   const [rowQ, setRowQ] = useState("");
   const [loading, setLoading] = useState(false);
+  const [view, setViewState] = useState(() => { try { return localStorage.getItem("docsView") || "log"; } catch (e) { return "log"; } });
+  const setView = (v) => { setViewState(v); try { localStorage.setItem("docsView", v); } catch (e) {} };
+  const [log, setLog] = useState(null);
+  const [tree, setTree] = useState(null);
+  const [dept, setDept] = useState("");
+  const [open, setOpen] = useState({});
 
   useEffect(() => {
     getDocs().then(setDocs).catch((e) => { setDocs({ configured: true, docs: [], error: e.message }); });
+    getWorklog().then(setLog).catch((e) => setLog({ rows: [], error: e.message }));
+    getDocTree().then(setTree).catch((e) => setTree({ tree: [], error: e.message }));
   }, []);
   useEffect(() => {
     if (!docId) { setDoc(null); return; }
@@ -376,22 +384,31 @@ function Docs({ docId, setDocId, notify }) {
   return (
     <div className={`docs ${docId ? "reading" : ""}`}>
       <aside className="doc-list">
-        <input className="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="資料を検索" />
-        <div className="doc-kinds">
-          {[["all", `すべて ${docs.docs.length}`], ["page", `ページ ${nPage}`], ["database", `データベース ${nDb}`]].map(([k, l]) => (
-            <button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{l}</button>
+        <div className="doc-views">
+          {[["log", "📅 作業ログ"], ["folder", "📁 フォルダ"], ["all", "🔍 全部"]].map(([k, l]) => (
+            <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{l}</button>
           ))}
         </div>
-        {docs.error && <div className="warnbox">{docs.error}</div>}
-        {shown.map((d) => (
-          <button key={d.id} className={`doc-item ${docId === d.id ? "on" : ""} ${d.kind === "database" ? "db" : ""}`} onClick={() => setDocId(d.id)}>
-            <span className="doc-icon">{d.icon || "📄"}</span>
-            <span className="doc-title">{d.title}{d.kind === "database" && <span className="doc-kind">表</span>}</span>
-            <span className="muted small">{d.edited?.slice(5, 10).replace("-", "/")}</span>
-          </button>
-        ))}
-        {shown.length === 0 && <div className="empty">資料がありません。</div>}
-        <div className="muted small doc-note">秘書ハブに接続したページの中だけが出ます。足りないときは Notion でそのページの「•••」→「接続」→「秘書ハブ」。</div>
+        <input className="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={view === "log" ? "作業名で探す" : "資料を検索"} />
+        {view === "log" && <WorkLogList log={log} q={ql} dept={dept} setDept={setDept} open={open} setOpen={setOpen} docId={docId} setDocId={setDocId} />}
+        {view === "folder" && <FolderTree tree={tree} q={ql} open={open} setOpen={setOpen} docId={docId} setDocId={setDocId} />}
+        {view === "all" && <>
+          <div className="doc-kinds">
+            {[["all", `すべて ${docs.docs.length}`], ["page", `ページ ${nPage}`], ["database", `データベース ${nDb}`]].map(([k, l]) => (
+              <button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{l}</button>
+            ))}
+          </div>
+          {docs.error && <div className="warnbox">{docs.error}</div>}
+          {shown.map((d) => (
+            <button key={d.id} className={`doc-item ${docId === d.id ? "on" : ""} ${d.kind === "database" ? "db" : ""}`} onClick={() => setDocId(d.id)}>
+              <span className="doc-icon">{d.icon || "📄"}</span>
+              <span className="doc-title">{d.title}{d.kind === "database" && <span className="doc-kind">表</span>}</span>
+              <span className="muted small">{d.edited?.slice(5, 10).replace("-", "/")}</span>
+            </button>
+          ))}
+          {shown.length === 0 && <div className="empty">資料がありません。</div>}
+          <div className="muted small doc-note">秘書ハブに接続したページの中だけが出ます。足りないときは Notion でそのページの「•••」→「接続」→「秘書ハブ」。</div>
+        </>}
       </aside>
       <article className="doc-reader">
         {!docId && <div className="empty big">左の一覧から選ぶか、「企画書を開いて」と話しかけてください。</div>}
@@ -429,6 +446,83 @@ function Docs({ docId, setDocId, notify }) {
           </>
         )}
       </article>
+    </div>
+  );
+}
+
+/* 作業ログ: 日付のフォルダ(今日・昨日・…)に、その日の社員の作業を並べる */
+const WD = "日月火水木金土";
+function dayLabel(d) {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const x = new Date(d + "T00:00:00"), diff = Math.round((t - x) / 864e5);
+  const md = `${x.getMonth() + 1}/${x.getDate()}(${WD[x.getDay()]})`;
+  return diff === 0 ? `今日 ${md}` : diff === 1 ? `昨日 ${md}` : md;
+}
+function WorkLogList({ log, q, dept, setDept, open, setOpen, docId, setDocId }) {
+  if (!log) return <div className="empty">読み込み中…</div>;
+  const rows = (log.rows || []).filter((r) => (!q || r.title.toLowerCase().includes(q)) && (!dept || r.dept === dept));
+  const depts = [...new Set((log.rows || []).map((r) => r.dept).filter(Boolean))];
+  const days = [];
+  for (const r of rows) { const last = days[days.length - 1]; if (last && last.date === r.date) last.items.push(r); else days.push({ date: r.date, items: [r] }); }
+  const months = {};
+  return (
+    <div className="wl">
+      {log.error && <div className="warnbox">{log.error}</div>}
+      {depts.length > 0 && (
+        <select className="wl-dept" value={dept} onChange={(e) => setDept(e.target.value)}>
+          <option value="">すべての部署</option>
+          {depts.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+      )}
+      {days.map((d, i) => {
+        const key = "d" + d.date, isOpen = open[key] ?? i < 2;
+        const ym = d.date.slice(0, 7), head = !months[ym] && i >= 2; months[ym] = true;
+        return (
+          <React.Fragment key={d.date}>
+            {head && <div className="wl-month">{Number(ym.slice(5))}月</div>}
+            <div className={`wl-day ${isOpen ? "open" : ""}`}>
+              <button className="wl-day-head" onClick={() => setOpen({ ...open, [key]: !isOpen })}>
+                <span>{isOpen ? "📂" : "📁"} {dayLabel(d.date)}</span><span className="muted small">{d.items.length}件</span>
+              </button>
+              {isOpen && d.items.map((r) => (
+                <button key={r.id} className={`doc-item wl-item ${docId === r.id ? "on" : ""}`} onClick={() => setDocId(r.id)}>
+                  <span className={`wl-st ${r.status === "完了" ? "ok" : "ng"}`} title={r.status} />
+                  <span className="doc-title">{r.title}<span className="wl-meta">{r.dept}{r.kind ? ` ・ ${r.kind}` : ""}{r.time ? ` ・ ${r.time}` : ""}</span></span>
+                </button>
+              ))}
+            </div>
+          </React.Fragment>
+        );
+      })}
+      {days.length === 0 && <div className="empty">まだ作業ログがありません。部署の作業が終わると、日付ごとにここへ並びます。</div>}
+    </div>
+  );
+}
+
+/* フォルダ: Notion「AI会社」ページの中身(フォルダ・データベース) */
+function FolderTree({ tree, q, open, setOpen, docId, setDocId }) {
+  if (!tree) return <div className="empty">読み込み中…</div>;
+  const match = (it) => !q || it.title.toLowerCase().includes(q) || (it.children || []).some(match);
+  const Item = ({ it, depth }) => {
+    const hasKids = it.children && it.children.length > 0, key = "f" + it.id, isOpen = q ? true : (open[key] ?? (depth === 0 && it.title.includes("戦略")));
+    return (
+      <div className="ft-item" style={{ paddingLeft: depth * 14 }}>
+        <div className="ft-row">
+          {hasKids ? <button className="ft-tg" onClick={() => setOpen({ ...open, [key]: !isOpen })}>{isOpen ? "▾" : "▸"}</button> : <span className="ft-tg" />}
+          <button className={`doc-item ${docId === it.id ? "on" : ""}`} onClick={() => (hasKids && !isOpen ? setOpen({ ...open, [key]: true }) : setDocId(it.id))}>
+            <span className="doc-icon">{it.kind === "database" ? "🗂" : it.children ? (isOpen && hasKids ? "📂" : "📁") : "📄"}</span>
+            <span className="doc-title">{it.title}{it.kind === "database" && <span className="doc-kind">表</span>}</span>
+          </button>
+        </div>
+        {hasKids && isOpen && it.children.filter(match).map((c) => <Item key={c.id} it={c} depth={depth + 1} />)}
+      </div>
+    );
+  };
+  return (
+    <div className="ft">
+      {tree.error && <div className="warnbox">{tree.error}</div>}
+      {(tree.tree || []).filter(match).map((it) => <Item key={it.id} it={it} depth={0} />)}
+      {(tree.tree || []).length === 0 && <div className="empty">「AI会社」ページの中身を読めませんでした。</div>}
     </div>
   );
 }

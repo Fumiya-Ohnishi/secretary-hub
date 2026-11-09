@@ -149,9 +149,11 @@ def valid_date(value: str) -> str:
 
 
 async def update_task(key: str, status: Optional[str] = None, note: Optional[str] = None,
-                      append_note: Optional[str] = None, due: Optional[str] = None) -> dict:
+                      append_note: Optional[str] = None, due: Optional[str] = None, link: Optional[str] = None) -> dict:
     """due: None=変更しない / "" =期限を消す / "YYYY-MM-DD"=その日に変える"""
     props: Dict[str, dict] = {}
+    if link:
+        props["資料"] = {"url": link}
     if due is not None:
         due = valid_date(due)
         props["期限"] = {"date": {"start": due} if due else None}
@@ -427,13 +429,41 @@ async def add_revenue(date: str, source: str, amount: int, memo: str) -> None:
     }})
 
 
-async def find_child_page(title: str) -> Optional[str]:
+# 「AI会社」ページの下のフォルダ(2026-11-09 整理)。キー → (名前, 既定のID)
+FOLDERS = {
+    "strategy": ("戦略・企画書", os.getenv("NOTION_FOLDER_STRATEGY", "41387d43630581d1a8f1c072b4a4c347")),
+    "guide": ("手順・ガイド", os.getenv("NOTION_FOLDER_GUIDE", "41387d43630581a380afc1cae8395056")),
+    "report": ("レポート", os.getenv("NOTION_FOLDER_REPORT", "41387d436305811e8fdcdd0a3d902b3b")),
+    "data": ("データ・台帳", os.getenv("NOTION_FOLDER_DATA", "41387d43630581a48153d28e037ac4e4")),
+}
+WORKLOG_DB = os.getenv("NOTION_WORKLOG_DB", "8a1584c0189d4671a45585ac82c8ba59").strip()
+_folder_cache: Dict[str, str] = {}
+
+
+async def folder(key: str) -> str:
+    """フォルダのページID(見つからなければ「AI会社」の下に作る)"""
+    if key in _folder_cache:
+        return _folder_cache[key]
+    name, default = FOLDERS[key]
+    pid = None
+    try:
+        await _req("GET", f"/pages/{default}")
+        pid = default
+    except Exception:
+        pid = await find_child_page(name)
+        if not pid:
+            pid = (await create_page(name, [], "📁"))["id"]
+    _folder_cache[key] = pid
+    return pid
+
+
+async def find_child_page(title: str, parent: Optional[str] = None) -> Optional[str]:
     cursor = None
     while True:
         params = {"page_size": 100}
         if cursor:
             params["start_cursor"] = cursor
-        data = await _req("GET", f"/blocks/{ROOT_PAGE}/children", params=params)
+        data = await _req("GET", f"/blocks/{parent or ROOT_PAGE}/children", params=params)
         for b in data.get("results", []):
             if b.get("type") == "child_page" and b["child_page"].get("title") == title:
                 return b["id"].replace("-", "")
@@ -442,10 +472,10 @@ async def find_child_page(title: str) -> Optional[str]:
         cursor = data.get("next_cursor")
 
 
-async def create_page(title: str, blocks: List[dict], icon: str = "📄") -> dict:
-    """「AI会社」ページの下にページを作る(ブロックは100個ずつ追加)"""
+async def create_page(title: str, blocks: List[dict], icon: str = "📄", parent: Optional[str] = None) -> dict:
+    """「AI会社」ページ(か parent)の下にページを作る(ブロックは100個ずつ追加)"""
     page = await _req("POST", "/pages", json={
-        "parent": {"page_id": ROOT_PAGE}, "icon": {"type": "emoji", "emoji": icon},
+        "parent": {"page_id": parent or ROOT_PAGE}, "icon": {"type": "emoji", "emoji": icon},
         "properties": {"title": {"title": _text(title)}}, "children": blocks[:100]})
     pid = page["id"].replace("-", "")
     for i in range(100, len(blocks), 100):
@@ -515,3 +545,66 @@ def markdown_to_blocks(md: str) -> List[dict]:
             blocks.append({"type": "paragraph", "paragraph": {"rich_text": _rt_md(line)}})
         i += 1
     return blocks
+
+
+# ---------- 作業ログ(社員の作業の成果。1作業=1ページ) ----------
+async def add_worklog(title: str, day: str, dept: str, kind: str, status: str, files: List[str],
+                      task: str, job_id: str, blocks: List[dict]) -> dict:
+    props = {"作業": {"title": _text(title[:200])}, "日付": {"date": {"start": day}},
+             "種類": {"select": {"name": kind}}, "状態": {"select": {"name": status}},
+             "ファイル": {"rich_text": _text(", ".join(files)[:1900])}, "タスク": {"rich_text": _text(task[:200])},
+             "作業ID": {"rich_text": _text(job_id)}}
+    if dept:
+        props["部署"] = {"select": {"name": dept}}
+    page = await _req("POST", "/pages", json={"parent": {"database_id": WORKLOG_DB}, "icon": {"type": "emoji", "emoji": "🗂"},
+                                              "properties": props, "children": blocks[:100]})
+    pid = page["id"].replace("-", "")
+    for i in range(100, len(blocks), 100):
+        await append_blocks(pid, blocks[i:i + 100])
+    return {"id": pid, "url": page.get("url", "")}
+
+
+async def list_worklog(days: int = 60, limit: int = 300) -> List[dict]:
+    since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    rows, cursor = [], None
+    while len(rows) < limit:
+        body = {"page_size": 100, "filter": {"property": "日付", "date": {"on_or_after": since}},
+                "sorts": [{"property": "日付", "direction": "descending"}, {"timestamp": "created_time", "direction": "descending"}]}
+        if cursor:
+            body["start_cursor"] = cursor
+        data = await _req("POST", f"/databases/{WORKLOG_DB}/query", json=body)
+        for r in data.get("results", []):
+            pr = r.get("properties", {})
+            rows.append({"id": r["id"].replace("-", ""), "title": prop_text(pr.get("作業", {})) or "(無題)",
+                         "date": prop_text(pr.get("日付", {}))[:10], "time": (r.get("created_time") or "")[11:16],
+                         "dept": prop_text(pr.get("部署", {})), "kind": prop_text(pr.get("種類", {})),
+                         "status": prop_text(pr.get("状態", {})), "url": r.get("url", "")})
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+    return rows
+
+
+async def tree() -> List[dict]:
+    """「AI会社」ページの中身をフォルダの形で(子ページ・データベース。フォルダは1段下まで)"""
+    async def kids(pid: str, depth: int) -> List[dict]:
+        out, cursor = [], None
+        while True:
+            params = {"page_size": 100}
+            if cursor:
+                params["start_cursor"] = cursor
+            data = await _req("GET", f"/blocks/{pid}/children", params=params)
+            for b in data.get("results", []):
+                t = b.get("type")
+                if t not in ("child_page", "child_database"):
+                    continue
+                item = {"id": b["id"].replace("-", ""), "title": b[t].get("title") or "(無題)",
+                        "kind": "database" if t == "child_database" else "page"}
+                if t == "child_page" and depth < 1 and b.get("has_children"):
+                    item["children"] = await kids(item["id"], depth + 1)
+                out.append(item)
+            if not data.get("has_more"):
+                break
+            cursor = data.get("next_cursor")
+        return out
+    return await kids(ROOT_PAGE, 0)

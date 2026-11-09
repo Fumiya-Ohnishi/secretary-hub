@@ -19,6 +19,8 @@ export const decideTask = (key, decision, comment = "") =>
   call("POST", `/api/tasks/${encodeURIComponent(key)}/decision`, { decision, comment });
 
 export const getDocs = () => call("GET", "/api/docs");
+export const getWorklog = (days = 60) => call("GET", `/api/worklog?days=${days}`);
+export const getDocTree = () => call("GET", "/api/docs/tree");
 export const getDoc = (id) => call("GET", `/api/docs/${encodeURIComponent(id)}`);
 
 export const getJobs = () => call("GET", "/api/jobs");
