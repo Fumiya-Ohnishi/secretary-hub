@@ -246,6 +246,12 @@ def _run_job(job_id: str):
         try:
             async def finish():
                 status, note = decide_task_status(job, job.get("changed_files") or [])
+                try:  # 社長が承認済みにしたタスクの続きの作業なら、承認を取り直さず完了にする
+                    cur = await company.find_task(key)
+                    if cur.get("status") == "承認済み" and status == "承認待ち":
+                        status, note = "完了", "承認済みの続きの作業が完了(秘書が完了と判定)"
+                except Exception:
+                    pass
                 auto = scheduler.plan_for_task(key) is not None
                 await company.update_task(key, status=status, append_note=f"{note}({job['finished'][5:16]})")
                 if status == "完了" and auto:  # 逆算プランの工程は、終わったら次の工程へ
@@ -256,6 +262,7 @@ def _run_job(job_id: str):
 
 
 POST_FILE_RE = re.compile(r"^content/drafts/\d{4}-\d{2}/\d+[^/]*\.md$")
+DECISION_ONLY = ("決める", "承認か差し戻し", "を確認し", "で確認", "を読み", "選択")  # 社長の判断だけで終わるタスク
 NEEDS_PRESIDENT = ("社長の承認", "社長に確認", "社長が決め", "社長の判断", "承認待ちにする")
 
 
@@ -297,6 +304,23 @@ async def tidy_tasks() -> dict:
         if m:
             week_tasks[m.group(1)] = wk.parent
     changed = {"完了": 0, "承認待ち": 0, "未着手": 0}
+    # 承認済みのあと: 投稿セットは全部投稿済みで完了(content.sync_week_task)。判断だけのタスクは承認で終わりなので完了にする
+    for t in data["tasks"]:
+        if t.get("status") != "承認済み" or t["key"] in running:
+            continue
+        title = t.get("title") or ""
+        if t.get("id") in week_tasks:
+            try:
+                await content.sync_week_task(week_tasks[t["id"]].name)
+            except Exception:
+                pass
+            continue
+        if t.get("assignee") == "社長" or any(w in title for w in DECISION_ONLY):
+            try:
+                await company.update_task(t["key"], status="完了", append_note=f"社長の判断で終わり(承認済み→完了 {datetime.datetime.now():%m/%d %H:%M} 秘書が整理)")
+                changed["完了"] += 1
+            except Exception:
+                pass
     for t in data["tasks"]:
         if t.get("status") != "進行中" or t.get("assignee") == "社長" or t["key"] in running:
             continue
