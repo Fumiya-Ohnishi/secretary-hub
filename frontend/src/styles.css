@@ -1007,3 +1007,5 @@ select.status-sel { color-scheme: dark; }
 .md code { word-break: break-all; }
 .md-bubble { max-width: 92%; }
 .md .md-table td { min-width: 4.2em; }
+.status-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); margin-left: auto; }
+.status-pick select { background: var(--panel2); color: var(--text); border: 1px solid var(--line2); border-radius: 8px; padding: 5px 8px; font-size: 12px; }

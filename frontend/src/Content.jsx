@@ -151,11 +151,21 @@ function Post({ post, open, onToggle, onChanged, notify }) {
     setBusy(true);
     try {
       await decidePost(post.path, decision, c);
-      notify(`${post.title}:${{ approve: "承認しました", reject: "差し戻しました", posted: "投稿済みにしました" }[decision]}`, "ok");
+      notify(`${post.title}:${{ approve: "承認しました", reject: "差し戻しました", posted: "投稿済みにしました", draft: "下書きに戻しました", wait: "承認待ちにしました" }[decision]}`, "ok");
       setRejecting(false); setComment("");
       onChanged();
     } catch (e) { notify(e.message, "error"); }
     setBusy(false);
+  };
+  const STATUS_TO = { 下書き: "draft", 承認待ち: "wait", 承認済み: "approve", 差し戻し: "reject", 投稿済み: "posted" };
+  const change = (st) => {
+    if (!st || st === post.status) return;
+    if (st === "差し戻し") { setRejecting(true); return; }
+    if (st === "承認済み" && post.status === "下書き"
+        && !window.confirm("この投稿は、まだ品質管理部のチェック前(下書き)です。このまま承認しますか?")) return;
+    if (st === "投稿済み" && post.status !== "承認済み"
+        && !window.confirm("まだ承認されていない投稿です。投稿済みにしますか?")) return;
+    act(STATUS_TO[st]);
   };
   const copy = async () => {
     try { await navigator.clipboard.writeText(post.caption); notify("キャプションをコピーしました", "ok"); }
@@ -196,6 +206,11 @@ function Post({ post, open, onToggle, onChanged, notify }) {
               {["承認待ち", "差し戻し", "下書き"].includes(post.status) && <button className="btn" disabled={busy} onClick={() => setRejecting(true)}>差し戻す</button>}
               {post.status === "承認待ち" && <button className="btn primary" disabled={busy} onClick={() => act("approve")}>承認する</button>}
               {post.status === "承認済み" && <button className="btn primary" disabled={busy} onClick={() => act("posted")}>投稿しました</button>}
+              <label className="status-pick">状態を変える
+                <select value={post.status} disabled={busy} onChange={(e) => change(e.target.value)}>
+                  {Object.keys(STATUS_TO).map((st) => <option key={st} value={st}>{st}</option>)}
+                </select>
+              </label>
             </div>
           )}
         </div>
