@@ -64,6 +64,12 @@ async def start_scheduler():
 
 async def worklog_backfill():
     """この仕組みより前の作業(直近14日)も、作業ログ(Notion・worklog/日付フォルダ)に載せておく"""
+    try:  # ついでに数字の表を整える(フォロワーの重複行をまとめる)
+        r = company.normalize_followers()
+        if r.get("removed"):
+            print(f"followers.csv の重複 {r['removed']}行をまとめました")
+    except Exception as e:
+        print("followers.csv を整えられませんでした:", e)
     import worklog
     await asyncio.sleep(20)
     since = (datetime.datetime.now() - datetime.timedelta(days=14)).isoformat()

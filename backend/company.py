@@ -154,6 +154,10 @@ def summary_text(data: dict) -> str:
         f"- タスク({'Notion' if data['task_source'] == 'notion' else '控えファイル'}): "
         f"全{len(tasks)}件/未完了{len(open_t)}件/承認待ち{len(approval)}件",
     ]
+    gaps = followers_gaps()
+    if gaps:
+        lines.append("- フォロワー数が7日以上記録されていない媒体: " + "・".join(PLATFORM_JA[p] for p in gaps)
+                     + "(推測で埋めない。社長に今の数を聞いて record_followers で記録する)")
     for t in open_t[:12]:
         lines.append(f"  - {t['id']} {t['title'][:60]}(担当:{t['assignee']}・状態:{t['status']}・期限:{t['due'] or '-'})")
     return "\n".join(lines)
@@ -193,12 +197,55 @@ async def record_revenue(amount: int, source: str = "other", date: Optional[str]
     return {"date": date, "source": source, "amount": amount, "memo": memo, "notion": synced}
 
 
+def _read_follower_rows() -> List[dict]:
+    rows = []
+    if FOLLOWERS_CSV.exists():
+        with FOLLOWERS_CSV.open() as f:
+            for r in csv.DictReader(f):
+                try:
+                    rows.append({"date": notion.valid_date(r["date"]), "platform": r["platform"].strip().lower(),
+                                 "followers": int(float(r["followers"]))})
+                except Exception:
+                    pass
+    return rows
+
+
+def normalize_followers() -> dict:
+    """followers.csv を整える: 同じ日・同じ媒体の行は最後の値だけ残し、日付→媒体の順に並べる。
+    数字の無い媒体は埋めない(推測の数字を作らない。抜けは「未記録」として扱う)"""
+    rows = _read_follower_rows()
+    if not rows:
+        return {"rows": 0, "removed": 0}
+    latest = {}
+    for r in rows:
+        if r["platform"] in PLATFORMS and r["date"]:
+            latest[(r["date"], r["platform"])] = r["followers"]
+    order = {p: i for i, p in enumerate(PLATFORMS)}
+    keys = sorted(latest, key=lambda k: (k[0], order[k[1]]))
+    FOLLOWERS_CSV.parent.mkdir(parents=True, exist_ok=True)
+    with FOLLOWERS_CSV.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["date", "platform", "followers"])
+        for d, p in keys:
+            w.writerow([d, p, latest[(d, p)]])
+    return {"rows": len(keys), "removed": len(rows) - len(keys)}
+
+
 def record_followers(platform: str, followers: int, date: Optional[str] = None) -> dict:
+    """同じ日・同じ媒体がすでにあれば上書きする(重複させない)"""
     if platform not in PLATFORMS:
         raise ValueError(f"媒体は {' / '.join(PLATFORMS)} のどれかです")
     date = notion.valid_date(date or "") or datetime.date.today().isoformat()
     _append_csv(FOLLOWERS_CSV, ["date", "platform", "followers"], [date, platform, str(int(followers))])
+    normalize_followers()
     return {"date": date, "platform": platform, "followers": int(followers)}
+
+
+def followers_gaps(days: int = 7) -> List[str]:
+    """直近 days 日に記録の無い媒体(Instagram 以外は自動で取れないので、社長に聞く)"""
+    since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    seen = {r["platform"] for r in _read_follower_rows() if r["date"] and r["date"] >= since}
+    return [p for p in PLATFORMS if p not in seen]
 
 
 def read_followers() -> dict:
