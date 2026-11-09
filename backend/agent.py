@@ -177,6 +177,9 @@ def _job_prompt(job: dict) -> str:
     lines += ["", "## 守ること",
               "- CLAUDE.md(就業規則)と playbooks/learned_rules.md に従う。成果物は所定のフォルダに保存する(投稿セットは playbooks/post_format.md の形式)",
               "- 外部への投稿・申請・購入・ログインはしない。承認済み・差し戻しにはしない(承認は社長だけ)",
+              "- 書き出しで使ってよいコマンドは決まっている(許可の確認で止まらないように): 書き出しスクリプトは週のフォルダに**必ず `render.mjs` という名前**で置き"
+              "(表紙用も同じファイルに入れるか、引数で切り替える)、会社のフォルダから**相対パスでそのまま**動かす(`cd` や `&&` でつながない)。"
+              "`render_cover.mjs` など別の名前のスクリプトは動かせない",
               "- 書き出し: カルーセルは `node content/drafts/YYYY-WW/render.mjs <html> content/output/YYYY-WW <接頭辞>`(実録の型)か "
               "`node tools/render/render_carousel.mjs <JSON> content/output/YYYY-WW/`。"
               f"リールは `node {REEL_DIR}/render_record_reel.mjs <台本.json> content/output/YYYY-WW/<名前>.mp4`(実録の型。声は秘書ハブが VOICEVOX で入れる)。"
