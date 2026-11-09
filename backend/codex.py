@@ -154,6 +154,8 @@ def make_video(item: dict, dest: Path, log) -> None:
     secs = str(item.get("seconds", 8)) if str(item.get("seconds", 8)) in ("4", "8", "12") else "8"
     r = httpx.post(f"{API}/videos", headers=_headers(), timeout=60,
                    json={"model": VIDEO_MODEL, "prompt": item["prompt"], "seconds": secs, "size": "720x1280"})
+    if r.status_code == 404:  # OpenAI の動画 API(Sora 2)は 2026-09-24 に終了した
+        raise RuntimeError("OpenAI の動画 API(Sora)は終了しています。動画は Higgsfield で作ります(playbooks/reel_format.md)")
     if r.status_code >= 400:
         raise RuntimeError(f"動画API {r.status_code}: {r.text[:200]}")
     vid = r.json()["id"]
