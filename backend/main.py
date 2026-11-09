@@ -811,8 +811,9 @@ async def diagnostics():
     add("node", "動画の道具: Node.js 22 以上(HyperFrames)", vt["node_ok"], vt["node"] or "見つかりません",
         "ターミナルで `brew install node@22` → `brew link --overwrite --force node@22`(または https://nodejs.org から 22 LTS を入れる)")
     waiting_reels = reels.pending()
+    scene_wait = f" ・ 場面のファイル待ち {len(reels.waiting_scene)}本({'、'.join(reels.waiting_scene[:3])})" if reels.waiting_scene else ""
     add("reels", "リールの声入れ", not waiting_reels and not reels.last_error,
-        "すべて声入り" if not waiting_reels else f"声入り待ち {len(waiting_reels)}本" + (f"(止まっている理由: {reels.last_error})" if reels.last_error else ""),
+        ("すべて声入り" if not waiting_reels else f"声入り待ち {len(waiting_reels)}本" + (f"(止まっている理由: {reels.last_error})" if reels.last_error else "")) + scene_wait,
         "VOICEVOX を起動しておくと、15分以内に自動で声入りになります(Node.js と Google Chrome が必要)")
     md = content.media_dir()
     add("media", "Google ドライブ(画像・動画の置き場所)", bool(md and md.parent.exists()), str(md) if md else "見つかりません",
