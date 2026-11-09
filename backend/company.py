@@ -111,8 +111,8 @@ async def find_task(ref: str) -> dict:
 
 
 async def update_task(key: str, status: Optional[str] = None, note: Optional[str] = None,
-                      append_note: Optional[str] = None, due: Optional[str] = None) -> dict:
-    """due: None=変更しない / "" =期限を消す / "YYYY-MM-DD"=その日に変える"""
+                      append_note: Optional[str] = None, due: Optional[str] = None, link: Optional[str] = None) -> dict:
+    """due: None=変更しない / "" =期限を消す / "YYYY-MM-DD"=その日に変える。link=資料(Notion の作業ログなど)"""
     if status and status not in STATUSES:
         raise ValueError(f"ステータスは {' / '.join(STATUSES)} のどれかです")
     if due is not None:
@@ -121,7 +121,7 @@ async def update_task(key: str, status: Optional[str] = None, note: Optional[str
         except ValueError:
             raise ValueError("期限は YYYY-MM-DD の形で指定してください")
     if notion.configured():
-        return await notion.update_task(key, status=status, note=note, append_note=append_note, due=due)
+        return await notion.update_task(key, status=status, note=note, append_note=append_note, due=due, link=link)
     return _file_update(key, status, append_note or note, due)
 
 
@@ -272,7 +272,8 @@ async def register_account(platform: str, url: str, opened: Optional[str] = None
     synced = None
     if notion.configured():
         try:
-            pid = await notion.find_child_page("アカウント台帳")
+            data_folder = await notion.folder("data")
+            pid = await notion.find_child_page("アカウント台帳", data_folder) or await notion.find_child_page("アカウント台帳")
             item = [{"type": "bulleted_list_item", "bulleted_list_item": {"rich_text": [
                 {"type": "text", "text": {"content": f"{name}: "}},
                 {"type": "text", "text": {"content": url, "link": {"url": url}}},
@@ -281,7 +282,7 @@ async def register_account(platform: str, url: str, opened: Optional[str] = None
                 await notion.append_blocks(pid, item)
             else:
                 await notion.create_page("アカウント台帳", [{"type": "callout", "callout": {"rich_text": [{"type": "text", "text": {
-                    "content": "開設したアカウントの URL。パスワード・認証情報は書かない"}}], "icon": {"type": "emoji", "emoji": "🔒"}}}] + item, "🪪")
+                    "content": "開設したアカウントの URL。パスワード・認証情報は書かない"}}], "icon": {"type": "emoji", "emoji": "🔒"}}}] + item, "🪪", data_folder)
             synced = True
         except Exception as e:
             synced = str(e)

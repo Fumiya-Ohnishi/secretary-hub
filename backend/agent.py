@@ -186,6 +186,8 @@ def _job_prompt(job: dict) -> str:
               "比べるときはそこから読み、新しく書き出したものは content/output/YYYY-WW/ に置く(秘書ハブがドライブへ写す)",
               "- 上司・品質管理部のチェックは、作った担当とは別のサブエージェントにさせる(自分で作ったものを自分で合格にしない)",
               f"- 制限時間は{_job_timeout_min()}分。1本(1ファイル)できるごとに保存し、全部を最後にまとめて書かない。時間が足りなそうなら、終わった分だけ仕上げて「残り」を書いて終える",
+              "- Notion に自分でページを作らない。成果物は会社のフォルダの所定の場所に保存すれば、秘書ハブが作業の終わりに"
+              "Notion「AI会社 > 作業ログ」(日付・部署ごと)と worklog/YYYY-MM/YYYY-MM-DD/ にまとめて載せる",
               "- 作業で困ったこと・こうしてほしいこと(指示が曖昧・道具が足りない・時間が足りない・受け渡しの問題など)があった社員は、"
               "data/employee_voice.md に `- YYYY-MM-DD 部署 社員名: 内容` を1行ずつ足す(なければ書かない。人事部が毎週まとめる)",
               "- 最後に、誰が何をして、どのファイルに保存したか、チェックの結果を日本語で3行以内でまとめる"]
@@ -203,10 +205,28 @@ def _save_jobs():
     _save_json(JOBS_FILE, keep)
 
 
+def _publish_worklog(job: dict, before: Optional[dict]):
+    """作業の成果を作業ログ(Notion・worklog/日付フォルダ)に載せる"""
+    import worklog
+    try:
+        files = worklog.changed(before) if before is not None else []
+        r = asyncio.run(worklog.publish(job, files))
+        job["worklog"] = r
+        if r.get("url") or r.get("local"):
+            job["output"] = (job.get("output") or "") + f"\n\n— 作業ログ: {r.get('url') or ''} {r.get('local') or ''}".rstrip()
+    except Exception as e:
+        job["worklog"] = {"error": str(e)[:200]}
+
+
 def _run_job(job_id: str):
     job = jobs[job_id]
+    try:
+        import worklog
+        before = worklog.snapshot()
+    except Exception:
+        before = None
     if job["department"] == "Codex":
-        return _run_codex_job(job)
+        return _run_codex_job(job, before)
     advisor = _codex_before(job)
     prompt = _job_prompt(job) + advisor
     try:
@@ -218,6 +238,7 @@ def _run_job(job_id: str):
     if job["status"] == "done":
         _codex_after(job)
     job["finished"] = datetime.datetime.now().isoformat(timespec="seconds")
+    _publish_worklog(job, before)
     _save_jobs()
     if job.get("task_key"):
         ok = job["status"] == "done"
@@ -287,7 +308,7 @@ def _codex_after(job: dict):
         job["output"] = (job.get("output") or "") + f"\n\n(社外顧問の確認はできませんでした: {str(e)[:160]})"
 
 
-def _run_codex_job(job: dict):
+def _run_codex_job(job: dict, before: Optional[dict] = None):
     """社外制作室(Codex): 別の会社のAIが投稿の別案を作る → 秘書ハブが画像・動画を作る → 当社の品質管理部が点検"""
     import codex
     try:
@@ -307,6 +328,7 @@ def _run_codex_job(job: dict):
     except Exception as e:
         job.update(status="error", output=(job.get("output") or "") + f"\n{e}")
     job["finished"] = datetime.datetime.now().isoformat(timespec="seconds")
+    _publish_worklog(job, before)
     _save_jobs()
 
 
@@ -1065,10 +1087,11 @@ async def weekly_report(week: Optional[str] = None) -> dict:
               "summary": (m.group(1).strip() if m else md[:300])}
     if notion.configured():
         try:
-            old = await notion.find_child_page(result["title"])
+            rf = await notion.folder("report")
+            old = await notion.find_child_page(result["title"], rf) or await notion.find_child_page(result["title"])
             if old:
                 await notion.archive_page(old)
-            page = await notion.create_page(result["title"], notion.markdown_to_blocks(md), "📊")
+            page = await notion.create_page(result["title"], notion.markdown_to_blocks(md), "📊", rf)
             result["notion_id"] = page["id"]
         except Exception as e:
             result["notion_error"] = str(e)
