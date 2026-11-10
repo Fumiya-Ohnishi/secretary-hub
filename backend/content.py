@@ -209,6 +209,41 @@ def sync_media() -> int:
     return n
 
 
+def prune_local_media() -> int:
+    """Mac の容量を空けるため、ドライブに写し終わった古い画像・動画を content/output/ から消す。
+    消すのは「最後に変えてから LOCAL_MEDIA_KEEP_DAYS 日(既定14日)以上たち」かつ「ドライブに同じ大きさのものがある」ファイルだけ。
+    ドライブ側は消さない。.env の LOCAL_MEDIA_KEEP_DAYS=0 で止められる。消した数を返す"""
+    try:
+        days = int(os.getenv("LOCAL_MEDIA_KEEP_DAYS", "14"))
+    except ValueError:
+        days = 14
+    dst_root = media_dir()
+    src_root = company.COMPANY_DIR / "content" / "output"
+    if days <= 0 or not dst_root or not dst_root.is_dir() or not src_root.is_dir():
+        return 0
+    limit = datetime.datetime.now().timestamp() - days * 86400
+    n = 0
+    for src in sorted(src_root.rglob("*")):
+        if not src.is_file() or src.suffix.lower() not in MEDIA_EXT:
+            continue
+        st = src.stat()
+        if st.st_mtime > limit:
+            continue
+        dst = dst_root / src.relative_to(src_root)
+        try:
+            if dst.is_file() and dst.stat().st_size == st.st_size:  # ドライブに同じものがあるときだけ
+                src.unlink()
+                n += 1
+        except OSError:
+            continue
+    for d in sorted((p for p in src_root.rglob("*") if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+        try:
+            d.rmdir()  # 空になったフォルダだけ消える
+        except OSError:
+            pass
+    return n
+
+
 def safe_path(rel: str) -> Path:
     """content/ の下のファイルだけを許可する(../ などで外に出さない)"""
     root = (company.COMPANY_DIR / "content").resolve()

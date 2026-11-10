@@ -212,6 +212,9 @@ async def media_loop():
             n = await asyncio.to_thread(content.sync_media)
             if n:
                 print(f"  画像・動画 {n} 件を Google ドライブ({content.media_dir()})へ保存しました")
+            gone = await asyncio.to_thread(content.prune_local_media)  # 写し終わった古いものを Mac から消す
+            if gone:
+                print(f"  ドライブに写し終わった古い画像・動画 {gone} 件を Mac から消しました(ドライブには残っています)")
         except Exception as e:
             print("  ⚠ Google ドライブへの保存に失敗:", e)
         await asyncio.sleep(600)
