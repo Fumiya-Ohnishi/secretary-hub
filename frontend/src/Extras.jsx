@@ -222,9 +222,9 @@ function DeptDetail({ dept, members, data, onBack, notify, onSay }) {
         <div className="card-head"><h3>社員と今の状況</h3></div>
         {members.map((m) => (
           <div key={m.name} className={`dd-member ${m.boss ? "boss" : ""}`}>
-            <span className="avatar">{m.boss ? "★" : m.title.slice(0, 1)}</span>
+            <span className={`avatar ${m.boss ? "boss" : ""}`} title={m.gender}>{(m.pname || m.title).slice(0, 1)}</span>
             <div className="om-text">
-              <div><strong>{m.title}</strong>{m.boss && <span className="muted small">(上司)</span>} <span className="muted small">{m.name}{m.model ? ` ・ ${m.model}` : ""}</span></div>
+              <div><strong>{m.pname ? `${m.pname} ・ ${m.title}` : m.title}</strong>{m.gender && <span className="muted small">({m.gender})</span>}{m.boss && <span className="muted small">(上司)</span>} <span className="muted small">{m.name}{m.model ? ` ・ ${m.model}` : ""}</span></div>
               <div className="muted small">{m.description.replace(`${dept}の${m.title}。`, "")}</div>
               <MemberStatus st={data.members[m.name]} />
             </div>
@@ -316,7 +316,7 @@ export function OrgChart({ onSay, notify, onOpenLibrary }) {
     return <DeptDetail dept={dept} members={data.departments[dept]} data={data} onBack={() => setDept(null)} notify={notify} onSay={onSay} />;
   }
   const workingAll = Object.entries(data.members).filter(([, st]) => st.state === "working");
-  const titleOf = Object.fromEntries(depts.flatMap(([, ms]) => ms.map((m) => [m.name, m.title])));
+  const titleOf = Object.fromEntries(depts.flatMap(([, ms]) => ms.map((m) => [m.name, m.pname ? `${m.pname}(${m.title})` : m.title])));
   const deptOf = Object.fromEntries(depts.flatMap(([d, ms]) => ms.map((m) => [m.name, d])));
   const setView = (v) => { setViewState(v); try { localStorage.setItem("orgview2", v); } catch (e) {} };
   return (
@@ -356,9 +356,9 @@ export function OrgChart({ onSay, notify, onOpenLibrary }) {
                 const st = data.members[m.name];
                 return (
                   <div key={m.name} className={`org-member ${m.boss ? "boss" : ""}`}>
-                    <span className={`avatar ${st?.state === "working" ? "on" : ""}`}>{m.boss ? "★" : m.title.slice(0, 1)}</span>
+                    <span className={`avatar ${st?.state === "working" ? "on" : ""} ${m.boss ? "boss" : ""}`} title={m.gender}>{(m.pname || m.title).slice(0, 1)}</span>
                     <div className="om-text">
-                      <div>{m.title}{m.boss && <span className="muted small">(上司)</span>}</div>
+                      <div>{m.pname && <strong className="om-name">{m.pname}</strong>}{m.title}{m.boss && <span className="muted small">(上司)</span>}</div>
                       {m.persona && <div className="muted small">{m.persona}</div>}
                       {st?.state === "working" && <div className="ms working small"><i />{st.desc}</div>}
                     </div>

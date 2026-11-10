@@ -584,7 +584,7 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
             {nowOpen && working.length === 0 && <div className="muted small">全員待機中です</div>}
             {nowOpen && working.map(([n, st]) => (
               <button key={n} className="office-now-row" onClick={() => focus(n)} title="押すとその社員の席を映します">
-                <strong>{S.info[n].title}</strong><span>{st.desc}</span>
+                <strong>{S.info[n].pname ? `${S.info[n].pname}(${S.info[n].title})` : S.info[n].title}</strong><span>{st.desc}</span>
               </button>
             ))}
           </div>
@@ -601,7 +601,7 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
         const now2 = st2?.state === "working" ? st2.desc : { coffee: "コーヒー休憩中", sofa: "ラウンジで休憩中", chat: "立ち話中", visit: "同僚の机に寄り道中", meeting: "会議中" }[a2?.act] || "待機中";
         return (
           <div className="office-tag">
-            <strong>{m2.title}</strong><span className="muted small">{a2?.dept}</span>
+            <strong>{m2.pname ? `${m2.pname}(${m2.title})` : m2.title}</strong><span className="muted small">{a2?.dept}</span>
             <div className="small">{now2}</div>
             <div className="office-tag-btns">
               {onShowFloor && <button className="link" onClick={() => onShowFloor(card)}>フロア図で詳しく ›</button>}
@@ -612,7 +612,7 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
       })()}
       {hover && !card && !cinema && (
         <div className="office-tip" style={{ left: Math.min(hover.ex + 14, (wrap.current?.clientWidth || 600) - 290), top: hover.ey + 12 }}>
-          <strong>{m?.title}{m?.boss ? "(上司)" : ""}</strong><span className="muted small">{hover.dept}</span>
+          <strong>{m?.pname ? `${m.pname}(${m.title})` : m?.title}{m?.boss ? "(上司)" : ""}</strong><span className="muted small">{hover.dept}</span>
           {m?.persona && <div className="small persona">{m.persona}</div>}
           <div className="small">{doing}</div>
           <div className="muted small">押すと名刺を出します</div>

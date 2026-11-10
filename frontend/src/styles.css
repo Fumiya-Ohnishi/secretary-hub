@@ -1084,3 +1084,5 @@ select.status-sel { color-scheme: dark; }
 .pr-form input { width: 96px; }
 .pr-form input[type="date"] { width: 150px; }
 .xp-results { list-style: none; }
+
+.om-name { margin-right: 6px; }

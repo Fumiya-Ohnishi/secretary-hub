@@ -419,7 +419,7 @@ export default function Office3D({ data, mode = "3d", theme = "wood", onShowFloo
           {nowOpen && working.length === 0 && <div className="muted small">全員待機中です</div>}
           {nowOpen && working.map(([n, st]) => (
             <button key={n} className="office-now-row" onClick={() => focus(n)} title="押すとその社員を映します">
-              <strong>{info[n].title}</strong><span>{st.desc}</span>
+              <strong>{info[n].pname ? `${info[n].pname}(${info[n].title})` : info[n].title}</strong><span>{st.desc}</span>
             </button>
           ))}
         </div>
@@ -432,7 +432,7 @@ export default function Office3D({ data, mode = "3d", theme = "wood", onShowFloo
       </div>
       {card && !cinema && info[card] && (
         <div className="office-tag o3-tag" onMouseDown={(e) => e.stopPropagation()} onMouseUp={(e) => e.stopPropagation()}>
-          <strong>{info[card].title}</strong><span className="muted small">{info[card].dept}</span>
+          <strong>{info[card].pname ? `${info[card].pname}(${info[card].title})` : info[card].title}</strong><span className="muted small">{info[card].dept}</span>
           <div className="small">{doing(card)}</div>
           <div className="office-tag-btns">
             {onShowFloor && <button className="link" onClick={() => onShowFloor(card)}>フロア図で詳しく ›</button>}
@@ -442,7 +442,7 @@ export default function Office3D({ data, mode = "3d", theme = "wood", onShowFloo
       )}
       {hover && !card && !cinema && m && (
         <div className="office-tip" style={{ left: Math.min(hover.ex + 14, (wrap.current?.clientWidth || 600) - 290), top: hover.ey + 12 }}>
-          <strong>{m.title}{m.boss ? "(上司)" : ""}</strong><span className="muted small">{m.dept}</span>
+          <strong>{m.pname ? `${m.pname}(${m.title})` : m.title}{m.boss ? "(上司)" : ""}</strong><span className="muted small">{m.dept}</span>
           {m.persona && <div className="small persona">{m.persona}</div>}
           <div className="small">{doing(hover.name)}</div>
           <div className="muted small">押すと名刺を出します</div>
