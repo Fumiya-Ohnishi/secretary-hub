@@ -196,6 +196,7 @@ button.kpi:hover { border-color: var(--line2); }
 .s-todo { color: var(--sub); border-color: var(--line2); }
 .s-doing { color: var(--info); background: rgba(124, 196, 247, .1); }
 .s-wait { color: var(--warn); background: rgba(243, 181, 98, .12); }
+.s-ask { color: #b48cf0; background: rgba(180, 140, 240, .14); }
 .s-ok { color: var(--ok); background: rgba(111, 214, 161, .12); }
 .s-done { color: var(--mute); background: rgba(108, 116, 153, .12); }
 .s-ng { color: var(--ng); background: rgba(255, 138, 154, .12); }

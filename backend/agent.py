@@ -21,6 +21,7 @@ from pathlib import Path
 import anthropic
 
 import company
+import president_asks
 import content
 import corrections
 import notion
@@ -199,6 +200,10 @@ def _job_prompt(job: dict) -> str:
               "Notion「AI会社 > 作業ログ」(日付・部署ごと)と worklog/YYYY-MM/YYYY-MM-DD/ にまとめて載せる",
               "- 作業で困ったこと・こうしてほしいこと(指示が曖昧・道具が足りない・時間が足りない・受け渡しの問題など)があった社員は、"
               "data/employee_voice.md に `- YYYY-MM-DD 部署 社員名: 内容` を1行ずつ足す(なければ書かない。人事部が毎週まとめる)",
+              "- 社長に判断・確認してほしいことがあれば、data/tasks.md には書かず(タスクの起票は秘書ハブがする)、"
+              "最後のまとめのあとに、次の形の「## 社長への確認」を必ず書く。1件ごとに件名の行を分け、"
+              "件名は何についての判断かが社長に件名だけで分かる1行にする(点数・社内の略語・記号だけの件名は書かない)。"
+              "秘書ハブがこれを読んで、社長の「確認待ち」タスクにする。社長に聞くことが無ければ書かない\n" + president_asks.FORMAT_HELP,
               "- 最後に、誰が何をして、どのファイルに保存したか、チェックの結果を日本語で3行以内でまとめる"]
     return "\n".join(lines)
 
@@ -228,6 +233,24 @@ def _publish_worklog(job: dict, before: Optional[dict]):
         job["worklog"] = {"error": str(e)[:200]}
 
 
+def _record_president_asks(job: dict):
+    """作業報告の「社長への確認」を、社長の確認待ちタスクにする(確認漏れを防ぐ。2026-11-10 社長の指示)"""
+    try:
+        made = asyncio.run(president_asks.from_job(job))
+    except Exception as e:
+        job["output"] = (job.get("output") or "") + f"\n\n(社長への確認をタスクにできませんでした: {str(e)[:120]})"
+        return
+    if made:
+        job["asked_tasks"] = [t.get("id") for t in made]
+        lines = "\n".join(f"- {t.get('id')} {t.get('title')}" for t in made)
+        job["output"] = (job.get("output") or "") + f"\n\n— 社長への確認を「確認待ち」のタスクにしました:\n{lines}"
+        try:
+            import scheduler
+            scheduler.notify("社長の確認待ちが増えました", "、".join(t.get("title", "") for t in made)[:200], "info")
+        except Exception:
+            pass
+
+
 def _run_job(job_id: str):
     job = jobs[job_id]
     try:
@@ -249,6 +272,7 @@ def _run_job(job_id: str):
         _codex_after(job)
     job["finished"] = datetime.datetime.now().isoformat(timespec="seconds")
     _publish_worklog(job, before)
+    _record_president_asks(job)
     _save_jobs()
     key = job.get("task_key") or ""
     if key and not key.startswith(("meeting:", "routine:")):
@@ -293,9 +317,11 @@ def decide_task_status(job: dict, files: List[str]) -> tuple:
                 pass
     if waiting:
         return "承認待ち", f"作業完了。承認待ちの投稿 {len(waiting)}本(投稿タブで確認・承認は社長)"
+    if job.get("asked_tasks"):  # 社長への確認は別のタスク(確認待ち)に分けたので、この作業は終わり
+        return "完了", f"作業完了。社長への確認は {'・'.join(job['asked_tasks'])}(確認待ち)に分けました"
     text = (job.get("title") or "") + (job.get("instruction") or "")
     if any(w in text for w in NEEDS_PRESIDENT):
-        return "承認待ち", "作業完了。社長の判断待ち(作業タブ・作業ログで結果を確認)"
+        return "確認待ち", "作業完了。社長の判断待ち(作業タブ・作業ログで結果を確認)"
     return "完了", "作業完了(秘書が完了と判定。結果は作業ログ)"
 
 
@@ -665,7 +691,7 @@ def job_list() -> List[dict]:
 
 
 # ---------- 道具の定義 ----------
-EDITABLE = ["未着手", "進行中", "承認待ち", "完了"]
+EDITABLE = ["未着手", "進行中", "確認待ち", "承認待ち", "完了"]
 DEPARTMENTS = ["戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析", "経理", "広報", "人事", "Codex"]
 PANELS = ["home", "content", "calendar", "tasks", "docs", "jobs", "org", "chat"]
 
@@ -1166,7 +1192,7 @@ BRIEFING_MIN_GAP_H = 3  # 中身が少し変わっても、前の報告から3�
 def _briefing_digest(data: dict) -> str:
     """報告の中身に効く数字だけ(時刻や細かな変化では作り直さない)"""
     tasks = data.get("tasks", [])
-    appr = sorted(t.get("id") or "" for t in tasks if t.get("status") == "承認待ち")
+    appr = sorted(t.get("id") or "" for t in tasks if t.get("status") in ("確認待ち", "承認待ち"))
     open_n = sum(1 for t in tasks if t.get("status") not in ("完了", "承認済み"))
     return json.dumps([data["revenue"].get("month_total"), appr, open_n], ensure_ascii=False)
 

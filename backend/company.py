@@ -73,11 +73,11 @@ def _file_update(key: str, status: Optional[str], append_note: Optional[str], du
     raise KeyError(key)
 
 
-def _file_create(title: str, assignee: str, due: Optional[str]) -> dict:
+def _file_create(title: str, assignee: str, due: Optional[str], status: str = "未着手") -> dict:
     text = TASKS_MD.read_text() if TASKS_MD.exists() else "| ID | タスク | 担当 | 期限 | 状態 |\n|---|---|---|---|---|\n"
     nums = [int(n) for n in re.findall(r"T-(\d+)", text)]
     new_id = f"T-{(max(nums) + 1) if nums else 1:03d}"
-    row = f"| {new_id} | {title} | {assignee} | {due or datetime.date.today().isoformat()} | 未着手 |"
+    row = f"| {new_id} | {title} | {assignee} | {due or datetime.date.today().isoformat()} | {status if status in STATUSES else '未着手'} |"
     lines = text.splitlines()
     last = max((i for i, l in enumerate(lines) if ROW.match(l)), default=None)
     if last is None:
@@ -126,11 +126,12 @@ async def update_task(key: str, status: Optional[str] = None, note: Optional[str
 
 
 async def create_task(title: str, assignee: str = "秘書", due: Optional[str] = None,
-                      note: str = "", link: str = "") -> dict:
+                      note: str = "", link: str = "", status: str = "未着手") -> dict:
     assignee = assignee if assignee in ASSIGNEES else "秘書"
     if notion.configured():
-        return await notion.create_task(title, assignee, due, note, link)
-    return _file_create(title, assignee, due)
+        return await notion.create_task(title, assignee, due, note, link, status)
+    full = title + (f"({note[:160]})" if note else "")
+    return _file_create(full.replace("|", "/").replace("\n", " "), assignee, due, status)  # 表が崩れないように
 
 
 async def summary() -> dict:
@@ -148,11 +149,12 @@ def summary_text(data: dict) -> str:
     rev, tasks = data["revenue"], data["tasks"]
     open_t = [t for t in tasks if t["status"] != "完了"]
     approval = [t for t in tasks if t["status"] == "承認待ち"]
+    asking = [t for t in tasks if t["status"] == "確認待ち"]
     lines = [
         f"【会社データ(自動取得 今日は {datetime.date.today().isoformat()}({'月火水木金土日'[datetime.date.today().weekday()]}))】",
         f"- 今月の収益: {rev['month_total']:,}円(目標{GOAL:,}円・達成率 {rev['progress']}%)",
         f"- タスク({'Notion' if data['task_source'] == 'notion' else '控えファイル'}): "
-        f"全{len(tasks)}件/未完了{len(open_t)}件/承認待ち{len(approval)}件",
+        f"全{len(tasks)}件/未完了{len(open_t)}件/社長の確認待ち{len(asking)}件/承認待ち{len(approval)}件",
     ]
     gaps = followers_gaps()
     if gaps:

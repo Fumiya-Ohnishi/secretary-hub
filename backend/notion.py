@@ -15,7 +15,7 @@ import httpx
 API = "https://api.notion.com/v1"
 VERSION = "2022-06-28"
 
-STATUSES = ["未着手", "進行中", "承認待ち", "承認済み", "完了", "差し戻し"]
+STATUSES = ["未着手", "進行中", "確認待ち", "承認待ち", "承認済み", "完了", "差し戻し"]  # 確認待ち=社長の判断・確認を待つ
 # 担当(Notion の「担当」)。組織設計案 v1 の10部署+秘書・社長。制作・メディアは旧部署名(過去のタスク用)
 ASSIGNEES = ["秘書", "戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析",
              "経理", "広報", "人事", "Codex", "社長", "制作", "メディア"]
@@ -172,7 +172,7 @@ async def update_task(key: str, status: Optional[str] = None, note: Optional[str
 
 
 async def create_task(title: str, assignee: str = "秘書", due: Optional[str] = None,
-                      note: str = "", link: str = "") -> dict:
+                      note: str = "", link: str = "", status: str = "未着手") -> dict:
     existing = await list_tasks()
     nums = [int(m.group()) for t in existing for m in [re.search(r"\d+", t["id"] or "")] if m]
     new_id = f"T-{(max(nums) + 1) if nums else 1:03d}"
@@ -180,7 +180,7 @@ async def create_task(title: str, assignee: str = "秘書", due: Optional[str] =
         "タスク名": {"title": _text(title)},
         "ID": {"rich_text": _text(new_id)},
         "担当": {"select": {"name": assignee if assignee in ASSIGNEES else "秘書"}},
-        "ステータス": {"select": {"name": "未着手"}},
+        "ステータス": {"select": {"name": status if status in STATUSES else "未着手"}},
         "週": {"number": datetime.date.today().isocalendar()[1]},
     }
     if due:
