@@ -69,16 +69,21 @@ def add_usage(resp):
     u = getattr(resp, "usage", None)
     if not u:
         return
-    inp = (getattr(u, "input_tokens", 0) or 0) + (getattr(u, "cache_read_input_tokens", 0) or 0) \
-        + (getattr(u, "cache_creation_input_tokens", 0) or 0)
+    fresh = getattr(u, "input_tokens", 0) or 0
+    cache_read = getattr(u, "cache_read_input_tokens", 0) or 0
+    cache_write = getattr(u, "cache_creation_input_tokens", 0) or 0
+    inp = fresh + cache_read + cache_write
     out = getattr(u, "output_tokens", 0) or 0
     pin, pout = PRICES.get(MODEL, PRICES["claude-opus-5-5"])
     month = datetime.date.today().strftime("%Y-%m")
     data = _load_json(USAGE_FILE, {})
     m = data.setdefault(month, {"input": 0, "output": 0, "usd": 0.0, "calls": 0})
     m["input"] += inp
+    m["cached"] = m.get("cached", 0) + cache_read  # 使い回せた入力(料金は1割)
     m["output"] += out
-    m["usd"] = round(m["usd"] + inp / 1e6 * pin + out / 1e6 * pout, 4)
+    # 料金: 使い回しの読み出しは1割、使い回し用の書き込みは1.25倍(5分の保存)
+    cost_in = (fresh + cache_read * 0.1 + cache_write * 1.25) / 1e6 * pin
+    m["usd"] = round(m["usd"] + cost_in + out / 1e6 * pout, 4)
     m["calls"] += 1
     _save_json(USAGE_FILE, data)
 
@@ -1310,7 +1315,9 @@ async def chat_stream(message: str, history: List[dict]):
     """会話の返事を少しずつ返す。{"t": "text", "v": 文字} を何度か → 最後に {"t": "done", reply, mood, actions}"""
     actions: List[dict] = []
     data = await company.summary()
-    system = persona() + "\n\n" + context_text(data)
+    # 毎回同じ部分(秘書の人格・道具の一覧)は使い回す(料金が1割になる)。会社の状況は毎回変わるので後ろに置く
+    system = [{"type": "text", "text": persona(), "cache_control": {"type": "ephemeral"}},
+              {"type": "text", "text": context_text(data)}]
     messages = _messages(history, message)
     spoken, error = "", None
     mf = _MoodFilter()
@@ -1370,7 +1377,7 @@ async def chat_stream(message: str, history: List[dict]):
             spoken += notice
             yield {"t": "text", "v": notice}
             try:
-                reply = await _cli_reply(system, messages)
+                reply = await _cli_reply("\n\n".join(b["text"] for b in system), messages)
                 out = mf.feed(reply)
                 spoken += out
                 yield {"t": "text", "v": out}
