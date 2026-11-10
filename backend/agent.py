@@ -1519,3 +1519,107 @@ async def chat(message: str, history: List[dict]) -> dict:
         if ev["t"] == "done":
             result = ev
     return {"reply": result.get("reply", ""), "mood": result.get("mood", "normal"), "actions": result.get("actions", [])}
+
+
+# ---------- 社長が確認に答えたら、止まっていた作業を再開する(2026-11-10 社長「承認した後作業が再開しない」) ----------
+ASK_STATE = DATA_DIR / "asked_state.json"  # 確認待ちだったタスクの一覧(Notion で直接答えたときに気づくため)
+ASK_TITLE = re.compile(r"^【(確認|社長判断)】")
+
+
+def _dept_from_note(note: str) -> Optional[str]:
+    """確認タスクの備考の「出どころ: ○○の作業「…」」から部署を取る"""
+    m = re.search(r"出どころ:\s*([^\s/の]+?)(?:部)?の作業", note or "")
+    if not m:
+        return None
+    d = m.group(1)
+    short = next((k for k, v in DEPT_FULL.items() if v == d or v == d + "部" or k == d), None)
+    return short if short in DEPARTMENTS else None
+
+
+def resume_after_answer(task: dict, decision: str, comment: str = "") -> Optional[dict]:
+    """確認に社長が答えたら(承認=その答えで進める/差し戻し=直して)、確認を出した部署に続きを頼む"""
+    if not ASK_TITLE.match(task.get("title") or "") and task.get("prev_status") != "確認待ち":
+        return None
+    dept = _dept_from_note(task.get("note", ""))
+    if not dept:
+        return None
+    src = re.search(r"出どころ:\s*[^「]*「([^」]*)」", task.get("note", ""))
+    answer = comment.strip() or "(コメントなし。備考に選んだ案が書いてあれば、それが答え)"
+    title = f"{task.get('id', '')} への社長の回答を受けて再開" + (f":{src.group(1)[:30]}" if src else "")
+    instr = (f"社長が確認タスク {task.get('id', '')}「{task.get('title', '')}」に答えました。\n"
+             f"- 社長の判断: {'承認(この答えで進める)' if decision == 'approve' else '差し戻し(直してほしい)'}\n"
+             f"- 社長のコメント: {answer}\n"
+             f"- 確認の中身と備考(社長が書いた答えを含む): {task.get('note', '')[:2500]}\n\n"
+             "この答えに沿って、止まっていた作業を続けてください。元の作業の報告・_status・_check などを読み、続きから進める"
+             "(最初からやり直さない)。社長の答えが選択肢の記号(A・B など)なら、その案で進める。答えが読み取れないときだけ、"
+             "報告の「## 社長への確認」に、何が分からないかを1件書く。")
+    job = start_job(dept, instr, title)
+    try:
+        import scheduler
+        scheduler.notify("確認の答えで作業を再開しました", f"{task.get('id', '')} の答えを{DEPT_FULL.get(dept, dept)}に伝えて、続きを頼みました。", "info")
+    except Exception:
+        pass
+    return job
+
+
+async def resume_answered_in_notion() -> List[dict]:
+    """Notion で直接「承認済み」「差し戻し」にした確認タスクに気づいて、作業を再開する(秘書ハブの見回りから呼ぶ)"""
+    try:
+        tasks = await company.list_tasks()
+    except Exception:
+        return []
+    try:
+        prev = json.loads(ASK_STATE.read_text()) if ASK_STATE.exists() else None
+    except Exception:
+        prev = None
+    now = {t["key"]: t["status"] for t in tasks if t.get("status") == "確認待ち"}
+    started = []
+    if prev is not None:  # 初回は記録だけ(起動前に答えたものまで一斉に動かさない)
+        by_key = {t["key"]: t for t in tasks}
+        for key in prev:
+            t = by_key.get(key)
+            if t and t.get("status") in ("承認済み", "差し戻し") and key not in _resumed:
+                _resumed.add(key)
+                job = resume_after_answer({**t, "prev_status": "確認待ち"}, "approve" if t["status"] == "承認済み" else "reject")
+                if job:
+                    started.append(job)
+    ASK_STATE.parent.mkdir(parents=True, exist_ok=True)
+    ASK_STATE.write_text(json.dumps(now, ensure_ascii=False))
+    return started
+
+
+_resumed: set = set()  # 秘書ハブのボタンで答えた分(見回りで二重に動かさない)
+
+
+# ---------- 日時を決めた会議(Notion のタスク「【会議】…」の期限の日時に自動で開く。2026-11-10) ----------
+MEETING_TITLE = re.compile(r"^【会議】")
+
+
+async def start_scheduled_meetings() -> List[str]:
+    """件名が【会議】で、期限に時刻が入った未着手のタスクを、その時刻になったら臨時会議として開く"""
+    try:
+        tasks = await company.list_tasks()
+    except Exception:
+        return []
+    now = datetime.datetime.now().astimezone()
+    started = []
+    for t in tasks:
+        if not MEETING_TITLE.match(t.get("title") or "") or t.get("status") != "未着手" or "T" not in (t.get("due") or ""):
+            continue
+        try:
+            due = datetime.datetime.fromisoformat(t["due"].replace("Z", "+00:00"))
+            if due.tzinfo is None:
+                due = due.astimezone()
+        except Exception:
+            continue
+        if not (due <= now <= due + datetime.timedelta(hours=12)):  # 半日以上過ぎたものは勝手に開かない
+            continue
+        topic = MEETING_TITLE.sub("", t["title"]).strip() + "。" + (t.get("note") or "")[:1500]
+        actions: list = []
+        m = re.search(r"参加[::]\s*([^/\n]+)", t.get("note") or "")
+        depts = [d.strip() for d in re.split(r"[・、,\s]+", m.group(1)) if d.strip().endswith(("部", "室"))] if m else []
+        msg = await run_tool("hold_meeting", {"kind": "adhoc", "topic": topic, **({"departments": depts} if depts else {})}, actions)
+        await company.update_task(t["key"], status="進行中",
+                                  append_note=f"{now:%m/%d %H:%M} 秘書ハブが予定どおり会議を開始({str(msg)[:60]})")
+        started.append(t.get("id", ""))
+    return started

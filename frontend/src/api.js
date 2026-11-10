@@ -15,6 +15,7 @@ export const sendChat = (message, history) => call("POST", "/api/chat", { messag
 
 export const createTask = (task) => call("POST", "/api/tasks", task);
 export const patchTask = (key, patch) => call("PATCH", `/api/tasks/${encodeURIComponent(key)}`, patch);
+export const resumeTask = (key) => call("POST", `/api/tasks/${encodeURIComponent(key)}/resume`);
 export const decideTask = (key, decision, comment = "") =>
   call("POST", `/api/tasks/${encodeURIComponent(key)}/decision`, { decision, comment });
 
