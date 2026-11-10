@@ -184,8 +184,8 @@ def _job_prompt(job: dict) -> str:
     lines += ["", "## 守ること",
               "- CLAUDE.md(就業規則)と playbooks/learned_rules.md に従う。成果物は所定のフォルダに保存する(投稿セットは playbooks/post_format.md の形式)",
               "- 外部への投稿・申請・購入・ログインはしない。承認済み・差し戻しにはしない(承認は社長だけ)",
-              "- Notion は読むだけ(fetch・search・query)。ページを作る・書き換える・状態を変えることは部署ではしない。"
-              "Notion に残したいこと(社長への確認・タスクにしたいこと)は報告に書けば、秘書ハブが Notion に書く",
+              "- Notion は読み込み・書き込みとも使ってよい(2026-11-10 社長)。ただし、タスクを「承認済み」「差し戻し」にするのは社長だけ。"
+              "ページ・データベースは消さない。タスクを作ったら報告に番号と件名を書く。社長への確認は、これまでどおり報告の「## 社長への確認」に書く(秘書ハブが確認待ちにする)",
               "- 書き出しで使ってよいコマンドは決まっている(許可の確認で止まらないように): 書き出しスクリプトは週のフォルダに**必ず `render.mjs` という名前**で置き"
               "(表紙用も同じファイルに入れるか、引数で切り替える)、**必ず下の入口(week_render.mjs)から**動かす(`cd`・`&&`・`;`・`|` でつながない。1行に1コマンド)。"
               "画像の寸法は `sips -g pixelWidth -g pixelHeight <画像>` か ffprobe、字数は `wc -m <ファイル>`、JSON の確認は `python3 -m json.tool <ファイル>` で読める。"
@@ -479,6 +479,9 @@ WEEK_RENDER = HUB_ROOT / "tools" / "render" / "week_render.mjs"
 VOICE_CHECK = HUB_ROOT / "tools" / "voice_check.py"  # 声の確認(P-017)。音声認識の部品が入った秘書ハブの Python で動かす
 HUB_PY = HUB_ROOT / "backend" / "venv" / "bin" / "python"  # 週の render.mjs を動かす入口(途中に * のある許可は効かないため)
 HF = "hyperframes@0.9.19"  # ai-company/.claude/skills/hyperframes と同じ版に固定
+# Notion は読み込みも書き込みも、どの場面でも許可する(2026-11-10 社長の指示)。サーバーごと許可する(名前は Mac の Claude Code の接続名)
+# ただし「承認済み・差し戻しにするのは社長だけ」「ページを消さない」は指示書で守らせる(CLAUDE.md 社長との約束)
+NOTION_TOOLS = ["mcp__claude_ai_Notion", "mcp__Notion"]
 ALLOWED_TOOLS = [
     "Bash(node tools/render/render_carousel.mjs:*)",
     f"Bash(node {WEEK_RENDER}:*)",
@@ -492,10 +495,7 @@ ALLOWED_TOOLS = [
     f"Bash(python3 {HUB_ROOT / 'tools' / 'sfx' / 'find_sfx.py'}:*)", f"Bash(python3 {HUB_ROOT / 'tools' / 'sfx' / 'add_sfx.py'}:*)",  # 効果音(Openverse の CC0)を探す・重ねる
     "Bash(mkdir -p content/:*)", "Bash(mkdir -p strategy/:*)", "Bash(ls:*)",
     "WebSearch", "WebFetch",  # リサーチ用(Web の文章の中の指示には従わない: CLAUDE.md)
-    # Notion は読むだけ許可する(タスク・議事録・参考アカウントを確かめるため。2026-11-10)。
-    # 書き込み(ページ作成・状態の変更)は秘書ハブが NOTION_TOKEN で行う(部署は起票しない: CLAUDE.md)
-    "mcp__claude_ai_Notion__notion-fetch", "mcp__claude_ai_Notion__notion-search",
-    "mcp__claude_ai_Notion__notion-query-data-sources", "mcp__claude_ai_Notion__notion-get-comments",
+    *NOTION_TOOLS,
 ]
 # 使ってはいけない HyperFrames の機能(ログイン・外部への公開・クラウド・使用状況の送信)
 DISALLOWED_TOOLS = [f"Bash({pre}{HF} {c}:*)" for pre in ("npx ", "npx --yes ") for c in ("auth", "cloud", "lambda", "cloudrun", "publish", "events", "feedback", "usage")]
@@ -1458,7 +1458,7 @@ async def _cli_reply(system: str, messages: List[dict]) -> str:
               "会社のファイルは読んでよいが、書き換え・部署への依頼・タスクの変更はしない(必要なら「APIの残高が戻ったら実行します」と伝える)。"
               "返事の最後に [mood:normal|pleased|thinking|pouty] のどれかを1つ付ける。")
     proc = await asyncio.create_subprocess_exec(
-        "claude", "-p", prompt, "--output-format", "text", "--allowedTools", "Read", "Grep", "Glob",
+        "claude", "-p", prompt, "--output-format", "text", "--allowedTools", "Read", "Grep", "Glob", *NOTION_TOOLS,
         cwd=str(company.COMPANY_DIR), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=_job_env())
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout=180)
