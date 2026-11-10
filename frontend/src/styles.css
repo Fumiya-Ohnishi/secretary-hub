@@ -1033,3 +1033,20 @@ select.status-sel { color-scheme: dark; }
 .chip2.c-ask { color: #b48cf0; background: rgba(180, 140, 240, .14); }
 
 .tp-undo { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+/* note の記事(タイトル・本文・ハッシュタグを分ける) */
+.note-art { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.na-box { border: 1px solid var(--line2); border-radius: 12px; padding: 12px 14px; background: rgba(255,255,255,.02); }
+.na-body { border-color: rgba(65,201,180,.45); }
+.na-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.na-head .btn { margin-left: auto; }
+.na-label { font-weight: 700; color: #6fe0cc; }
+.na-title { font-size: 17px; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; }
+.na-hint { margin-bottom: 10px; }
+.na-block { padding: 6px 0; border-top: 1px dashed var(--line); }
+.na-block:first-of-type { border-top: 0; }
+.na-h { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; margin: 8px 0 6px; overflow-wrap: anywhere; }
+.na-h .btn { margin-left: auto; flex-shrink: 0; }
+.na-tag { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 99px; background: rgba(65,201,180,.16); color: #6fe0cc; flex-shrink: 0; }
+.na-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.na-internal { border: 1px dashed var(--line2); border-radius: 12px; padding: 8px 12px; opacity: .85; }
+.na-internal summary { cursor: pointer; }

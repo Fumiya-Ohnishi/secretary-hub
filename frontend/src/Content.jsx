@@ -25,6 +25,84 @@ const IG_HANDLE = "ai_hisho_sena";
 const AVATAR = "/faces/normal.jpg";
 
 /** Instagram の投稿画面に近い見え方(スマホの枠)。カルーセルは左右で送る、リールは縦の全画面 */
+// ---------- note の記事: タイトル・本文・ハッシュタグを分けて見せ、それぞれコピーできるようにする ----------
+const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+/** 本文を note に貼ったとき見出し・箇条書きが残るように、HTML でもコピーする(だめなときは文字だけ) */
+function articleHtml(blocks) {
+  const out = [];
+  for (const b of blocks) {
+    if (b.heading) out.push(`<h2>${inline(b.heading)}</h2>`);
+    for (const para of (b.text || "").split(/\n{2,}/)) {
+      const lines = para.split("\n").filter((l) => l.trim());
+      if (!lines.length) continue;
+      if (lines.every((l) => /^\s*[-・*]\s+/.test(l))) out.push(`<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-・*]\s+/, ""))}</li>`).join("")}</ul>`);
+      else if (/^###\s+/.test(lines[0])) { out.push(`<h3>${inline(lines[0].replace(/^###\s+/, ""))}</h3>`); if (lines.length > 1) out.push(`<p>${lines.slice(1).map(inline).join("<br>")}</p>`); }
+      else out.push(`<p>${lines.map(inline).join("<br>")}</p>`);
+    }
+  }
+  return out.join("\n");
+}
+const plainText = (blocks) => blocks.map((b) => (b.heading ? b.heading + "\n\n" : "") + (b.text || "").replace(/^###\s+/gm, "").replace(/\*\*(.+?)\*\*/g, "$1")).join("\n\n").trim();
+
+export async function copyArticle(article, notify) {
+  const text = plainText(article.blocks);
+  try {
+    if (window.ClipboardItem && navigator.clipboard.write) {
+      await navigator.clipboard.write([new ClipboardItem({
+        "text/plain": new Blob([text], { type: "text/plain" }),
+        "text/html": new Blob([articleHtml(article.blocks)], { type: "text/html" }) })]);
+    } else await navigator.clipboard.writeText(text);
+    notify && notify("本文をコピーしました(見出しつき)", "ok");
+    return true;
+  } catch (e) { notify && notify("コピーできませんでした。本文を選択してコピーしてください", "error"); return false; }
+}
+
+export function NoteArticle({ post, notify }) {
+  const a = post.article;
+  const copyText = async (t, label) => {
+    try { await navigator.clipboard.writeText(t); notify(`${label}をコピーしました`, "ok"); }
+    catch (e) { notify("コピーできませんでした", "error"); }
+  };
+  const tags = (a.tags || []).map((t) => "#" + t).join(" ");
+  return (
+    <div className="note-art">
+      <div className="na-box">
+        <div className="na-head"><span className="na-label">① タイトル</span><span className="muted small">{a.title.length}字</span>
+          <button className="btn sm" onClick={() => copyText(a.title, "タイトル")}>コピー</button></div>
+        <div className="na-title">{a.title}</div>
+      </div>
+      <div className="na-box na-body">
+        <div className="na-head"><span className="na-label">② 本文(記事)</span><span className="muted small">{a.chars.toLocaleString()}字・見出し{a.blocks.filter((b) => b.heading).length}個</span>
+          <button className="btn sm primary" onClick={() => copyArticle(a, notify)}>本文を全部コピー</button></div>
+        <div className="muted small na-hint">「見出し」の行は note の見出しになります(貼って見出しにならなかったら、その行を選んで見出しに設定)。【画像N】の所に図を入れます</div>
+        {a.blocks.map((b, i) => (
+          <div key={i} className="na-block">
+            {b.heading && <div className="na-h"><span className="na-tag">見出し</span>{b.heading}
+              <button className="btn ghost sm" onClick={() => copyText(b.heading, "見出し")}>コピー</button></div>}
+            <Md className="sec-text" text={b.text} />
+          </div>
+        ))}
+      </div>
+      <div className="na-box">
+        <div className="na-head"><span className="na-label">③ ハッシュタグ</span>
+          {tags && <button className="btn sm" onClick={() => copyText(tags, "ハッシュタグ")}>コピー</button>}</div>
+        {tags ? <div className="na-tags">{a.tags.map((t) => <span key={t} className="chip2">#{t}</span>)}</div>
+              : <div className="muted small">未設定です(記事ファイルに「## ハッシュタグ」が無い)。SNS運用部に付けてもらうか、note の画面で付けてください</div>}
+      </div>
+      {a.memo && <div className="post-sec"><div className="sec-title">社長の投稿メモ</div><Md className="sec-text" text={a.memo} /></div>}
+      {a.internal.filter((x) => x.title.includes("社長コメント")).map((x, i) => (
+        <div key={"c" + i} className="post-sec comment"><div className="sec-title">{x.title}</div><Md className="sec-text" text={x.text} /></div>))}
+      {a.internal.length > 0 && (
+        <details className="na-internal">
+          <summary className="muted small">制作メモ(社内用・コピーしない): {a.internal.map((x) => x.title).join("・")}</summary>
+          {a.internal.filter((x) => !x.title.includes("社長コメント")).map((x, i) => <div key={i} className="post-sec"><div className="sec-title">{x.title}</div><Md className="sec-text" text={x.text} /></div>)}
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function PostPreview({ post, start = 0, onClose }) {
   const items = (post.media || []).filter((m) => m.exists && m.kind !== "file");
   const [i, setI] = useState(Math.min(start, Math.max(0, items.length - 1)));
@@ -188,7 +266,7 @@ function Post({ post, open, onToggle, onChanged, notify }) {
         <div className="post-body">
           {post.media || post.cover ? <MediaPanel post={post} />
             : post.assets.length > 0 && <div className="assets">{post.assets.map((a) => <Asset key={a} path={a} />)}</div>}
-          {post.sections.map((s, i) => (
+          {post.article ? <NoteArticle post={post} notify={notify} /> : post.sections.map((s, i) => (
             <div key={i} className={`post-sec ${s.title.includes("社長コメント") ? "comment" : ""}`}>
               {s.title && <div className="sec-title">{s.title}
                 {s.title.includes("キャプション") && <button className="btn ghost sm" onClick={copy}>コピー</button>}</div>}

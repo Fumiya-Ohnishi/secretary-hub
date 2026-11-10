@@ -88,7 +88,54 @@ def _post(path: Path) -> dict:
         "cover_note": cover_note,
         "sections": secs,
         "caption": next((s["text"] for s in secs if "キャプション" in s["title"]), ""),
+        "article": _article(meta, secs) if meta.get("platform") == "note" or meta.get("format") == "article" else None,
     }
+
+
+# note の記事を「タイトル・本文・ハッシュタグ・社内メモ」に分ける(2026-11-10 社長: どこが記事か分かりにくくコピーしにくい)
+INTERNAL_HEADS = ("台本", "社長の投稿メモ", "社長コメント", "社外顧問", "出典", "制作メモ", "事実の確認", "点検")
+TAG_HEADS = ("ハッシュタグ", "タグ")
+
+
+def _tags(meta: Dict[str, str], secs: List[dict]) -> List[str]:
+    raw = meta.get("tags", "") or meta.get("hashtags", "")
+    sec = next((x for x in secs if x["title"].strip() in TAG_HEADS), None)
+    if sec:
+        raw += " " + sec["text"]
+    tags = [t.strip().lstrip("#＃").strip() for t in re.split(r"[,、\s]+", raw) if t.strip().lstrip("#＃").strip()]
+    return list(dict.fromkeys(tags))
+
+
+def _article(meta: Dict[str, str], secs: List[dict]) -> dict:
+    title = meta.get("title", "").strip()
+    blocks, internal, memo, started, stopped = [], [], "", False, False
+    for x in secs:
+        t = x["title"].strip()
+        if t in TAG_HEADS:
+            continue
+        if t.startswith("社長の投稿メモ"):
+            memo = x["text"]
+            continue
+        if not started:
+            if "キャプション" in t or t in ("本文", "記事"):
+                started = True
+                lines = x["text"].splitlines()
+                if lines and title and lines[0].strip().rstrip("。") in (title, title.rstrip("。")):
+                    lines = lines[1:]  # 1行目の題は「タイトル」に分ける
+                text = "\n".join(lines).strip()
+                if text:
+                    blocks.append({"heading": "", "text": text})
+            else:
+                internal.append(x)
+            continue
+        if stopped or any(t.startswith(h) for h in INTERNAL_HEADS):
+            stopped = True
+            internal.append(x)
+            continue
+        blocks.append({"heading": t, "text": x["text"]})
+    plain = "\n\n".join(((b["heading"] + "\n\n") if b["heading"] else "") + b["text"] for b in blocks).strip()
+    return {"title": title, "blocks": blocks, "plain": plain, "chars": len(plain),
+            "tags": _tags(meta, secs), "internal": internal, "memo": memo}
 
 
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
