@@ -37,9 +37,11 @@ def main():
         cues = [{**c, "file": c.get("file") or files[c["sound"]]} for c in plan.get("cues", [])]
     if not cues:
         sys.exit("効果音の指定が空です")
-    ff = os.getenv("FFMPEG") or shutil.which("ffmpeg", path=os.environ.get("PATH", "") + ":/opt/homebrew/bin:/usr/local/bin")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import ffbin
+    ff = ffbin.ffmpeg()
     if not ff:
-        sys.exit("ffmpeg がありません")
+        sys.exit("ffmpeg がありません(秘書ハブを一度 run_mac.command で起動すると、リールの部品と一緒に入ります)")
     args = [ff, "-y", "-loglevel", "error", "-i", str(src)]
     parts, labels = [], ["[0:a]"]
     for i, c in enumerate(cues, 1):

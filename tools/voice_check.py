@@ -22,6 +22,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ffbin  # noqa: E402  ffmpeg / ffprobe の場所(秘書ハブの部品も探す)
+
+FF, FP = ffbin.ffmpeg() or "ffmpeg", ffbin.ffprobe() or "ffprobe"
+
 MODEL = "medium"  # 日本語の聞き取りに十分な大きさ(small では読み違いを見逃しやすい)
 PASS_RATIO = 1.0  # 読みが1文字でも違えば要確認(「確かめますね」→「かしきめますね」は95%一致でも聞けば別の言葉)
 TAIL_SEC = 0.25  # 最後にこれだけ無音がなければ「切れている」
@@ -29,7 +34,7 @@ TAIL_SEC = 0.25  # 最後にこれだけ無音がなければ「切れている�
 
 def pcm(path: Path):
     import numpy as np
-    raw = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", str(path), "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
+    raw = subprocess.run([FF, "-loglevel", "error", "-i", str(path), "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
                          capture_output=True, check=True).stdout
     return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768
 
@@ -67,9 +72,9 @@ def reading(text: str, kks) -> str:
 
 
 def tail_silent(path: Path, sec: float = TAIL_SEC) -> bool:
-    out = subprocess.run(["ffmpeg", "-hide_banner", "-i", str(path), "-af", "silencedetect=noise=-35dB:d=0.2", "-f", "null", "-"],
+    out = subprocess.run([FF, "-hide_banner", "-i", str(path), "-af", "silencedetect=noise=-35dB:d=0.2", "-f", "null", "-"],
                          capture_output=True, text=True).stderr
-    dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+    dur = float(subprocess.run([FP, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
                                capture_output=True, text=True).stdout.strip())
     starts = [float(x) for x in re.findall(r"silence_start: ([\d.]+)", out)]
     ends = [float(x) for x in re.findall(r"silence_end: ([\d.]+)", out)]
