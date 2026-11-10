@@ -185,9 +185,10 @@ def _job_prompt(job: dict) -> str:
               "- CLAUDE.md(就業規則)と playbooks/learned_rules.md に従う。成果物は所定のフォルダに保存する(投稿セットは playbooks/post_format.md の形式)",
               "- 外部への投稿・申請・購入・ログインはしない。承認済み・差し戻しにはしない(承認は社長だけ)",
               "- 書き出しで使ってよいコマンドは決まっている(許可の確認で止まらないように): 書き出しスクリプトは週のフォルダに**必ず `render.mjs` という名前**で置き"
-              "(表紙用も同じファイルに入れるか、引数で切り替える)、会社のフォルダから**相対パスでそのまま**動かす(`cd` や `&&` でつながない)。"
+              "(表紙用も同じファイルに入れるか、引数で切り替える)、**必ず下の入口(week_render.mjs)から**動かす(`cd`・`&&`・`;`・`|` でつながない。1行に1コマンド)。"
+              "画像の寸法は `sips -g pixelWidth -g pixelHeight <画像>` か ffprobe、字数は `wc -m <ファイル>`、JSON の確認は `python3 -m json.tool <ファイル>` で読める。"
               "`render_cover.mjs` など別の名前のスクリプトは動かせない",
-              "- 書き出し: カルーセルは `node content/drafts/YYYY-WW/render.mjs <html> content/output/YYYY-WW <接頭辞>`(実録の型)か "
+              f"- 書き出し: カルーセルは `node {WEEK_RENDER} YYYY-WW <html> content/output/YYYY-WW <接頭辞>`(週のフォルダの render.mjs を動かす入口。実録の型)か "
               "`node tools/render/render_carousel.mjs <JSON> content/output/YYYY-WW/`。"
               f"リールは `node {REEL_DIR}/render_record_reel.mjs <台本.json> content/output/YYYY-WW/<名前>.mp4`(実録の型。声は秘書ハブが VOICEVOX で入れる)。"
               f"動きを作り込むときは HyperFrames(`npx --yes {HF} <command>`。.claude/skills/hyperframes の当社ルールを守る。auth・cloud・publish・events は使えない)。"
@@ -468,10 +469,12 @@ HUB_ROOT = Path(__file__).resolve().parent.parent
 # 部署が使ってよいコマンド(画像・リールの書き出しと、その確認だけ。それ以外のコマンドは許可しない)
 REEL_DIR = HUB_ROOT / "tools" / "reel"
 IMAGE_TOOL = HUB_ROOT / "tools" / "image" / "gen_image.py"
+WEEK_RENDER = HUB_ROOT / "tools" / "render" / "week_render.mjs"  # 週の render.mjs を動かす入口(途中に * のある許可は効かないため)
 HF = "hyperframes@0.9.19"  # ai-company/.claude/skills/hyperframes と同じ版に固定
 ALLOWED_TOOLS = [
     "Bash(node tools/render/render_carousel.mjs:*)",
-    "Bash(node content/drafts/*/render.mjs:*)",
+    f"Bash(node {WEEK_RENDER}:*)",
+    "Bash(sips -g:*)", "Bash(wc:*)", "Bash(python3 -m json.tool:*)",  # 画像の寸法を読む・字数を数える・JSON を確かめる(読むだけ。2026-11-10 社長 T-150)
     f"Bash(node {REEL_DIR}/render_reel.mjs:*)",
     f"Bash(node {REEL_DIR}/render_record_reel.mjs:*)",
     f"Bash(npx --yes {HF}:*)", f"Bash(npx {HF}:*)",
