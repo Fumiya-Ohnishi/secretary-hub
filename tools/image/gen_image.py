@@ -43,6 +43,12 @@ def api_key() -> str:
     return k
 
 
+class ApiError(Exception):
+    def __init__(self, code: int, text: str):
+        super().__init__(f"画像API {code}: {text[:300]}")
+        self.code, self.text = code, text
+
+
 def _post(url: str, body: bytes, ctype: str) -> dict:
     req = urllib.request.Request(url, data=body, method="POST",
                                  headers={"Authorization": f"Bearer {api_key()}", "Content-Type": ctype})
@@ -50,20 +56,64 @@ def _post(url: str, body: bytes, ctype: str) -> dict:
         with urllib.request.urlopen(req, timeout=300) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
-        sys.exit(f"画像API {e.code}: {e.read().decode('utf-8', 'replace')[:300]}")
+        raise ApiError(e.code, e.read().decode("utf-8", "replace"))
 
 
-def generate(prompt: str, size: str) -> bytes:
-    d = _post(f"{API}/images/generations", json.dumps({"model": MODEL, "prompt": prompt, "size": size, "n": 1}).encode(),
-              "application/json")
-    return base64.b64decode(d["data"][0]["b64_json"])
+def image_models() -> list:
+    """このキーで使える画像のモデル(新しい順。mini は後ろ)"""
+    req = urllib.request.Request(f"{API}/models", headers={"Authorization": f"Bearer {api_key()}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            ids = [m["id"] for m in json.loads(r.read()).get("data", [])]
+    except Exception:
+        return []
+    imgs = [i for i in ids if i.startswith("gpt-image")]
+    def key(i):
+        nums = [-int(x) for x in __import__("re").findall(r"\d+", i)][:3]
+        return ("mini" in i, nums + [0] * (3 - len(nums)), i)  # 新しい版が先(2 → 1.5 → 1)、mini は後ろ
+    return sorted(imgs, key=key)
 
 
-def edit(prompt: str, size: str, refs: list) -> bytes:
+def _with_model(call):
+    """指定のモデルが使えないときは、このキーで使える画像モデルに切り替えて1回やり直す"""
+    try:
+        return call(MODEL), MODEL
+    except ApiError as e:
+        low = e.text.lower()
+        if "verif" in low:
+            sys.exit("OpenAI の組織の確認(Verify Organization)が済んでいないため、画像のモデルが使えません。"
+                     "社長が platform.openai.com の Settings → Organization → General で確認を済ませてください。" + f"\n({e})")
+        if e.code not in (400, 403, 404) or "model" not in low:
+            sys.exit(str(e))
+        for m in image_models():
+            if m == MODEL:
+                continue
+            try:
+                print(f"モデル {MODEL} が使えないため {m} で作ります", file=sys.stderr)
+                return call(m), m
+            except ApiError as e2:
+                last = e2
+                continue
+        sys.exit(f"{e}\nこのキーで使える画像のモデルが見つかりませんでした(使えるモデル: {', '.join(image_models()) or 'なし'})")
+
+
+def generate(prompt: str, size: str):
+    def call(model):
+        d = _post(f"{API}/images/generations", json.dumps({"model": model, "prompt": prompt, "size": size, "n": 1}).encode(),
+                  "application/json")
+        return base64.b64decode(d["data"][0]["b64_json"])
+    return _with_model(call)
+
+
+def edit(prompt: str, size: str, refs: list):
+    return _with_model(lambda model: _edit(model, prompt, size, refs))
+
+
+def _edit(model: str, prompt: str, size: str, refs: list) -> bytes:
     """参考画像(今のキャラクター)に寄せて作る"""
     b = uuid.uuid4().hex
     parts = []
-    for k, v in (("model", MODEL), ("prompt", prompt), ("size", size), ("n", "1")):
+    for k, v in (("model", model), ("prompt", prompt), ("size", size), ("n", "1")):
         parts.append(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
     for p in refs:
         ct = mimetypes.guess_type(p.name)[0] or "image/png"
@@ -91,7 +141,7 @@ def main():
         if not r.exists():
             sys.exit(f"参考画像がありません: {r}")
     size = SIZES[a.aspect]
-    raw = edit(prompt, size, refs) if refs else generate(prompt, size)
+    raw, used = edit(prompt, size, refs) if refs else generate(prompt, size)
     out.parent.mkdir(parents=True, exist_ok=True)
     ff = os.getenv("FFMPEG") or shutil.which("ffmpeg", path=os.environ.get("PATH", "") + ":/opt/homebrew/bin:/usr/local/bin")
     if a.aspect in ("4:5", "9:16") and ff:  # 縦長に切り抜いて投稿の大きさにそろえる
@@ -101,7 +151,7 @@ def main():
         tmp.unlink(missing_ok=True)
     else:
         out.write_bytes(raw)
-    print(f"作成: {out}({a.aspect}・{MODEL}{'・参考画像 ' + str(len(refs)) + '枚' if refs else ''})。AIで作った画像として記録すること")
+    print(f"作成: {out}({a.aspect}・{used}{'・参考画像 ' + str(len(refs)) + '枚' if refs else ''})。AIで作った画像として記録すること")
 
 
 if __name__ == "__main__":
