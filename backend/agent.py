@@ -5,6 +5,7 @@
 """
 import asyncio
 import datetime
+import errno
 import json
 import os
 import re
@@ -484,6 +485,18 @@ def _extra_dirs() -> List[str]:
     return out
 
 
+def _stop_proc(proc):
+    """作業(claude)を止める。まず穏やかに止め、5秒で止まらなければ強制終了"""
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
 def _run_claude_streaming(job: dict, prompt: str):
     """Claude Code を実行し、誰(どのサブエージェント)が何をしているかを job["activity"] に逐次記録する"""
     job.setdefault("activity", [])
@@ -495,6 +508,7 @@ def _run_claude_streaming(job: dict, prompt: str):
                             text=True, encoding="utf-8", errors="replace", env=_job_env())
     limit_min = _job_timeout_min()
     timed_out = threading.Event()
+    disk_full = threading.Event()
 
     def _kill():
         timed_out.set()
@@ -535,19 +549,33 @@ def _run_claude_streaming(job: dict, prompt: str):
                 is_error = bool(ev.get("is_error"))
             now = datetime.datetime.now().timestamp()
             if now - last_save > 2:
-                _save_jobs()
                 last_save = now
+                try:
+                    _save_jobs()
+                except OSError as e:
+                    # 状態を保存できなくても作業は続ける。ただしディスクが満杯なら作業も書けないので止める
+                    if e.errno == errno.ENOSPC:
+                        disk_full.set()
+                        _stop_proc(proc)
+                        break
         proc.wait()
     finally:
         timer.cancel()
+        # どんな理由でここに来ても、作業(claude)を裏で動かしたままにしない(2026-11-10: 二重に動いた)
+        if proc.poll() is None:
+            _stop_proc(proc)
     err = (proc.stderr.read() or "").strip() if proc.stderr else ""
     for act in job["activity"]:
         if act["status"] == "running":
             act.update(status="error" if proc.returncode else "done", finished=datetime.datetime.now().isoformat(timespec="seconds"))
     out = result_text if result_text is not None else "\n".join(plain) or err
-    ok = proc.returncode == 0 and not is_error and not timed_out.is_set()
+    ok = proc.returncode == 0 and not is_error and not timed_out.is_set() and not disk_full.is_set()
     job.update(status="done" if ok else "error", output=(out or "")[-6000:] + ("" if ok or not err else f"\n{err[-1000:]}"))
-    if timed_out.is_set():
+    if disk_full.is_set():
+        job["output"] = (job["output"] + "\n\n" if job["output"].strip() else "") + \
+            "【秘書より】Mac のディスクがいっぱいになったので、作業を止めました(作業は裏で動き続けていません)。" \
+            "容量を空けてから、同じ作業をもう一度頼んでください。途中までの成果物は会社のフォルダに残っています。"
+    elif timed_out.is_set():
         job["output"] = (job["output"] + "\n\n" if job["output"].strip() else "") + _timeout_note(job, limit_min)
     elif not ok:
         if not (out or "").strip() and not err:  # 中身が空のまま止まったとき、途中経過を残す
