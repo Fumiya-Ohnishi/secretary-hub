@@ -174,6 +174,13 @@ function Crosspost({ data, platform, notify, onDone }) {
     catch (e) { notify(e.message, "error"); }
     setBusy("");
   };
+  const unmark = async (p) => {
+    if (!window.confirm(`${data.name}の「${p.title}」の投稿済みを取り消しますか?`)) return;
+    setBusy(p.path);
+    try { await markCrossposted(platform, p.path, true); notify(`${data.name}の「${p.title}」を未投稿に戻しました`, "ok"); onDone(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy("");
+  };
   const row = (p) => (
     <li key={p.path} className="xp-row">
       <div className="xp-main">
@@ -185,7 +192,8 @@ function Crosspost({ data, platform, notify, onDone }) {
       </div>
       <div className="xp-act">
         <button className="btn" onClick={() => setView(p)}>見る</button>
-        {p.posted_on ? <span className="muted small">投稿済み {p.posted_on}</span>
+        {p.posted_on ? <><span className="muted small">投稿済み {p.posted_on}</span>
+            <button className="btn sm" disabled={busy === p.path} onClick={() => unmark(p)} title="間違えて押したとき">取り消す</button></>
           : <button className="btn primary" disabled={!p.ready || busy === p.path} onClick={() => mark(p)}>投稿した</button>}
       </div>
     </li>

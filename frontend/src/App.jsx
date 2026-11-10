@@ -350,7 +350,13 @@ export default function App() {
     if (approval) {
       setLog((l) => [...l, { role: "user", text }]);
       if (/差し?戻/.test(text)) return decide("reject", text.replace(/^.*?差し?戻し?て?(ください)?[、。,\s]*/, ""));
-      if (/^(はい|承認|ok|オッケー|オーケー|お願いします|いいよ|いいです|大丈夫)/i.test(text)) return decide("approve", "");
+      // 「Bで承認」「B でお願い」「Bで」のように案を言ったら、その案をコメントに残して承認する
+      const pick = text.replace(/[Ａ-Ｄ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).match(/^\s*([A-Da-d])\s*(案)?\s*(で|に|が)/);
+      if (pick) return decide("approve", `${pick[1].toUpperCase()} で進める(声: ${text})`);
+      if (/^(はい|承認|ok|オッケー|オーケー|お願いします|いいよ|いいです|大丈夫)/i.test(text)) {
+        const rest = text.replace(/^(はい|承認|ok|オッケー|オーケー|お願いします|いいよ|いいです|大丈夫)[、。,!!\s]*/i, "").trim();
+        return decide("approve", rest);  // 「はい、表紙だけ直して」の後半はコメントとして残す
+      }
       if (/(あとで|後で|キャンセル|やめ|保留)/.test(text)) { setApproval(null); return say("承知しました。あとで確認できるようにしておきます。"); }
     }
     const history = log.filter((m) => m.role !== "sys").slice(-16);

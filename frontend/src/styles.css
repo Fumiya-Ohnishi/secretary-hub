@@ -54,7 +54,7 @@ a { color: var(--accent2); }
 .set-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
 .set-row input { width: 18px; height: 18px; accent-color: var(--accent); }
 .set-col { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--sub); }
-.set-col select, .tasks select, .tasks input, .job-form select, .job-form input, .job-form textarea, .search, .ac-reject textarea {
+.set-col select, .tasks select, .tasks input, .job-form select, .job-form input, .job-form textarea, .search, .ac-reject textarea, .ac-memo textarea {
   background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; outline: none;
 }
 .set-col select:focus, .tasks input:focus, .job-form input:focus, .job-form textarea:focus, .search:focus { border-color: var(--accent); }
@@ -1022,3 +1022,14 @@ select.status-sel { color-scheme: dark; }
 .xp-done { margin-top: 10px; }
 .xp-done summary { cursor: pointer; margin-bottom: 8px; }
 @media (max-width: 600px) { .xp-row { flex-direction: column; align-items: stretch; } .xp-act { justify-content: flex-end; } }
+
+/* 承認カードのコメント・選択肢 */
+.ac-memo { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
+.ac-memo textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.ac-choices { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ac-choices .chip { min-width: 40px; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--line2); background: transparent; color: var(--text); cursor: pointer; font-weight: 700; }
+.ac-choices .chip.on { border-color: var(--accent, #8aa2ff); color: var(--accent, #8aa2ff); background: rgba(138,162,255,.12); }
+
+.chip2.c-ask { color: #b48cf0; background: rgba(180, 140, 240, .14); }
+
+.tp-undo { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }

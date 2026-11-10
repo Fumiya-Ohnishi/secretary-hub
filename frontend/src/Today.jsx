@@ -81,6 +81,12 @@ function PostItem({ post, open, onToggle, now, notify, onChanged, onOpenWeek }) 
       notify("保存を始めました(ブラウザのダウンロードに入ります)", "ok");
       return mark(st.id);
     }
+    if (st.kind === "unpost") {  // 間違えて「投稿しました」を押したとき
+      if (!window.confirm(`「${post.title}」の投稿済みを取り消して、投稿前に戻しますか?`)) return;
+      try { await decidePost(post.path, "unpost"); notify(`「${post.title}」を投稿前に戻しました`, "ok"); onChanged(); }
+      catch (e) { notify(e.message, "error"); }
+      return;
+    }
     if (st.kind === "posted") {
       try { await decidePost(post.path, "posted"); notify(`${PJA[post.platform]}「${post.title}」を投稿済みにしました`, "ok"); onChanged(); }
       catch (e) { notify(e.message, "error"); }
@@ -105,6 +111,12 @@ function PostItem({ post, open, onToggle, now, notify, onChanged, onOpenWeek }) 
         {posted ? <span className="chip2 c-ok">投稿済み</span>
           : <span className="tp-dots" aria-label={`${doneCount}/${steps.length} 済み`}>{steps.map((st, i) => <i key={i} className={isDone(st) ? "d" : ""} />)}</span>}
       </button>
+      {open && posted && (
+        <div className="tp-body tp-undo">
+          <span className="muted small">投稿済み{post.posted ? `(${post.posted})` : ""}。間違えて押したときは戻せます</span>
+          <button className="btn sm" onClick={() => act({ kind: "unpost" })}>投稿前に戻す</button>
+        </div>
+      )}
       {open && !posted && (
         <div className="tp-body">
           {post.platform === "instagram" ? (
@@ -209,7 +221,7 @@ export default function Today({ summary, jobs, onApprove, onSay, onTab, onOpenTa
 
   const rules = summary.rule_proposals || [];
   const contentWaiting = (summary.content_weeks || []).filter((w) => w.counts["承認待ち"]);
-  const approvals = summary.tasks.filter((t) => t.status === "承認待ち");
+  const approvals = summary.tasks.filter((t) => t.status === "確認待ち" || t.status === "承認待ち");
   const prefPending = summary.pref_pending || [];
   const decisions = rules.length + contentWaiting.length + approvals.length + prefPending.length;
   const running = jobs.filter((j) => j.status === "running");
@@ -258,7 +270,7 @@ export default function Today({ summary, jobs, onApprove, onSay, onTab, onOpenTa
             {prefPending.map((p) => <div key={p.id} className="t-row" onClick={() => onTab("library")}><span className="chip2 c-wait">好みの確認</span><span className="t-row-t">{p.id} {(p.text || "").replace(/^\d{4}-\d{2}-\d{2} \([^)]*\) /, "")}</span><span className="go">確認 ›</span></div>)}
             {rules.map((r) => <div key={r.id} className="t-row" onClick={() => onRule(r)}><span className="chip2 c-wait">ルール案</span><span className="t-row-t">{r.rule}</span><span className="go">確認 ›</span></div>)}
             {contentWaiting.map((w) => <div key={w.week} className="t-row" onClick={() => onOpenWeek(w.week)}><span className="chip2 c-wait">承認待ち</span><span className="t-row-t">{w.week} の投稿セット({w.counts["承認待ち"]}件)</span><span className="go">中身を見る ›</span></div>)}
-            {approvals.map((t) => <div key={t.key} className="t-row" onClick={() => onApprove(t)}><span className="chip2 c-wait">承認待ち</span><span className="t-row-t">{t.id} {t.title}</span><span className="go">確認 ›</span></div>)}
+            {approvals.map((t) => <div key={t.key} className="t-row" onClick={() => onApprove(t)}><span className={`chip2 ${t.status === "確認待ち" ? "c-ask" : "c-wait"}`}>{t.status}</span><span className="t-row-t">{t.id} {t.title}</span><span className="go">確認 ›</span></div>)}
             {running.slice(0, 3).map((j) => <div key={j.id} className="t-row" onClick={() => onTab("jobs")}><span className="chip2 c-run">作業中</span><span className="t-row-t">{j.department_full || j.department + "部"}:{j.title}</span><span className="go">見る ›</span></div>)}
             {!decisions && !running.length && <div className="empty">いま判断が必要なものはありません。</div>}
           </section>

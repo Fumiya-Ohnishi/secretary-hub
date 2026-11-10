@@ -270,6 +270,8 @@ def _set_status(rel: str, status: str, comment: str = "") -> dict:
     today = datetime.date.today().isoformat()
     if status == "投稿済み":
         meta["posted"] = today
+    elif "posted" in meta:  # 間違えて投稿済みにしたのを戻すときは、投稿日も消す
+        meta.pop("posted", None)
     if status == "差し戻し":
         body = body.rstrip() + f"\n\n## 社長コメント\n- {today}: {comment or '(理由なし)'}\n"
     path.write_text(dump(meta, body))
@@ -277,9 +279,12 @@ def _set_status(rel: str, status: str, comment: str = "") -> dict:
 
 
 async def decide(rel: str, decision: str, comment: str = "") -> dict:
-    status = {"approve": "承認済み", "reject": "差し戻し", "posted": "投稿済み", "draft": "下書き", "wait": "承認待ち"}.get(decision)
+    status = {"approve": "承認済み", "reject": "差し戻し", "posted": "投稿済み", "draft": "下書き", "wait": "承認待ち",
+              "unpost": "承認済み"}.get(decision)  # unpost = 間違えて「投稿済み」にしたのを、投稿前(承認済み)に戻す
     if not status:
-        raise ValueError("decision は approve / reject / posted / draft / wait")
+        raise ValueError("decision は approve / reject / posted / draft / wait / unpost")
+    if decision == "unpost" and parse(safe_path(rel).read_text())[0].get("status") != "投稿済み":
+        raise ValueError("投稿済みの投稿ではありません")
     post = _set_status(rel, status, comment)
     await sync_week_task(Path(rel).parent.name, comment if decision == "reject" else "")
     return post

@@ -218,7 +218,7 @@ def crosspost_candidates(platform: str) -> List[dict]:
     return out[:40]
 
 
-def mark_crossposted(platform: str, rel: str, date: Optional[str] = None) -> dict:
+def mark_crossposted(platform: str, rel: str, date: Optional[str] = None, undo: bool = False) -> dict:
     """社長が TikTok・YouTube に投稿した記録を、投稿ファイルの also_posted に書く(社長の操作からだけ呼ぶ)"""
     import content
     if platform not in CROSSPOST:
@@ -231,7 +231,8 @@ def mark_crossposted(platform: str, rel: str, date: Optional[str] = None) -> dic
         raise ValueError("承認済みの投稿だけ記録できます(未承認のものは出さない)")
     date = date or datetime.date.today().isoformat()
     items = [x.strip() for x in (meta.get("also_posted", "") or "").split(",") if x.strip() and not x.strip().lower().startswith(platform)]
-    items.append(f"{platform} {date}")
+    if not undo:
+        items.append(f"{platform} {date}")
     meta["also_posted"] = ", ".join(items)
     path.write_text(content.dump(meta, body))
-    return {"path": rel, "platform": platform, "date": date}
+    return {"path": rel, "platform": platform, "date": None if undo else date, "undone": undo}
