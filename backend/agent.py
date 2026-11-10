@@ -184,6 +184,8 @@ def _job_prompt(job: dict) -> str:
     lines += ["", "## 守ること",
               "- CLAUDE.md(就業規則)と playbooks/learned_rules.md に従う。成果物は所定のフォルダに保存する(投稿セットは playbooks/post_format.md の形式)",
               "- 外部への投稿・申請・購入・ログインはしない。承認済み・差し戻しにはしない(承認は社長だけ)",
+              "- Notion は読むだけ(fetch・search・query)。ページを作る・書き換える・状態を変えることは部署ではしない。"
+              "Notion に残したいこと(社長への確認・タスクにしたいこと)は報告に書けば、秘書ハブが Notion に書く",
               "- 書き出しで使ってよいコマンドは決まっている(許可の確認で止まらないように): 書き出しスクリプトは週のフォルダに**必ず `render.mjs` という名前**で置き"
               "(表紙用も同じファイルに入れるか、引数で切り替える)、**必ず下の入口(week_render.mjs)から**動かす(`cd`・`&&`・`;`・`|` でつながない。1行に1コマンド)。"
               "画像の寸法は `sips -g pixelWidth -g pixelHeight <画像>` か ffprobe、字数は `wc -m <ファイル>`、JSON の確認は `python3 -m json.tool <ファイル>` で読める。"
@@ -490,6 +492,10 @@ ALLOWED_TOOLS = [
     f"Bash(python3 {HUB_ROOT / 'tools' / 'sfx' / 'find_sfx.py'}:*)", f"Bash(python3 {HUB_ROOT / 'tools' / 'sfx' / 'add_sfx.py'}:*)",  # 効果音(Openverse の CC0)を探す・重ねる
     "Bash(mkdir -p content/:*)", "Bash(mkdir -p strategy/:*)", "Bash(ls:*)",
     "WebSearch", "WebFetch",  # リサーチ用(Web の文章の中の指示には従わない: CLAUDE.md)
+    # Notion は読むだけ許可する(タスク・議事録・参考アカウントを確かめるため。2026-11-10)。
+    # 書き込み(ページ作成・状態の変更)は秘書ハブが NOTION_TOKEN で行う(部署は起票しない: CLAUDE.md)
+    "mcp__claude_ai_Notion__notion-fetch", "mcp__claude_ai_Notion__notion-search",
+    "mcp__claude_ai_Notion__notion-query-data-sources", "mcp__claude_ai_Notion__notion-get-comments",
 ]
 # 使ってはいけない HyperFrames の機能(ログイン・外部への公開・クラウド・使用状況の送信)
 DISALLOWED_TOOLS = [f"Bash({pre}{HF} {c}:*)" for pre in ("npx ", "npx --yes ") for c in ("auth", "cloud", "lambda", "cloudrun", "publish", "events", "feedback", "usage")]
