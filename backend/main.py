@@ -521,12 +521,13 @@ def add_insight(platform: str, body: InsightIn):
 class CrosspostIn(BaseModel):
     path: str
     date: Optional[str] = None
+    undo: bool = False  # 間違えて「投稿した」を押したのを取り消す
 
 
 @app.post("/api/accounts/{platform}/crossposted")
 def crossposted(platform: str, body: CrosspostIn):
     try:
-        return accounts.mark_crossposted(platform, body.path, body.date)
+        return accounts.mark_crossposted(platform, body.path, body.date, body.undo)
     except (ValueError, PermissionError) as e:
         return err(e, 400)
 

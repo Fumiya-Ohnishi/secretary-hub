@@ -1031,3 +1031,5 @@ select.status-sel { color-scheme: dark; }
 .ac-choices .chip.on { border-color: var(--accent, #8aa2ff); color: var(--accent, #8aa2ff); background: rgba(138,162,255,.12); }
 
 .chip2.c-ask { color: #b48cf0; background: rgba(180, 140, 240, .14); }
+
+.tp-undo { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }

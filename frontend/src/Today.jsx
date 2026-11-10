@@ -81,6 +81,12 @@ function PostItem({ post, open, onToggle, now, notify, onChanged, onOpenWeek }) 
       notify("保存を始めました(ブラウザのダウンロードに入ります)", "ok");
       return mark(st.id);
     }
+    if (st.kind === "unpost") {  // 間違えて「投稿しました」を押したとき
+      if (!window.confirm(`「${post.title}」の投稿済みを取り消して、投稿前に戻しますか?`)) return;
+      try { await decidePost(post.path, "unpost"); notify(`「${post.title}」を投稿前に戻しました`, "ok"); onChanged(); }
+      catch (e) { notify(e.message, "error"); }
+      return;
+    }
     if (st.kind === "posted") {
       try { await decidePost(post.path, "posted"); notify(`${PJA[post.platform]}「${post.title}」を投稿済みにしました`, "ok"); onChanged(); }
       catch (e) { notify(e.message, "error"); }
@@ -105,6 +111,12 @@ function PostItem({ post, open, onToggle, now, notify, onChanged, onOpenWeek }) 
         {posted ? <span className="chip2 c-ok">投稿済み</span>
           : <span className="tp-dots" aria-label={`${doneCount}/${steps.length} 済み`}>{steps.map((st, i) => <i key={i} className={isDone(st) ? "d" : ""} />)}</span>}
       </button>
+      {open && posted && (
+        <div className="tp-body tp-undo">
+          <span className="muted small">投稿済み{post.posted ? `(${post.posted})` : ""}。間違えて押したときは戻せます</span>
+          <button className="btn sm" onClick={() => act({ kind: "unpost" })}>投稿前に戻す</button>
+        </div>
+      )}
       {open && !posted && (
         <div className="tp-body">
           {post.platform === "instagram" ? (
