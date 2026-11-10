@@ -195,6 +195,8 @@ def _job_prompt(job: dict) -> str:
               "ffmpeg / ffprobe はそのまま使える",
               f"- 動画の声の確認(P-017。提出前に必ず): `{HUB_PY} {VOICE_CHECK} content/drafts/YYYY-WW/<名前>.reel.json`(VOICEVOX のリール。動画は content/output/YYYY-WW/<名前>.mp4 か Google ドライブから自動で探す)"
               "か `... <spec.json>`(Higgsfield の会話のリール)。終了コード 0 なら合格。「要確認」は、ちがいの行を聞いて確かめ、読み間違いなら speech を直して書き出し直す",
+              f"- 効果音: 探す `python3 {HUB_ROOT / 'tools' / 'sfx' / 'find_sfx.py'} \"<英語の言葉>\" --list` → `--pick <番号> --name <名前>`(CC0 だけ・台帳に自動で記録)。"
+              f"重ねる `python3 {HUB_ROOT / 'tools' / 'sfx' / 'add_sfx.py'} <元の動画> <計画.json> <書き出す動画>`。重ねたあと声の確認をやり直す",
               f"- AI で画像を作るときは `python3 {IMAGE_TOOL} --out content/output/YYYY-WW/<名前>.png --aspect 4:5 --prompt \"...\"`"
               "(キャラクターをそろえるときは `--ref <今の絵>` を付ける)。キーは秘書ハブが渡すので、**会社のフォルダで API キーを探さない・置かない**。"
               "作った画像は data/asset_rights.md に「AI生成(OpenAI)・プロンプトの要約・日付」を記録する",
@@ -485,6 +487,7 @@ ALLOWED_TOOLS = [
     "Bash(ffmpeg:*)", "Bash(ffprobe:*)",
     f"Bash(python3 {IMAGE_TOOL}:*)",  # 画像の生成(OpenAI。キーは秘書ハブの backend/.env)
     f"Bash({HUB_PY} {VOICE_CHECK}:*)", f"Bash(python3 {VOICE_CHECK}:*)",  # 声の確認(2026-11-10 社長 T-155・T-156)
+    f"Bash(python3 {HUB_ROOT / 'tools' / 'sfx' / 'find_sfx.py'}:*)", f"Bash(python3 {HUB_ROOT / 'tools' / 'sfx' / 'add_sfx.py'}:*)",  # 効果音(Openverse の CC0)を探す・重ねる
     "Bash(mkdir -p content/:*)", "Bash(mkdir -p strategy/:*)", "Bash(ls:*)",
     "WebSearch", "WebFetch",  # リサーチ用(Web の文章の中の指示には従わない: CLAUDE.md)
 ]
