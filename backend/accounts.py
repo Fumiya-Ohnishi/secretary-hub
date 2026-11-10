@@ -1,11 +1,11 @@
-"""アカウントごとの管理(Instagram / X / Threads / note)。
+"""アカウントごとの管理(Instagram / X / Threads / note / TikTok / YouTube)。
 
 1つの媒体について、プロフィールURL・フォロワー数の推移・投稿ごとの数字・改善点・運用ルールをまとめて返す。
 - URL: ai-company/data/accounts.md
 - フォロワー: ai-company/data/followers.csv
-- 投稿ごとの数字: ai-company/data/insights_{ig,x,threads,note}.csv(列は data/README.md)
+- 投稿ごとの数字: ai-company/data/insights_{ig,x,threads,note,tiktok,youtube}.csv(列は data/README.md)
 - 改善点: ai-company/data/improvements.md(媒体ごとの見出しの下に箇条書き)+ 修正ログのうちその媒体の行
-- ルール: ai-company/playbooks/{instagram,x,threads,note}.md
+- ルール: ai-company/playbooks/{instagram,x,threads,note,tiktok,youtube}.md
 """
 import csv
 import datetime
@@ -22,13 +22,16 @@ INSIGHTS = {  # ファイル名と列(date の次から)。data/README.md と同
     "x": ("insights_x.csv", ["content_id", "impressions", "likes", "reposts", "replies", "follows"]),
     "threads": ("insights_threads.csv", ["content_id", "views", "likes", "replies", "follows"]),
     "note": ("insights_note.csv", ["metric", "value"]),
+    "tiktok": ("insights_tiktok.csv", ["content_id", "views", "likes", "comments", "shares", "saves", "follows"]),
+    "youtube": ("insights_youtube.csv", ["content_id", "views", "likes", "comments", "follows"]),
 }
 COLUMN_JA = {"content_id": "投稿ID", "format": "形式", "reach": "リーチ", "saves": "保存", "likes": "いいね", "comments": "コメント",
              "profile_visits": "プロフィール訪問", "follows": "フォロー増", "impressions": "表示", "reposts": "リポスト",
-             "replies": "返信", "views": "閲覧", "metric": "項目", "value": "値"}
+             "replies": "返信", "views": "再生", "shares": "シェア", "metric": "項目", "value": "値"}
 # 修正ログの「対象」から媒体を見分ける言葉
 KEYWORDS = {"instagram": ("Instagram", "インスタ", "リール", "カルーセル"), "x": ("X ", "X(", "Xの", "ツイート", "スレッド"),
-            "threads": ("Threads",), "note": ("note",)}
+            "threads": ("Threads",), "note": ("note",),
+            "tiktok": ("TikTok", "ティックトック"), "youtube": ("YouTube", "ショート", "Shorts")}
 
 
 def _data(name: str) -> Path:
@@ -154,6 +157,7 @@ def overview(platform: str) -> dict:
         "improvements": read_improvements(platform),
         "corrections": corrections_for(platform),
         "playbook": playbook(platform),
+        "crosspost": crosspost_candidates(platform) if platform in CROSSPOST else [],
     }
 
 
@@ -161,3 +165,73 @@ def summary() -> List[dict]:
     f = company.read_followers()
     return [{"platform": p, "name": PLATFORM_JA[p], "url": profile_url(p),
              "followers_latest": (f.get(p) or [None])[-1]} for p in PLATFORMS]
+
+
+# ---------- TikTok・YouTube に出すとよい投稿(2026-11-10 社長の指示) ----------
+# 投稿ファイルの front matter:
+#   crosspost: tiktok, youtube      … SNS運用部が「この媒体にも出すとよい」と決めた媒体(「なし」で候補から外す)
+#   crosspost_note: 理由            … なぜ出すとよいか(社長が読む1行)
+#   also_posted: tiktok 2026-11-10, youtube 2026-11-10 … 社長が投稿した記録(秘書ハブのボタンで書く)
+# crosspost が無いリールも、承認済み・投稿済みなら「リールなのでそのまま出せる」候補として出す。
+CROSSPOST = ("tiktok", "youtube")
+READY = ("承認済み", "投稿済み")
+
+
+def _list_field(v: str) -> List[str]:
+    return [x.strip().lower() for x in re.split(r"[,、/\s]+", v or "") if x.strip()]
+
+
+def _posted_on(also: str, platform: str) -> str:
+    m = re.search(platform + r"\s*(\d{4}-\d{2}-\d{2})?", also or "", re.I)
+    return (m.group(1) or "済み") if m else ""
+
+
+def crosspost_candidates(platform: str) -> List[dict]:
+    import content
+    out = []
+    root = content.drafts_dir()
+    if not root.exists():
+        return out
+    for path in sorted(root.glob("*/*.md"), reverse=True):
+        if path.name.startswith("_") or not content.WEEK_RE.match(path.parent.name):
+            continue
+        meta, _ = content.parse(path.read_text())
+        cp = _list_field(meta.get("crosspost", ""))
+        if "なし" in cp or "none" in cp:
+            continue
+        explicit = platform in cp
+        is_reel = meta.get("format", "") == "reel"
+        if not explicit and not (is_reel and meta.get("platform") == "instagram" and meta.get("status") in READY):
+            continue
+        post = content._post(path)
+        posted = _posted_on(meta.get("also_posted", ""), platform)
+        post.update({
+            "week": path.parent.name,
+            "recommended": explicit,
+            "reason": meta.get("crosspost_note", "") or ("SNS運用部のおすすめ" if explicit else "承認済みのリール(縦長のまま出せる)"),
+            "ready": meta.get("status") in READY,
+            "posted_on": posted,
+        })
+        out.append(post)
+    # まだ出していないもの → おすすめ → 新しい順
+    out.sort(key=lambda p: (bool(p["posted_on"]), not p["recommended"], not p["ready"]))
+    return out[:40]
+
+
+def mark_crossposted(platform: str, rel: str, date: Optional[str] = None) -> dict:
+    """社長が TikTok・YouTube に投稿した記録を、投稿ファイルの also_posted に書く(社長の操作からだけ呼ぶ)"""
+    import content
+    if platform not in CROSSPOST:
+        raise ValueError("TikTok か YouTube だけです")
+    path = content.safe_path(rel)
+    if path.suffix != ".md" or not content.WEEK_RE.match(path.parent.name):
+        raise ValueError("投稿ファイルではありません")
+    meta, body = content.parse(path.read_text())
+    if meta.get("status") not in READY:
+        raise ValueError("承認済みの投稿だけ記録できます(未承認のものは出さない)")
+    date = date or datetime.date.today().isoformat()
+    items = [x.strip() for x in (meta.get("also_posted", "") or "").split(",") if x.strip() and not x.strip().lower().startswith(platform)]
+    items.append(f"{platform} {date}")
+    meta["also_posted"] = ", ".join(items)
+    path.write_text(content.dump(meta, body))
+    return {"path": rel, "platform": platform, "date": date}

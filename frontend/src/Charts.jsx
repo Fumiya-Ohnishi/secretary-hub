@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 
 /* 媒体の色は固定(並び順で塗り替えない)。暗い面 #151a31 で色覚多様性チェック済み */
-export const PLATFORM_COLORS = { instagram: "#3987e5", x: "#d95926", threads: "#199e70", note: "#c98500" };
+export const PLATFORM_COLORS = { instagram: "#3987e5", x: "#d95926", threads: "#199e70", note: "#c98500", tiktok: "#a35bd6", youtube: "#c4314b" };
 
 function useWidth() {
   const ref = useRef(null);

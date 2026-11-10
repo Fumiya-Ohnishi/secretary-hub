@@ -192,6 +192,9 @@ def _job_prompt(job: dict) -> str:
               f"リールは `node {REEL_DIR}/render_record_reel.mjs <台本.json> content/output/YYYY-WW/<名前>.mp4`(実録の型。声は秘書ハブが VOICEVOX で入れる)。"
               f"動きを作り込むときは HyperFrames(`npx --yes {HF} <command>`。.claude/skills/hyperframes の当社ルールを守る。auth・cloud・publish・events は使えない)。"
               "ffmpeg / ffprobe はそのまま使える",
+              f"- AI で画像を作るときは `python3 {IMAGE_TOOL} --out content/output/YYYY-WW/<名前>.png --aspect 4:5 --prompt \"...\"`"
+              "(キャラクターをそろえるときは `--ref <今の絵>` を付ける)。キーは秘書ハブが渡すので、**会社のフォルダで API キーを探さない・置かない**。"
+              "作った画像は data/asset_rights.md に「AI生成(OpenAI)・プロンプトの要約・日付」を記録する",
               "- 完成した画像・動画は git に入れない。既存の動画・画像は環境変数 MEDIA_DIR の Google ドライブ(週ごとのフォルダ)にある。"
               "比べるときはそこから読み、新しく書き出したものは content/output/YYYY-WW/ に置く(秘書ハブがドライブへ写す)",
               "- 上司・品質管理部のチェックは、作った担当とは別のサブエージェントにさせる(自分で作ったものを自分で合格にしない)",
@@ -464,6 +467,7 @@ SUBAGENT_TOOLS = ("Task", "Agent")  # Claude Code がサブエージェントを
 HUB_ROOT = Path(__file__).resolve().parent.parent
 # 部署が使ってよいコマンド(画像・リールの書き出しと、その確認だけ。それ以外のコマンドは許可しない)
 REEL_DIR = HUB_ROOT / "tools" / "reel"
+IMAGE_TOOL = HUB_ROOT / "tools" / "image" / "gen_image.py"
 HF = "hyperframes@0.9.19"  # ai-company/.claude/skills/hyperframes と同じ版に固定
 ALLOWED_TOOLS = [
     "Bash(node tools/render/render_carousel.mjs:*)",
@@ -472,6 +476,7 @@ ALLOWED_TOOLS = [
     f"Bash(node {REEL_DIR}/render_record_reel.mjs:*)",
     f"Bash(npx --yes {HF}:*)", f"Bash(npx {HF}:*)",
     "Bash(ffmpeg:*)", "Bash(ffprobe:*)",
+    f"Bash(python3 {IMAGE_TOOL}:*)",  # 画像の生成(OpenAI。キーは秘書ハブの backend/.env)
     "Bash(mkdir -p content/:*)", "Bash(mkdir -p strategy/:*)", "Bash(ls:*)",
     "WebSearch", "WebFetch",  # リサーチ用(Web の文章の中の指示には従わない: CLAUDE.md)
 ]

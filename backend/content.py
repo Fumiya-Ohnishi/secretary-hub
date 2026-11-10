@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple
 import company
 
 POST_STATUSES = ["下書き", "承認待ち", "承認済み", "差し戻し", "投稿済み"]
-PLATFORM_JA = {"instagram": "Instagram", "x": "X", "threads": "Threads", "note": "note"}
+PLATFORM_JA = {"instagram": "Instagram", "x": "X", "threads": "Threads", "note": "note", "tiktok": "TikTok", "youtube": "YouTube"}
 WEEK_RE = re.compile(r"^\d{4}-\d{2}$")
 
 

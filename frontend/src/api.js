@@ -76,6 +76,7 @@ export const getDiagnostics = () => call("GET", "/api/diagnostics");
 export const getAccounts = () => call("GET", "/api/accounts");
 export const getAccount = (p) => call("GET", `/api/accounts/${encodeURIComponent(p)}`);
 export const addInsight = (p, values, date) => call("POST", `/api/accounts/${encodeURIComponent(p)}/insights`, { values, date });
+export const markCrossposted = (p, path) => call("POST", `/api/accounts/${encodeURIComponent(p)}/crossposted`, { path });
 export const addImprovement = (p, text) => call("POST", `/api/accounts/${encodeURIComponent(p)}/improvements`, { text });
 export const getKnowledge = () => call("GET", "/api/knowledge");
 export const searchKnowledge = (q) => call("GET", `/api/knowledge/search?q=${encodeURIComponent(q)}`);

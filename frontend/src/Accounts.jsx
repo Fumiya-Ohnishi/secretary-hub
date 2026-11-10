@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { getContentWeeks, getAccount, addInsight, addImprovement, recordFollowers } from "./api.js";
-import Content from "./Content.jsx";
+import { getContentWeeks, getAccount, addInsight, addImprovement, recordFollowers, markCrossposted } from "./api.js";
+import Content, { PostPreview } from "./Content.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
-const PLATFORMS = [["instagram", "Instagram"], ["x", "X"], ["threads", "Threads"], ["note", "note"]];
+const PLATFORMS = [["instagram", "Instagram"], ["x", "X"], ["threads", "Threads"], ["note", "note"], ["tiktok", "TikTok"], ["youtube", "YouTube"]];
 
 /** アカウントごとの管理。「全部」は4媒体の投稿をまとめて承認、各媒体は投稿・数字・改善点・ルールを1か所に */
 export default function Accounts({ week, setWeek, onChanged, notify, onSay }) {
@@ -63,7 +63,9 @@ function Account({ platform, week, setWeek, onChanged, notify, onSay }) {
           </button>
         ))}
       </div>
-      {section === "posts" && <Content week={week} setWeek={setWeek} onChanged={onChanged} notify={notify} onSay={onSay} platform={platform} />}
+      {section === "posts" && data.crosspost && (platform === "tiktok" || platform === "youtube") &&
+        <Crosspost data={data} platform={platform} notify={notify} onDone={() => { load(); onChanged(); }} />}
+      {section === "posts" && !(platform === "tiktok" || platform === "youtube") && <Content week={week} setWeek={setWeek} onChanged={onChanged} notify={notify} onSay={onSay} platform={platform} />}
       {section === "numbers" && <Numbers data={data} platform={platform} notify={notify} onDone={() => { load(); onChanged(); }} />}
       {section === "improve" && <Improvements data={data} platform={platform} notify={notify} onDone={load} />}
       {section === "rules" && <div className="card"><div className="sec-text">{data.playbook || "ルールはまだありません。"}</div></div>}
@@ -157,5 +159,48 @@ function Improvements({ data, platform, notify, onDone }) {
         ) : <div className="empty">まだありません。</div>}
       </div>
     </>
+  );
+}
+
+/** TikTok・YouTube に出すとよい投稿(Instagram のリールの流用。SNS運用部のおすすめが上) */
+function Crosspost({ data, platform, notify, onDone }) {
+  const [view, setView] = useState(null);
+  const [busy, setBusy] = useState("");
+  const todo = data.crosspost.filter((p) => !p.posted_on);
+  const done = data.crosspost.filter((p) => p.posted_on);
+  const mark = async (p) => {
+    setBusy(p.path);
+    try { await markCrossposted(platform, p.path); notify(`${data.name}に「${p.title}」を投稿済みにしました`, "ok"); onDone(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy("");
+  };
+  const row = (p) => (
+    <li key={p.path} className="xp-row">
+      <div className="xp-main">
+        <div className="xp-title">
+          {p.recommended && <span className="badge s-ask">おすすめ</span>}
+          <span className="muted small">{p.week}</span> {p.title}
+        </div>
+        <div className="muted small">{p.reason}{!p.ready && "(まだ承認前。承認されてから出す)"}</div>
+      </div>
+      <div className="xp-act">
+        <button className="btn" onClick={() => setView(p)}>見る</button>
+        {p.posted_on ? <span className="muted small">投稿済み {p.posted_on}</span>
+          : <button className="btn primary" disabled={!p.ready || busy === p.path} onClick={() => mark(p)}>投稿した</button>}
+      </div>
+    </li>
+  );
+  return (
+    <div className="card">
+      <div className="card-head"><h3>{data.name}に出すとよい投稿</h3><span className="muted small">Instagram のリールをそのまま流用・未投稿が上</span></div>
+      {todo.length ? <ul className="xp-list">{todo.map(row)}</ul>
+        : <div className="empty">今出せる候補はありません。リールが承認されるか、SNS運用部がおすすめを付けるとここに出ます。</div>}
+      {done.length > 0 && <details className="xp-done"><summary className="muted small">投稿済み {done.length}件</summary><ul className="xp-list">{done.map(row)}</ul></details>}
+      <div className="muted small" style={{ marginTop: 8 }}>
+        {platform === "tiktok" ? "AI生成コンテンツの表示は、欄があればオン(無ければ動画とキャプションの表示でよい)"
+          : "「改変または合成されたコンテンツ」は「はい」"}。動画の中とキャプションの「AIで作ったキャラクター」の表示は消さない。
+      </div>
+      {view && <PostPreview post={view} onClose={() => setView(null)} />}
+    </div>
   );
 }

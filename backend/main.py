@@ -518,6 +518,19 @@ def add_insight(platform: str, body: InsightIn):
         return err(e, 400)
 
 
+class CrosspostIn(BaseModel):
+    path: str
+    date: Optional[str] = None
+
+
+@app.post("/api/accounts/{platform}/crossposted")
+def crossposted(platform: str, body: CrosspostIn):
+    try:
+        return accounts.mark_crossposted(platform, body.path, body.date)
+    except (ValueError, PermissionError) as e:
+        return err(e, 400)
+
+
 @app.post("/api/accounts/{platform}/improvements")
 def add_improvement(platform: str, body: ImprovementIn):
     try:
