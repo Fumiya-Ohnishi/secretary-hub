@@ -14,7 +14,7 @@ const ASSIGNEES = ["秘書", "戦略", "収益化", "企画", "ライティン�
 const DEPARTMENTS = ["戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析", "経理", "広報", "人事", "Codex"];
 const DEPT_FULL = { 戦略: "経営戦略部", 収益化: "収益化部", 企画: "企画編集部", ライティング: "ライティング部", デザイン: "デザイン部",
   画像: "画像制作部", 映像: "映像制作部", SNS運用: "SNS運用部", 品質管理: "品質管理部", 分析: "データ分析部", 経理: "経理・税務部", 広報: "広報部", 人事: "人事部", Codex: "社外制作室(Codex)" };
-const STATUS_CLASS = { 未着手: "s-todo", 進行中: "s-doing", 承認待ち: "s-wait", 承認済み: "s-ok", 完了: "s-done", 差し戻し: "s-ng" };
+const STATUS_CLASS = { 未着手: "s-todo", 進行中: "s-doing", 確認待ち: "s-ask", 承認待ち: "s-wait", 承認済み: "s-ok", 完了: "s-done", 差し戻し: "s-ng" };
 
 export function StatusBadge({ status }) {
   return <span className={`badge ${STATUS_CLASS[status] || ""}`}>{status}</span>;
@@ -199,7 +199,7 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, n
 }
 
 /* ---------------- タスク ---------------- */
-const FILTERS = ["未完了", "未着手", "進行中", "承認待ち", "承認済み", "差し戻し", "完了", "すべて"];
+const FILTERS = ["未完了", "未着手", "進行中", "確認待ち", "承認待ち", "承認済み", "差し戻し", "完了", "すべて"];
 
 /** 期限の変更(日付を選んで「変更」。「期限なし」で消す) */
 function DueEditor({ task, onChanged, notify, onDone, autoFocus }) {

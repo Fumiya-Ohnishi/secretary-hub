@@ -882,7 +882,7 @@ async def simple_reply(msg: str) -> dict:
     """APIキーが無いときの簡易応答(決まった言葉にだけ反応)"""
     data = await company.summary()
     rev, tasks = data["revenue"], data["tasks"]
-    appr = [t for t in tasks if t["status"] == "承認待ち"]
+    appr = [t for t in tasks if t["status"] in ("確認待ち", "承認待ち")]
     open_t = [t for t in tasks if t["status"] != "完了"]
     if "収益" in msg or "売上" in msg:
         return {"reply": f"今月の収益は{rev['month_total']:,}円です。目標5万円に対して{rev['progress']}%です。",

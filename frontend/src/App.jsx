@@ -37,11 +37,11 @@ function greeting(summary, name) {
   const h = new Date().getHours();
   const hello = h < 11 ? "おはようございます" : h < 18 ? "お疲れさまです" : "こんばんは";
   if (!summary) return `${hello}、社長。${name}です。`;
-  const appr = summary.tasks.filter((t) => t.status === "承認待ち").length;
+  const appr = summary.tasks.filter((t) => t.status === "承認待ち" || t.status === "確認待ち").length;
   const today = new Date().toISOString().slice(0, 10);
   const late = summary.tasks.filter((t) => t.due && t.due.slice(0, 10) < today && !["完了", "承認済み"].includes(t.status)).length;
   const parts = [`今月の収益は${summary.revenue.month_total.toLocaleString()}円です`];
-  parts.push(appr ? `承認待ちが${appr}件あります` : "承認待ちはありません");
+  parts.push(appr ? `確認・承認待ちが${appr}件あります` : "確認・承認待ちはありません");
   if (late) parts.push(`期限切れが${late}件です`);
   return `${hello}、社長。${parts.join("、")}。ご用件をどうぞ。`;
 }
@@ -439,7 +439,7 @@ export default function App() {
       if (Date.now() - lastActivity.current < 15 * 60 * 1000) return;
       const s = summary;
       if (!s) return;
-      const appr = s.tasks.filter((t) => t.status === "承認待ち").length
+      const appr = s.tasks.filter((t) => t.status === "承認待ち" || t.status === "確認待ち").length
         + (s.content_weeks || []).reduce((n, w) => n + (w.counts["承認待ち"] || 0), 0) + (s.rule_proposals || []).length;
       const posts = (s.content_weeks || []).reduce((n, w) => n + (w.counts["承認済み"] || 0), 0);
       const lines = [];
@@ -456,7 +456,7 @@ export default function App() {
   const hour = new Date().getHours();
   const timeOfDay = hour < 5 ? "night" : hour < 10 ? "morning" : hour < 16 ? "day" : hour < 19 ? "evening" : "night";
 
-  const appr = summary ? summary.tasks.filter((t) => t.status === "承認待ち").length : 0;
+  const appr = summary ? summary.tasks.filter((t) => t.status === "承認待ち" || t.status === "確認待ち").length : 0;
   const pills = [
     { label: health?.api_key_set ? "頭脳 OK" : "簡易モード", ok: !!health?.api_key_set, title: health?.api_key_set ? `Claude API(${health.model})` : "backend/.env に ANTHROPIC_API_KEY を入れると何でも頼めます" },
     { label: health?.notion ? "Notion 接続" : "Notion 未接続", ok: !!health?.notion, title: health?.notion ? "タスクと資料を Notion と同期中" : "資料タブに接続手順があります" },

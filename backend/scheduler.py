@@ -77,7 +77,7 @@ ROUTINES = [
                     "結果は strategy/research/YYYY-MM-DD_ニュース.md に保存する。" + RESEARCH_RULES},
 ]
 PLAN_RE = re.compile(r"\[自動 (P[0-9a-f]+)-(\d+)\]")
-DONE = ("完了", "承認済み", "承認待ち")
+DONE = ("完了", "承認済み", "承認待ち", "確認待ち")
 LOOKAHEAD_DAYS = 3  # 最初の工程は、期限の3日前から動き始める
 
 
@@ -212,7 +212,7 @@ async def run_check(slot: str = "") -> dict:
     open_t = [t for t in tasks if t["status"] not in ("完了", "承認済み")]
     overdue = [t for t in open_t if t["due"] and t["due"][:10] < today]
     due_today = [t for t in open_t if t["due"][:10] == today]
-    waiting = [t for t in tasks if t["status"] == "承認待ち"]
+    waiting = [t for t in tasks if t["status"] in ("確認待ち", "承認待ち")]
     content_waiting = [w for w in content.list_weeks() if w["counts"].get("承認待ち")]
     rule_props = corrections.proposals()
     started = await advance()
