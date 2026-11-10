@@ -296,7 +296,17 @@ def start_routines(now: Optional[datetime.datetime] = None) -> List[dict]:
 
 async def loop():
     last_answer_check = 0.0
+    last_meeting_check = 0.0
     while True:
+        try:  # 日時を決めた会議(Notion の【会議】タスク)を、その時刻に開く(2分ごとに確かめる)
+            import time
+            import agent
+            if time.time() - last_meeting_check > 120:
+                last_meeting_check = time.time()
+                for tid in await agent.start_scheduled_meetings():
+                    notify("予定の会議を始めました", f"{tid} の会議を、予定の時刻に開きました。終わったら議事録と決まったことを報告します。", "info")
+        except Exception as e:
+            print("予定の会議でエラー:", e)
         try:
             if settings()["auto"]:
                 start_routines()

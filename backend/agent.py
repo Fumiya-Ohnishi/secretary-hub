@@ -1589,3 +1589,37 @@ async def resume_answered_in_notion() -> List[dict]:
 
 
 _resumed: set = set()  # 秘書ハブのボタンで答えた分(見回りで二重に動かさない)
+
+
+# ---------- 日時を決めた会議(Notion のタスク「【会議】…」の期限の日時に自動で開く。2026-11-10) ----------
+MEETING_TITLE = re.compile(r"^【会議】")
+
+
+async def start_scheduled_meetings() -> List[str]:
+    """件名が【会議】で、期限に時刻が入った未着手のタスクを、その時刻になったら臨時会議として開く"""
+    try:
+        tasks = await company.list_tasks()
+    except Exception:
+        return []
+    now = datetime.datetime.now().astimezone()
+    started = []
+    for t in tasks:
+        if not MEETING_TITLE.match(t.get("title") or "") or t.get("status") != "未着手" or "T" not in (t.get("due") or ""):
+            continue
+        try:
+            due = datetime.datetime.fromisoformat(t["due"].replace("Z", "+00:00"))
+            if due.tzinfo is None:
+                due = due.astimezone()
+        except Exception:
+            continue
+        if not (due <= now <= due + datetime.timedelta(hours=12)):  # 半日以上過ぎたものは勝手に開かない
+            continue
+        topic = MEETING_TITLE.sub("", t["title"]).strip() + "。" + (t.get("note") or "")[:1500]
+        actions: list = []
+        m = re.search(r"参加[::]\s*([^/\n]+)", t.get("note") or "")
+        depts = [d.strip() for d in re.split(r"[・、,\s]+", m.group(1)) if d.strip().endswith(("部", "室"))] if m else []
+        msg = await run_tool("hold_meeting", {"kind": "adhoc", "topic": topic, **({"departments": depts} if depts else {})}, actions)
+        await company.update_task(t["key"], status="進行中",
+                                  append_note=f"{now:%m/%d %H:%M} 秘書ハブが予定どおり会議を開始({str(msg)[:60]})")
+        started.append(t.get("id", ""))
+    return started
