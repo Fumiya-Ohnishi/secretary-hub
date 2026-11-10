@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getAllPosts, decidePost } from "./api.js";
-import { PostPreview, copyArticle } from "./Content.jsx";
+import { PostPreview, copyArticle, NotePreview } from "./Content.jsx";
 
 /* 「今日」画面: 社長が開いて10秒で、今日やること(投稿・判断)と昨日の成果が分かる */
 
@@ -46,9 +46,10 @@ function stepsFor(post) {
   } else if (post.platform === "x" && post.format === "thread") {
     threadParts(post).forEach((_, i, a) => s.push({ id: `part${i}`, label: `${i + 1}/${a.length} をコピーして投稿`, kind: "part", index: i }));
   } else if (post.platform === "note" && post.article) {
+    s.push({ id: "n-preview", label: "記事の見え方を確認(プレビュー)", kind: "preview" });
     if (hasMedia) s.push({ id: "media", label: `見出し画像・図を保存(${(post.media || []).filter((m) => m.exists).length}点)`, kind: "media" });
     s.push({ id: "n-title", label: "タイトルをコピー", kind: "text", text: post.article.title, what: "タイトル" });
-    s.push({ id: "n-body", label: `本文をコピー(${post.article.chars.toLocaleString()}字・見出しつき)`, kind: "article" });
+    s.push({ id: "n-body", label: `本文をコピー(Markdown・${post.article.chars.toLocaleString()}字)`, kind: "article" });
     if (post.article.tags.length) s.push({ id: "n-tags", label: "ハッシュタグをコピー", kind: "text", text: post.article.tags.map((t) => "#" + t).join(" "), what: "ハッシュタグ" });
   } else if (post.platform === "note") {
     if (hasMedia) s.push({ id: "media", label: "見出し画像を保存", kind: "media" });
@@ -111,7 +112,8 @@ function PostItem({ post, open, onToggle, now, notify, onChanged, onOpenWeek }) 
     : [post.caption || ""];
   return (
     <div className={`tp ${posted ? "done" : ""} ${open ? "open" : ""}`}>
-      {preview && <PostPreview post={post} onClose={() => setPreview(false)} />}
+      {preview && (post.article ? <NotePreview post={post} onClose={() => setPreview(false)} />
+                                : <PostPreview post={post} onClose={() => setPreview(false)} />)}
       <button className="tp-head" onClick={onToggle} aria-expanded={open}>
         {post.cover?.exists && <img className="tp-mini" src={fileUrl(post.cover.path)} alt="" />}
         <span className={`pf pf-${post.platform}`}>{PJA[post.platform] || post.platform}</span>
