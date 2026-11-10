@@ -38,7 +38,7 @@ export default function Office3D({ data, mode = "3d", theme = "wood", onShowFloo
   const [hover, setHover] = useState(null);
   const [card, setCard] = useState(null);
   const [nowOpen, setNowOpen] = useState(true);
-  const [auto, setAuto] = useState(true);
+  const [auto, setAuto] = useState(false);  // 自動カメラ(初めはオフ。▶ で動かす。2026-11-10 社長の指示)
   const [cinema, setCinema] = useState(false);
   const [tint, setTint] = useState("rgba(0,0,0,0)");
   useEffect(() => { S.auto = auto; }, [auto]);

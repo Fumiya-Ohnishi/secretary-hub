@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import Md from "./Md.jsx";
 import React, { useEffect, useState } from "react";
 import { getContentWeeks, getContentWeek, decidePost, approveWeek } from "./api.js";
@@ -49,7 +50,7 @@ export function PostPreview({ post, start = 0, onClose }) {
       {[1, 2, 3, 4, 5].map((n) => <div key={n} className="pv-gcell" />)}
     </div>
   );
-  return (
+  return createPortal(
     <div className="pv-back" onClick={onClose}>
       <div className="pv-wrap" onClick={(e) => e.stopPropagation()}>
         <div className="pv-tabs">
@@ -99,7 +100,7 @@ export function PostPreview({ post, start = 0, onClose }) {
         <div className="pv-hint">← → で送る ・ Esc で閉じる ・ 「いいね」などの数は表示用の飾りです</div>
       </div>
     </div>
-  );
+  , document.body);
 }
 
 /** 投稿する素材(どの画像・動画を、どの順で上げるか)と表紙 */

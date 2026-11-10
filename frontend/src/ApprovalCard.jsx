@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import React, { useState } from "react";
 import { StatusBadge } from "./Workspace.jsx";
 
@@ -9,7 +10,7 @@ export default function ApprovalCard({ task, busy, onDecide, onClose, onOpenDoc 
     const m = (task.link || "").toLowerCase().match(/[0-9a-f]{32}|[0-9a-f-]{36}/g);
     return m && /notion\./.test(task.link) ? m[m.length - 1].replace(/-/g, "") : null;
   })();
-  return (
+  return createPortal(
     <div className="modal-back" onClick={onClose}>
       <div className="modal approval-card" role="dialog" aria-label="承認の確認" onClick={(e) => e.stopPropagation()}>
         <div className="ac-label">社長の判断</div>
@@ -45,5 +46,5 @@ export default function ApprovalCard({ task, busy, onDecide, onClose, onOpenDoc 
         <div className="ac-voice">🎙 声でも決められます:「はい」で承認 /「差し戻し、〇〇を直して」/「あとで」</div>
       </div>
     </div>
-  );
+  , document.body);
 }
