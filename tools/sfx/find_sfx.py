@@ -22,10 +22,21 @@ API = "https://api.openverse.org/v1/audio/"
 UA = {"User-Agent": "ai-company-hub/1.0 (sound effects for short videos)"}
 
 
-def search(q: str, max_sec: float, n: int = 20) -> list:
-    url = API + "?" + urllib.parse.urlencode({"q": q, "license": "cc0", "page_size": n})
-    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
-        items = json.loads(r.read()).get("results", [])
+def search(q: str, max_sec: float, pages: int = 1) -> list:
+    """登録なしで使えるのは1回20件まで(それより多く頼むと 401 で断られる)。多く見たいときはページを分けて取る"""
+    items = []
+    for page in range(1, pages + 1):
+        url = API + "?" + urllib.parse.urlencode({"q": q, "license": "cc0", "page_size": 20, "page": page})
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
+                got = json.loads(r.read()).get("results", [])
+        except urllib.error.HTTPError as e:
+            if page > 1:
+                break
+            raise SystemExit(f"Openverse で探せませんでした({e.code})。少し待ってからもう一度動かしてください")
+        items += got
+        if len(got) < 20:
+            break
     out = []
     for it in items:
         dur = (it.get("duration") or 0) / 1000
@@ -63,7 +74,7 @@ def main():
 
 
 def fetch(query: str, title: str, name: str, max_sec: float = 4.0) -> str:
-    cands = search(query, max_sec, n=40)
+    cands = search(query, max_sec, pages=2)
     c = next((x for x in cands if x["title"] == title), None) or next((x for x in cands if title.lower() in x["title"].lower()), None)
     if not c:
         raise SystemExit(f"「{query}」の候補に「{title}」が見つかりませんでした(--list で今の候補を見てください)")
