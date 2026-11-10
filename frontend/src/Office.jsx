@@ -62,7 +62,7 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
   const [hover, setHover] = useState(null);
   const [nowOpen, setNowOpen] = useState(true);
   const [card, setCard] = useState(null); // 押した社員(名前と今していることだけ出す)
-  const [auto, setAuto] = useState(true);   // 自動カメラ
+  const [auto, setAuto] = useState(false);  // 自動カメラ(初めはオフ。▶ で動かす)
   const [cinema, setCinema] = useState(false); // 全画面(文字を全部消す)
   useEffect(() => { S.auto = auto; }, [auto]);
   useEffect(() => { S.cinema = cinema; }, [cinema]);
