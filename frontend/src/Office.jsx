@@ -26,6 +26,7 @@ const COLORS = {
 const SKIN = ["#f6dcc8", "#efc9ae", "#e3b591", "#f3d2bd", "#d9a582"];
 const HAIR = ["#262a3f", "#4a3426", "#17171f", "#6b4b2e", "#3a3f66", "#8a5a3a", "#5a2f35", "#2f3b2b"];
 const STYLES = ["short", "long", "bob", "bun", "spiky"];
+const FEMALE_STYLES = ["long", "bob", "bun", "pony", "long"], MALE_STYLES = ["short", "spiky", "side", "short"];  // 性別で髪型を分ける(2026-11-10)
 const COFFEE = [[24.0, 15.0], [24.7, 15.0]];
 const SOFA = [[24.5, 18.05], [25.3, 18.05], [26.1, 18.05], [26.9, 18.05]];
 const CHAT = [[[25.0, 19.8], [25.8, 20.1]], [[26.6, 16.4], [27.3, 16.8]], [[13.6, 6.6], [14.4, 6.9]], [[6.5, 13.4], [7.2, 13.7]], [[21.5, 13.5], [22.2, 13.8]]];
@@ -137,7 +138,10 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
       let a = S.avatars[name];
       if (!a) {
         a = S.avatars[name] = { name, dept: dk.dept, boss: dk.boss, gx: dk.gx + 0.35, gy: dk.gy - 0.6, path: [], act: "desk", wait: 3 + (h % 20),
-          hair: HAIR[h % HAIR.length], skin: SKIN[(h >> 3) % SKIN.length], style: STYLES[(h >> 5) % STYLES.length], phase: (h % 100) / 10, say: null };
+          hair: HAIR[h % HAIR.length], skin: SKIN[(h >> 3) % SKIN.length], phase: (h % 100) / 10, say: null,
+          gender: S.info?.[name]?.gender || "" };
+        a.style = a.gender === "女性" ? FEMALE_STYLES[(h >> 5) % FEMALE_STYLES.length] : a.gender === "男性" ? MALE_STYLES[(h >> 5) % MALE_STYLES.length] : STYLES[(h >> 5) % STYLES.length];
+        a.skirt = a.gender === "女性" && ((h >> 9) % 3 !== 0);
       }
       if (working && S.prev[name] !== "working" && !S.meet?.[name]) goDesk(a);
       if (!working && S.prev[name] === "working") {
@@ -279,6 +283,9 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
         ctx.fillStyle = "#e9ebf5"; ctx.beginPath(); ctx.moveTo(p.x - 3 * s, y0 - 26 * s); ctx.lineTo(p.x, y0 - 19 * s); ctx.lineTo(p.x + 3 * s, y0 - 26 * s); ctx.fill();
         ctx.fillStyle = c; ctx.fillRect(p.x - 1 * s, y0 - 22 * s, 2 * s, 8 * s);
       }
+      if (a.skirt) { // スカート
+        ctx.fillStyle = shade(body, 0.7); ctx.beginPath(); ctx.moveTo(p.x - 6 * s, y0 - 10 * s); ctx.lineTo(p.x + 6 * s, y0 - 10 * s); ctx.lineTo(p.x + 8.5 * s, y0 - 3 * s); ctx.lineTo(p.x - 8.5 * s, y0 - 3 * s); ctx.fill();
+      }
       const swing = a.walking ? Math.sin(t * 10 + a.phase) * 4 * s : 0, type = a.working && seated ? Math.sin(t * 18 + a.phase) * 1.2 * s : 0;
       ctx.strokeStyle = hov ? shade(body, 1.15) : shade(body, 0.85); ctx.lineWidth = 3.2 * s; ctx.lineCap = "round";
       ctx.beginPath(); ctx.moveTo(p.x - 6.5 * s, y0 - 23 * s); ctx.lineTo(p.x - 8 * s - swing, y0 - 13 * s + type); ctx.stroke();
@@ -291,6 +298,8 @@ export default function Office({ data, onOpenDept, onShowFloor }) {
       ctx.beginPath(); ctx.arc(hx, hy - 1.2 * s, 7.6 * s, Math.PI * 1.0, Math.PI * 2.0); ctx.fill();
       if (a.style === "bob") { ctx.fillRect(hx - 7.8 * s, hy - 1.5 * s, 2.6 * s, 7 * s); ctx.fillRect(hx + 5.2 * s, hy - 1.5 * s, 2.6 * s, 7 * s); }
       if (a.style === "bun") { ctx.beginPath(); ctx.arc(hx + 2 * s, hy - 9 * s, 3.4 * s, 0, 7); ctx.fill(); }
+      if (a.style === "pony") { ctx.beginPath(); ctx.ellipse(hx - (a.face || 1) * 8.5 * s, hy + 1 * s, 2.6 * s, 6 * s, 0.3, 0, 7); ctx.fill(); }
+      if (a.style === "side") { ctx.beginPath(); ctx.ellipse(hx + 3 * s, hy - 7.2 * s, 4.5 * s, 2 * s, -0.2, 0, 7); ctx.fill(); }
       if (a.style === "spiky") { for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(hx + i * 3 * s - 2 * s, hy - 6 * s); ctx.lineTo(hx + i * 3 * s, hy - 11 * s); ctx.lineTo(hx + i * 3 * s + 2 * s, hy - 6 * s); ctx.fill(); } }
       if (!(seated && a.act === "desk")) {
         const f = (a.face || 1) * 1.4 * s;

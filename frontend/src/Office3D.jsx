@@ -152,7 +152,7 @@ export default function Office3D({ data, mode = "3d", theme = "wood", onShowFloo
 
   function addAvatar(name) {
     const m = S.info[name];
-    const a = makeAvatar(name, m.dept, !!m.boss);
+    const a = makeAvatar(name, m.dept, !!m.boss, m.gender || "");
     S.scene.add(a);
     const st = { name, obj: a, path: [], act: "seat", wait: 8 + (hash(name) % 40), t: (hash(name) % 100) / 10, kind: "sit" };
     S.avatars[name] = st; return st;

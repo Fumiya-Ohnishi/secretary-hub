@@ -222,7 +222,7 @@ function DeptDetail({ dept, members, data, onBack, notify, onSay }) {
         <div className="card-head"><h3>社員と今の状況</h3></div>
         {members.map((m) => (
           <div key={m.name} className={`dd-member ${m.boss ? "boss" : ""}`}>
-            <span className={`avatar ${m.boss ? "boss" : ""}`} title={m.gender}>{(m.pname || m.title).slice(0, 1)}</span>
+            <span className={`avatar ${m.boss ? "boss" : ""} ${m.gender === "女性" ? "g-f" : m.gender === "男性" ? "g-m" : ""}`} title={m.gender}>{(m.pname || m.title).slice(0, 1)}</span>
             <div className="om-text">
               <div><strong>{m.pname ? `${m.pname} ・ ${m.title}` : m.title}</strong>{m.gender && <span className="muted small">({m.gender})</span>}{m.boss && <span className="muted small">(上司)</span>} <span className="muted small">{m.name}{m.model ? ` ・ ${m.model}` : ""}</span></div>
               <div className="muted small">{m.description.replace(`${dept}の${m.title}。`, "")}</div>
@@ -356,7 +356,7 @@ export function OrgChart({ onSay, notify, onOpenLibrary }) {
                 const st = data.members[m.name];
                 return (
                   <div key={m.name} className={`org-member ${m.boss ? "boss" : ""}`}>
-                    <span className={`avatar ${st?.state === "working" ? "on" : ""} ${m.boss ? "boss" : ""}`} title={m.gender}>{(m.pname || m.title).slice(0, 1)}</span>
+                    <span className={`avatar ${st?.state === "working" ? "on" : ""} ${m.boss ? "boss" : ""} ${m.gender === "女性" ? "g-f" : m.gender === "男性" ? "g-m" : ""}`} title={m.gender}>{(m.pname || m.title).slice(0, 1)}</span>
                     <div className="om-text">
                       <div>{m.pname && <strong className="om-name">{m.pname}</strong>}{m.title}{m.boss && <span className="muted small">(上司)</span>}</div>
                       {m.persona && <div className="muted small">{m.persona}</div>}

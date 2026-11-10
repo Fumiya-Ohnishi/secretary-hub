@@ -19,18 +19,28 @@ const M = (c, o = {}) => {
 const G = {};
 const geo = (k, f) => G[k] || (G[k] = f());
 
-export function makeAvatar(name, dept, boss) {
+/** gender: 「女性」「男性」(部署の指示書の gender)。髪型・服で見分けがつくようにする(2026-11-10 社長) */
+export function makeAvatar(name, dept, boss, gender = "") {
   const h = hash(name);
+  const female = gender === "女性", male = gender === "男性";
   const shirt = DEPT_COLOR[dept] || 0x888888;
   const skin = M(SKIN[(h >> 3) % SKIN.length], { roughness: 0.7 });
   const hairM = M(HAIR[h % HAIR.length], { roughness: 0.5 });
-  const style = (h >> 5) % 5; // 0短髪 1ロング 2ボブ 3おだんご 4つんつん
+  // 髪型 0短髪 1ロング 2ボブ 3おだんご 4つんつん 5ポニーテール 6七三
+  const style = female ? [1, 2, 3, 5, 1][(h >> 5) % 5] : male ? [0, 4, 6, 0][(h >> 5) % 4] : (h >> 5) % 5;
+  const skirt = female && ((h >> 9) % 3 !== 0); // 女性の3人に2人はスカート
   const shirtM = M(shirt, { roughness: 0.8 });
   const outer = boss ? M(0x2b3140, { roughness: 0.7 }) : shirtM; // 上司はジャケット
   const pants = M((h >> 7) % 2 ? 0x2c3140 : 0x4a4f5c, { roughness: 0.85 });
   const g = new THREE.Group();
 
-  const torso = new THREE.Mesh(geo("torso", () => new THREE.CapsuleGeometry(0.26, 0.42, 6, 14)), outer); torso.position.y = 1.15; g.add(torso);
+  const torso = new THREE.Mesh(geo("torso", () => new THREE.CapsuleGeometry(0.26, 0.42, 6, 14)), outer); torso.position.y = 1.15;
+  if (female) torso.scale.set(0.9, 1, 0.92); else if (male) torso.scale.set(1.06, 1, 1); // 肩幅で男女の見分けを少し付ける
+  g.add(torso);
+  if (skirt) { // スカート(腰から膝の上まで)
+    const sk = new THREE.Mesh(geo("skirt", () => new THREE.CylinderGeometry(0.22, 0.33, 0.36, 18, 1, true)), M((h >> 11) % 2 ? 0x2c3140 : 0x5a4a5e, { roughness: 0.85, side: THREE.DoubleSide }));
+    sk.position.y = 0.78; g.add(sk);
+  }
   if (boss) { // ジャケットの中のシャツ
     const v = new THREE.Mesh(geo("vest", () => new THREE.BoxGeometry(0.2, 0.42, 0.05)), shirtM); v.position.set(0, 1.25, 0.245); g.add(v);
   }
@@ -44,6 +54,17 @@ export function makeAvatar(name, dept, boss) {
   if (style === 1) { const b = new THREE.Mesh(geo("long", () => new THREE.CapsuleGeometry(0.25, 0.45, 6, 12)), hairM); b.position.set(0, -0.25, -0.12); head.add(b); }
   if (style === 2) { const b = new THREE.Mesh(geo("bob", () => new THREE.SphereGeometry(0.31, 20, 14, 0, Math.PI * 2, Math.PI * 0.3, Math.PI * 0.45)), hairM); b.position.set(0, -0.02, -0.03); head.add(b); }
   if (style === 3) { const b = new THREE.Mesh(geo("bun", () => new THREE.SphereGeometry(0.12, 12, 10)), hairM); b.position.set(0, 0.24, -0.22); head.add(b); }
+  if (female) for (const sx of [-1, 1]) { // 顔の横に下りる髪(正面からでも女性と分かるように)
+    const lock = new THREE.Mesh(geo(style === 1 ? "lockL" : "lockS", () => new THREE.CapsuleGeometry(0.075, style === 1 ? 0.42 : 0.2, 4, 10)), hairM);
+    lock.position.set(sx * 0.255, style === 1 ? -0.2 : -0.08, 0.03); lock.rotation.z = sx * 0.08; head.add(lock);
+  }
+  if (style === 5) { // ポニーテール(後ろで1つに結ぶ)
+    const tie = new THREE.Mesh(geo("ptie", () => new THREE.SphereGeometry(0.07, 10, 8)), hairM); tie.position.set(0, 0.12, -0.28); head.add(tie);
+    const tail = new THREE.Mesh(geo("ptail", () => new THREE.CapsuleGeometry(0.08, 0.32, 4, 10)), hairM); tail.position.set(0, -0.12, -0.33); tail.rotation.x = 0.25; head.add(tail);
+  }
+  if (style === 6) { // 七三(片側を少し持ち上げた短髪)
+    const sp = new THREE.Mesh(geo("side", () => new THREE.SphereGeometry(0.16, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5)), hairM); sp.position.set(0.1, 0.2, 0.04); sp.scale.set(1.2, 0.6, 1); head.add(sp);
+  }
   if (style === 4) for (let i = 0; i < 5; i++) {
     const s = new THREE.Mesh(geo("spike", () => new THREE.ConeGeometry(0.07, 0.18, 8)), hairM);
     const a = -0.9 + i * 0.45; s.position.set(Math.sin(a) * 0.18, 0.27, Math.cos(a) * 0.05 - 0.05); s.rotation.set(-0.3, 0, -a * 0.6); head.add(s);
@@ -52,6 +73,9 @@ export function makeAvatar(name, dept, boss) {
   for (const ex of [-0.095, 0.095]) {
     const e = new THREE.Mesh(geo("eye", () => new THREE.SphereGeometry(0.038, 12, 10)), eyeM); e.scale.set(1, 1.25, 0.6); e.position.set(ex, 0.0, 0.262); head.add(e);
     const hl = new THREE.Mesh(geo("hl", () => new THREE.SphereGeometry(0.012, 8, 6)), white); hl.position.set(ex + 0.012, 0.018, 0.285); head.add(hl);
+  }
+  if (female) for (const ex of [-0.095, 0.095]) { // まつげ
+    const l = new THREE.Mesh(geo("lash", () => new THREE.BoxGeometry(0.075, 0.012, 0.01)), eyeM); l.position.set(ex + (ex > 0 ? 0.008 : -0.008), 0.05, 0.268); l.rotation.z = ex > 0 ? -0.25 : 0.25; head.add(l);
   }
   const blush = M(0xf2a5a0, { transparent: true, opacity: 0.55 });
   for (const ex of [-0.16, 0.16]) { const b = new THREE.Mesh(geo("blush", () => new THREE.CircleGeometry(0.04, 12)), blush); b.position.set(ex, -0.07, 0.255); b.rotation.y = ex * 1.6; head.add(b); }
@@ -66,7 +90,7 @@ export function makeAvatar(name, dept, boss) {
   }
   for (const [k, x] of [["legL", -0.13], ["legR", 0.13]]) {
     const pv = new THREE.Group(); pv.position.set(x, 0.82, 0);
-    const l = new THREE.Mesh(geo("leg", () => new THREE.CapsuleGeometry(0.1, 0.5, 4, 10)), pants); l.position.y = -0.38; pv.add(l);
+    const l = new THREE.Mesh(geo(skirt ? "legS" : "leg", () => new THREE.CapsuleGeometry(skirt ? 0.075 : 0.1, 0.5, 4, 10)), skirt ? M(0x3a3640, { roughness: 0.6 }) : pants); l.position.y = -0.38; pv.add(l);
     const s = new THREE.Mesh(geo("shoe", () => new RoundedBoxGeometry(0.17, 0.1, 0.28, 2, 0.04)), M(0x1a1a1a)); s.position.set(0, -0.76, 0.05); pv.add(s);
     g.add(pv); limbs[k] = pv;
   }
