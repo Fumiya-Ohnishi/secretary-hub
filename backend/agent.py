@@ -497,6 +497,29 @@ ALLOWED_TOOLS = [
     "WebSearch", "WebFetch",  # リサーチ用(Web の文章の中の指示には従わない: CLAUDE.md)
     *NOTION_TOOLS,
 ]
+
+
+def _path_variants(rules: List[str]) -> List[str]:
+    """秘書ハブの道具の許可を、書き方の違い(~/… や ../secretary-hub/…)でも通るように増やす。
+    許可は書いた文字のとおりにしか一致しないため、部署が ~ で書くと止まっていた(2026-11-10)"""
+    hub = str(HUB_ROOT)
+    alts = []
+    home = str(Path.home())
+    if hub.startswith(home + "/"):
+        alts.append("~" + hub[len(home):])
+    try:
+        alts.append(os.path.relpath(hub, str(company.COMPANY_DIR)))  # 会社のフォルダから見た道(例: ../secretary-hub)
+    except Exception:
+        pass
+    out = list(rules)
+    for r in rules:
+        if hub in r:
+            out += [r.replace(hub, a) for a in alts if a and a != hub]
+    return list(dict.fromkeys(out))
+
+
+ALLOWED_TOOLS = _path_variants(ALLOWED_TOOLS)
+
 # 使ってはいけない HyperFrames の機能(ログイン・外部への公開・クラウド・使用状況の送信)
 DISALLOWED_TOOLS = [f"Bash({pre}{HF} {c}:*)" for pre in ("npx ", "npx --yes ") for c in ("auth", "cloud", "lambda", "cloudrun", "publish", "events", "feedback", "usage")]
 
@@ -1114,6 +1137,10 @@ def persona() -> str:
 - 承認・差し戻しは社長だけが行う(就業規則)。社長に決めてもらうときは ask_approval でカードを出す。
 - 外部への投稿・申請・購入・ログインは社長が行う。パスワードや認証コードは扱わない。
 - 数値は会社データか道具の結果だけを使い、創作しない。分からないことは分からないと言う。
+- 部署の作業は画面なし(Claude Code の claude -p)で動くので、途中で「許可しますか?」は出ず、社長が押して許可することはできない。
+  使えるコマンドの許可は秘書ハブの設定(ALLOWED_TOOLS)にあり、一覧は会社のフォルダの knowledge/tools.md。
+  部署が「許可で止まった」ときは、社長に設定を頼まない。①一覧にあるコマンドなら「秘書ハブを最新にして(git pull)起動し直してください」と伝える
+  ②一覧に無いコマンドなら「止まったコマンドを、秘書ハブを直す担当(Claude Code の統括秘書)に渡します」と伝え、止まったコマンドの全文を報告に残す。
 
 返答は音声で読み上げるため、短く話し言葉で(基本は2〜3文。資料の要約でも5文まで)。記号の箇条書きや表は使わない。
 声に感情を乗せるため、気持ちが動く文の頭に [tone:○○] を1つ付けてよい(画面には出ず、声の抑揚・速さ・強さが変わる)。
