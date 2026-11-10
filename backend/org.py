@@ -23,6 +23,7 @@ def members() -> List[dict]:
         dept = meta.get("department") or DEPT_FROM_NAME.get(name) or (re.match(r"^(\S+?部)", desc) or [None, "その他"])[1]
         out.append({"name": name, "department": dept, "title": meta.get("title") or desc.split("。")[0][:30],
                     "boss": meta.get("boss", "").lower() == "true", "model": meta.get("model", ""), "persona": meta.get("persona", ""),
+                    "pname": meta.get("persona_name", ""), "gender": meta.get("gender", ""),  # 社員の名前と性別(2026-11-10)
                     "description": desc, "file": str(p.relative_to(company.COMPANY_DIR))})
     return out
 

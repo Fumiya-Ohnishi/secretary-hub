@@ -1084,3 +1084,7 @@ select.status-sel { color-scheme: dark; }
 .pr-form input { width: 96px; }
 .pr-form input[type="date"] { width: 150px; }
 .xp-results { list-style: none; }
+
+.om-name { margin-right: 6px; }
+.avatar.g-f { background: rgba(226,102,143,.22); color: #ffb3c9; }
+.avatar.g-m { background: rgba(63,127,196,.25); color: #a9cdf5; }
