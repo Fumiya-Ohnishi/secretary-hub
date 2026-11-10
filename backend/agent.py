@@ -192,6 +192,7 @@ def _job_prompt(job: dict) -> str:
               f"点検の拡大は `python3 {HUB_ROOT / 'tools' / 'image' / 'zoom.py'} <画像> <x> <y> <幅> <高さ> 3`(寸法は `... --size <画像>`)。"
               "ファイルを読む操作(cat・grep・head・ls・git log など)はパイプでつないでよい。cd・ループ・python3 -c は止まるので使わない。"
               "一時ファイルは /tmp ではなく content/output/_work/ に置く(Write で書けて、git に入らない)。"
+              "秘書ハブ(secretary-hub)の道具やプログラムは読むだけ。書き換えない。道具の不具合や直してほしい点は、報告に「どの道具の・何が・どうなった(出力の全文)」を書く(統括秘書が直す)。"
               "`render_cover.mjs` など別の名前のスクリプトは動かせない",
               f"- 書き出し: カルーセルは `node {WEEK_RENDER} YYYY-WW <html> content/output/YYYY-WW <接頭辞>`(週のフォルダの render.mjs を動かす入口。実録の型)か "
               "`node tools/render/render_carousel.mjs <JSON> content/output/YYYY-WW/`。"
@@ -532,6 +533,9 @@ ALLOWED_TOOLS = _path_variants(ALLOWED_TOOLS)
 
 # 使ってはいけない HyperFrames の機能(ログイン・外部への公開・クラウド・使用状況の送信)
 DISALLOWED_TOOLS = [f"Bash({pre}{HF} {c}:*)" for pre in ("npx ", "npx --yes ") for c in ("auth", "cloud", "lambda", "cloudrun", "publish", "events", "feedback", "usage")]
+# 秘書ハブ(道具・プログラム)は部署から読むだけ。書き換えると社長の git pull が止まる(2026-11-10 voice_check.py が書き換えられていた)。
+# 直したい点は報告に書けば、統括秘書(Claude Code)が直す。絶対パスの許可は「//」で始める書き方(Claude Code で確認)
+DISALLOWED_TOOLS += [f"{t}(/{HUB_ROOT}/**)" for t in ("Edit", "Write", "MultiEdit", "NotebookEdit")]
 
 
 def _job_env() -> dict:

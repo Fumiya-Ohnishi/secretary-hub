@@ -57,11 +57,15 @@ def heard_text(segs) -> str:
 COUNTERS = ["ひとつ", "ふたつ", "みっつ", "よっつ", "いつつ", "むっつ", "ななつ", "やっつ", "ここのつ"]
 KANJI_NUM = "一二三四五六七八九"
 WORDS = (("AI", "えーあい"), ("ＡＩ", "えーあい"), ("Claude", "くろーど"), ("ChatGPT", "ちゃっとじーぴーてぃー"))
+LETTERS = {"A": "えー", "B": "びー", "C": "しー", "D": "でぃー"}  # 1文字の A・B(「AかBか」)。英単語の中の字は変えない(2026-11-10 部署の直しを取り込み)
 
 
 def reading(text: str, kks) -> str:
     for w, r in WORDS:  # 英字の言葉は読みにそろえる(台本は「エーアイ」、聞き取りは「AI」のように分かれるため)
         text = text.replace(w, r)
+    text = re.sub(r"(?<![A-Za-z])([A-D])(?![A-Za-z])", lambda m: LETTERS[m.group(1)], text)
+    # 数字の書き方(21:00/21時・3.6・10件)と「この後/消した後」(のち と読まれる)をそろえる(2026-11-10 部署の直しを取り込み)
+    text = re.sub(r"(この|その|あの|た|の)後", r"\1あと", norm_num(text))
     text = re.sub(r"[\s、。,.!?！？「」『』…・〜ー\-*()()]", "", text)
     for i, k in enumerate(COUNTERS):  # 1つ〜9つ・一つ〜九つ は「ひとつ」〜「ここのつ」
         text = text.replace(f"{i + 1}つ", k).replace(f"{KANJI_NUM[i]}つ", k)
@@ -150,22 +154,75 @@ def check_reel(spec_path: Path, spec: dict, given: str, kks, WhisperModel) -> in
     sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
     ratio = sm.ratio()
     cut = not tail_silent(video)
-    ok = ratio >= PASS_RATIO and not cut
-    print(f"{spec_path.name}({video.name}): {'合格' if ok else '要確認'}(読みの一致 {ratio:.1%}{'・最後が切れている' if cut else ''})")
+    # 行ごとに判定する(2026-11-10 部署の直しを取り込み)。行の聞こえた部分が、speech の読みか text(画面の字)の読みの
+    # どちらかと完全に一致すれば、その行は合格。一致の基準(1文字も違わない)は変えない
+    texts = [(l.get("text") or l.get("speech") or "") for l in spec.get("lines", [])]
+    rows, pos = [], 0
+    for l in lines:
+        r = reading(l, kks); rows.append((pos, pos + len(r))); pos += len(r)
+    ops = sm.get_opcodes()
+
+    def to_b(p: int) -> int:  # 台本の読みの位置 → 聞こえた読みの位置
+        for op, i1, i2, j1, j2 in ops:
+            if i1 <= p < i2 or (p == i2 == len(a)):
+                return j1 + (p - i1 if op == "equal" else round((p - i1) * (j2 - j1) / max(1, i2 - i1)))
+        return len(b)
+
+    bad_rows = []
+    for i, (s0, e0) in enumerate(rows):
+        hb = b[to_b(s0):to_b(e0) if e0 < len(a) else len(b)]
+        cands = {reading(lines[i], kks), reading(texts[i], kks)}
+        if phon(hb) in {phon(c) for c in cands}:
+            continue
+        best = max(cands, key=lambda c: difflib.SequenceMatcher(None, c, hb, autojunk=False).ratio())
+        bad_rows.append((i, best, hb))
+    ok = not bad_rows and not cut
+    print(f"{spec_path.name}({video.name}): {'合格' if ok else '要確認'}(全体の読みの一致 {ratio:.1%}・"
+          f"行ごと {len(rows) - len(bad_rows)}/{len(rows)} 行一致{'・最後が切れている' if cut else ''})")
     print(f"  聞こえた: {heard}")
-    if ratio < 1:
-        # どの行のどこが違うかを、台本の行ごとに示す
-        bounds, pos = [], 0
-        for i, l in enumerate(lines):
-            r = reading(l, kks); bounds.append((pos, pos + len(r), i)); pos += len(r)
-        for op, i1, i2, j1, j2 in sm.get_opcodes():
-            if op == "equal":
-                continue
-            row = next((n for s0, e0, n in bounds if s0 <= i1 < e0 or (i1 == i2 and s0 <= i1 <= e0)), None)
-            where = f"{row + 1}行目「{lines[row][:24]}」" if row is not None else "末尾"
-            print(f"  ちがい({where}): 「{a[i1:i2]}」→「{b[j1:j2]}」")
+    for i, best, hb in bad_rows:
+        print(f"  ちがい({i + 1}行目「{texts[i][:30]}」):")
+        for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, best, hb, autojunk=False).get_opcodes():
+            if op != "equal":
+                print(f"      「{best[i1:i2]}」→「{hb[j1:j2]}」(台本の読み …{best[max(0, i1 - 6):i2 + 6]}… / 聞こえた …{hb[max(0, j1 - 6):j2 + 6]}…)")
     print("音声チェック: " + ("合格" if ok else "要確認(聞いて確かめ、読み間違いなら speech を直して書き出し直す)"))
     return 0 if ok else 1
+
+
+O_ROW, E_ROW = set("おこごそぞとどのほぼぽもよろょ"), set("えけげせぜてでねへべぺめれ")
+
+
+def phon(s: str) -> str:
+    """同じ音に聞こえる長音の書き方をそろえる(とおり/とうり・せんせい/せんせえ)。比べるときだけ使う"""
+    out = []
+    for ch in s:
+        if out and ch == "う" and out[-1] in O_ROW:
+            ch = "お"
+        elif out and ch == "い" and out[-1] in E_ROW:
+            ch = "え"
+        out.append(ch)
+    return "".join(out)
+
+
+KNUM = "〇一二三四五六七八九"
+
+
+def _kanji_int(n: int) -> str:
+    if n == 0:
+        return "〇"
+    out = ""
+    for unit, ch in ((1000, "千"), (100, "百"), (10, "十")):
+        q, n = divmod(n, unit)
+        if q:
+            out += ("" if q == 1 else KNUM[q]) + ch
+    return out + (KNUM[n] if n else "")
+
+
+def norm_num(text: str) -> str:
+    """数字の書き方をそろえる(21:00→二十一時・3.6→三点六・10件→十件)。読みに直す前に使う"""
+    text = re.sub(r"(\d+):00", r"\1時", text)
+    text = re.sub(r"(\d+)\.(\d+)", lambda m: _kanji_int(int(m.group(1))) + "点" + "".join(KNUM[int(d)] for d in m.group(2)), text)
+    return re.sub(r"\d{1,4}", lambda m: _kanji_int(int(m.group(0))), text)
 
 
 if __name__ == "__main__":
