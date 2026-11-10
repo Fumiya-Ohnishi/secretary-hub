@@ -11,6 +11,7 @@
 //   credit … 声を使うときは必須「VOICEVOX:冥鳴ひまり」(場面側で表示する)
 //   silent_ok … true なら VOICEVOX が無くても声なしで書き出す(テロップだけで成立する台本に限る)
 import { chromium } from "playwright-core";
+import { makeWork } from "./tmpwork.mjs";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, mkdtempSync } from "fs";
 import { resolve, dirname, join } from "path";
 import { tmpdir } from "os";
@@ -74,7 +75,7 @@ for (let f = 0; f < frames; f++) {
 const tl = { fps: FPS, duration, gap: GAP, lines, levels, voiced: !!voices };
 console.log(`台本: ${spec.lines.length}行 / ${duration.toFixed(1)}秒 / ${frames}コマ / 声: ${voices ? "あり" : "なし"}`);
 
-const work = mkdtempSync(join(tmpdir(), "rec-reel-"));
+const work = makeWork("rec-reel-"); // 終わったら自動で消す(tmpwork.mjs)
 mkdirSync(join(work, "scene")); mkdirSync(join(work, "avatar"));
 const chromePaths = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Chromium.app/Contents/MacOS/Chromium", "/opt/pw-browsers/chromium", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean);

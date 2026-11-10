@@ -5,6 +5,7 @@
 """
 import asyncio
 import datetime
+import errno
 import json
 import os
 import re
@@ -68,16 +69,21 @@ def add_usage(resp):
     u = getattr(resp, "usage", None)
     if not u:
         return
-    inp = (getattr(u, "input_tokens", 0) or 0) + (getattr(u, "cache_read_input_tokens", 0) or 0) \
-        + (getattr(u, "cache_creation_input_tokens", 0) or 0)
+    fresh = getattr(u, "input_tokens", 0) or 0
+    cache_read = getattr(u, "cache_read_input_tokens", 0) or 0
+    cache_write = getattr(u, "cache_creation_input_tokens", 0) or 0
+    inp = fresh + cache_read + cache_write
     out = getattr(u, "output_tokens", 0) or 0
     pin, pout = PRICES.get(MODEL, PRICES["claude-opus-5-5"])
     month = datetime.date.today().strftime("%Y-%m")
     data = _load_json(USAGE_FILE, {})
     m = data.setdefault(month, {"input": 0, "output": 0, "usd": 0.0, "calls": 0})
     m["input"] += inp
+    m["cached"] = m.get("cached", 0) + cache_read  # 使い回せた入力(料金は1割)
     m["output"] += out
-    m["usd"] = round(m["usd"] + inp / 1e6 * pin + out / 1e6 * pout, 4)
+    # 料金: 使い回しの読み出しは1割、使い回し用の書き込みは1.25倍(5分の保存)
+    cost_in = (fresh + cache_read * 0.1 + cache_write * 1.25) / 1e6 * pin
+    m["usd"] = round(m["usd"] + cost_in + out / 1e6 * pout, 4)
     m["calls"] += 1
     _save_json(USAGE_FILE, data)
 
@@ -484,6 +490,18 @@ def _extra_dirs() -> List[str]:
     return out
 
 
+def _stop_proc(proc):
+    """作業(claude)を止める。まず穏やかに止め、5秒で止まらなければ強制終了"""
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
 def _run_claude_streaming(job: dict, prompt: str):
     """Claude Code を実行し、誰(どのサブエージェント)が何をしているかを job["activity"] に逐次記録する"""
     job.setdefault("activity", [])
@@ -495,6 +513,7 @@ def _run_claude_streaming(job: dict, prompt: str):
                             text=True, encoding="utf-8", errors="replace", env=_job_env())
     limit_min = _job_timeout_min()
     timed_out = threading.Event()
+    disk_full = threading.Event()
 
     def _kill():
         timed_out.set()
@@ -535,19 +554,33 @@ def _run_claude_streaming(job: dict, prompt: str):
                 is_error = bool(ev.get("is_error"))
             now = datetime.datetime.now().timestamp()
             if now - last_save > 2:
-                _save_jobs()
                 last_save = now
+                try:
+                    _save_jobs()
+                except OSError as e:
+                    # 状態を保存できなくても作業は続ける。ただしディスクが満杯なら作業も書けないので止める
+                    if e.errno == errno.ENOSPC:
+                        disk_full.set()
+                        _stop_proc(proc)
+                        break
         proc.wait()
     finally:
         timer.cancel()
+        # どんな理由でここに来ても、作業(claude)を裏で動かしたままにしない(2026-11-10: 二重に動いた)
+        if proc.poll() is None:
+            _stop_proc(proc)
     err = (proc.stderr.read() or "").strip() if proc.stderr else ""
     for act in job["activity"]:
         if act["status"] == "running":
             act.update(status="error" if proc.returncode else "done", finished=datetime.datetime.now().isoformat(timespec="seconds"))
     out = result_text if result_text is not None else "\n".join(plain) or err
-    ok = proc.returncode == 0 and not is_error and not timed_out.is_set()
+    ok = proc.returncode == 0 and not is_error and not timed_out.is_set() and not disk_full.is_set()
     job.update(status="done" if ok else "error", output=(out or "")[-6000:] + ("" if ok or not err else f"\n{err[-1000:]}"))
-    if timed_out.is_set():
+    if disk_full.is_set():
+        job["output"] = (job["output"] + "\n\n" if job["output"].strip() else "") + \
+            "【秘書より】Mac のディスクがいっぱいになったので、作業を止めました(作業は裏で動き続けていません)。" \
+            "容量を空けてから、同じ作業をもう一度頼んでください。途中までの成果物は会社のフォルダに残っています。"
+    elif timed_out.is_set():
         job["output"] = (job["output"] + "\n\n" if job["output"].strip() else "") + _timeout_note(job, limit_min)
     elif not ok:
         if not (out or "").strip() and not err:  # 中身が空のまま止まったとき、途中経過を残す
@@ -1282,7 +1315,9 @@ async def chat_stream(message: str, history: List[dict]):
     """会話の返事を少しずつ返す。{"t": "text", "v": 文字} を何度か → 最後に {"t": "done", reply, mood, actions}"""
     actions: List[dict] = []
     data = await company.summary()
-    system = persona() + "\n\n" + context_text(data)
+    # 毎回同じ部分(秘書の人格・道具の一覧)は使い回す(料金が1割になる)。会社の状況は毎回変わるので後ろに置く
+    system = [{"type": "text", "text": persona(), "cache_control": {"type": "ephemeral"}},
+              {"type": "text", "text": context_text(data)}]
     messages = _messages(history, message)
     spoken, error = "", None
     mf = _MoodFilter()
@@ -1342,7 +1377,7 @@ async def chat_stream(message: str, history: List[dict]):
             spoken += notice
             yield {"t": "text", "v": notice}
             try:
-                reply = await _cli_reply(system, messages)
+                reply = await _cli_reply("\n\n".join(b["text"] for b in system), messages)
                 out = mf.feed(reply)
                 spoken += out
                 yield {"t": "text", "v": out}

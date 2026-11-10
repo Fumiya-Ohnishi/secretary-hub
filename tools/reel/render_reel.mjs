@@ -7,6 +7,7 @@
 // 必要なもの: Google Chrome、ffmpeg(brew install ffmpeg)、このフォルダで一度だけ `npm install`
 // 台本の形式は ai-company/playbooks/reel_format.md
 import { chromium } from "playwright-core";
+import { makeWork } from "./tmpwork.mjs";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, mkdtempSync } from "fs";
 import { resolve, dirname, join, isAbsolute } from "path";
 import { tmpdir } from "os";
@@ -72,7 +73,7 @@ for (let f = 0; f < frames; f++) {
 }
 if (duration > 60) console.warn(`⚠ ${duration.toFixed(1)}秒あります(リールは30〜45秒が目安)`);
 
-const work = mkdtempSync(join(tmpdir(), "reel-"));
+const work = makeWork("reel-"); // 終わったら自動で消す(tmpwork.mjs)
 const wav = Buffer.alloc(44 + total * 2);
 wav.write("RIFF", 0); wav.writeUInt32LE(36 + total * 2, 4); wav.write("WAVE", 8); wav.write("fmt ", 12);
 wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(rate, 24);
