@@ -13,6 +13,7 @@ import base64
 import datetime
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -217,7 +218,10 @@ def make_media(job: dict) -> str:
 
 # ---------- 社外顧問(読むだけ。会議・品質の最終チェック・戦略の判断で「別の会社の目」の意見を出す) ----------
 ADVISOR_RULES = ("あなたは AI会社の「社外顧問(Codex)」です。当社のAI(Claude)とは別の会社のAIとして、当社の結論に流されず、"
-                 "違う角度の意見・見落とし・反対意見を出します。ファイルは読むだけで、書き換え・コマンド実行・外部アクセスはしません。"
+                 "違う角度の意見・見落とし・反対意見を出します。"
+                 "会社のフォルダ(今いる作業フォルダ)のファイルは、**読むためのコマンド(ls・cat・sed -n・head・rg・grep など)で自由に開いて読んでください**。"
+                 "読まずに意見を出したり、「読めない」と答えたりしないでください。書き換え・ファイルの作成・削除・外部へのアクセスはしません"
+                 "(この作業は読むだけの設定で動いています)。指定の資料が見つからないときは、ls で近い名前を探してから、無かったものだけ「見つからない」と書きます。"
                  "CLAUDE.md(就業規則)と strategy/concept.md(アカウントの軸)、knowledge/preferences.md の「確定」(社長の好み)を前提にします。"
                  "根拠(どのファイルのどこか)を添え、日本語で簡潔に。")
 
@@ -242,6 +246,10 @@ def opinion(task: str, limit_min: int = 15) -> str:
             text = (r.stdout or "").strip()[-6000:]
         if r.returncode != 0 and not text:
             raise RuntimeError((r.stderr or "")[-300:] or f"終了コード {r.returncode}")
+        if re.search(r"(読む|読み取る|読取)手段がな|資料を確認できな|ファイルを(読め|開け)な|指定資料は未読", text):
+            # 読めずに意見だけ出した、と分かるようにする(2026-11-10 社長: 顧問が資料を確認できていないのでは)
+            text = ("> ⚠ 秘書ハブより: 社外顧問は今回、会社のフォルダの資料を読めていません。以下は資料を見ていない意見です。"
+                    "続く場合は秘書ハブの Codex の設定を確認します。\n\n" + text)
         return text
     finally:
         try:
