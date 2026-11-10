@@ -1,11 +1,11 @@
-"""アカウントごとの管理(Instagram / X / Threads / note)。
+"""アカウントごとの管理(Instagram / X / Threads / note / TikTok / YouTube)。
 
 1つの媒体について、プロフィールURL・フォロワー数の推移・投稿ごとの数字・改善点・運用ルールをまとめて返す。
 - URL: ai-company/data/accounts.md
 - フォロワー: ai-company/data/followers.csv
-- 投稿ごとの数字: ai-company/data/insights_{ig,x,threads,note}.csv(列は data/README.md)
+- 投稿ごとの数字: ai-company/data/insights_{ig,x,threads,note,tiktok,youtube}.csv(列は data/README.md)
 - 改善点: ai-company/data/improvements.md(媒体ごとの見出しの下に箇条書き)+ 修正ログのうちその媒体の行
-- ルール: ai-company/playbooks/{instagram,x,threads,note}.md
+- ルール: ai-company/playbooks/{instagram,x,threads,note,tiktok,youtube}.md
 """
 import csv
 import datetime
@@ -22,13 +22,16 @@ INSIGHTS = {  # ファイル名と列(date の次から)。data/README.md と同
     "x": ("insights_x.csv", ["content_id", "impressions", "likes", "reposts", "replies", "follows"]),
     "threads": ("insights_threads.csv", ["content_id", "views", "likes", "replies", "follows"]),
     "note": ("insights_note.csv", ["metric", "value"]),
+    "tiktok": ("insights_tiktok.csv", ["content_id", "views", "likes", "comments", "shares", "saves", "follows"]),
+    "youtube": ("insights_youtube.csv", ["content_id", "views", "likes", "comments", "follows"]),
 }
 COLUMN_JA = {"content_id": "投稿ID", "format": "形式", "reach": "リーチ", "saves": "保存", "likes": "いいね", "comments": "コメント",
              "profile_visits": "プロフィール訪問", "follows": "フォロー増", "impressions": "表示", "reposts": "リポスト",
-             "replies": "返信", "views": "閲覧", "metric": "項目", "value": "値"}
+             "replies": "返信", "views": "再生", "shares": "シェア", "metric": "項目", "value": "値"}
 # 修正ログの「対象」から媒体を見分ける言葉
 KEYWORDS = {"instagram": ("Instagram", "インスタ", "リール", "カルーセル"), "x": ("X ", "X(", "Xの", "ツイート", "スレッド"),
-            "threads": ("Threads",), "note": ("note",)}
+            "threads": ("Threads",), "note": ("note",),
+            "tiktok": ("TikTok", "ティックトック"), "youtube": ("YouTube", "ショート", "Shorts")}
 
 
 def _data(name: str) -> Path:

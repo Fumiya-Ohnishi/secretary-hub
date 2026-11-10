@@ -649,6 +649,8 @@ select.status-sel { color-scheme: dark; }
 .pf-threads { background: rgba(255,255,255,.1); color: var(--text); }
 .pf-x { background: rgba(29,155,240,.16); color: var(--info); }
 .pf-note { background: rgba(65,201,180,.16); color: #6fe0cc; }
+.pf-tiktok { background: rgba(163,91,214,.18); color: #d3a6f5; }
+.pf-youtube { background: rgba(255,0,51,.16); color: #ff8a9b; }
 .tp-time { font-size: 12px; color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tp-time.now { color: var(--warn); font-weight: 700; }
 .tp-time.late { color: var(--ng); font-weight: 700; }

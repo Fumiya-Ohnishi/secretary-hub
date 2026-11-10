@@ -36,7 +36,7 @@ function notionId(url) {
 }
 
 /* ---------------- 数字(グラフと記録) ---------------- */
-const PLATFORM_JA = { instagram: "Instagram", x: "X", threads: "Threads", note: "note" };
+const PLATFORM_JA = { instagram: "Instagram", x: "X", threads: "Threads", note: "note", tiktok: "TikTok", youtube: "YouTube" };
 const SOURCES = [["note_sales", "note販売"], ["amazon_affiliate", "Amazonアフィ"], ["other", "その他"]];
 
 function Metrics({ metrics, usage, onChanged, notify }) {

@@ -3,7 +3,7 @@ import { getContentWeeks, getAccount, addInsight, addImprovement, recordFollower
 import Content from "./Content.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
-const PLATFORMS = [["instagram", "Instagram"], ["x", "X"], ["threads", "Threads"], ["note", "note"]];
+const PLATFORMS = [["instagram", "Instagram"], ["x", "X"], ["threads", "Threads"], ["note", "note"], ["tiktok", "TikTok"], ["youtube", "YouTube"]];
 
 /** アカウントごとの管理。「全部」は4媒体の投稿をまとめて承認、各媒体は投稿・数字・改善点・ルールを1か所に */
 export default function Accounts({ week, setWeek, onChanged, notify, onSay }) {

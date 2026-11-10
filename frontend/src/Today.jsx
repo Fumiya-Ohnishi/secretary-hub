@@ -5,7 +5,7 @@ import { PostPreview } from "./Content.jsx";
 /* 「今日」画面: 社長が開いて10秒で、今日やること(投稿・判断)と昨日の成果が分かる */
 
 const fileUrl = (p) => `/api/content/file?path=${encodeURIComponent(p)}`;
-const PJA = { instagram: "Instagram", threads: "Threads", x: "X", note: "note" };
+const PJA = { instagram: "Instagram", threads: "Threads", x: "X", note: "note", tiktok: "TikTok", youtube: "YouTube" };
 const FMT = { reel: "リール", carousel: "カルーセル", story: "ストーリー", post: "投稿", thread: "スレッド", article: "記事" };
 const pad = (n) => String(n).padStart(2, "0");
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;

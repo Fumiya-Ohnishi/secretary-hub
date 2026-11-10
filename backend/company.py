@@ -168,8 +168,8 @@ def summary_text(data: dict) -> str:
 # ---------- 数字の記録(収益・フォロワー) ----------
 FOLLOWERS_CSV = COMPANY_DIR / "data" / "followers.csv"
 ACCOUNTS_MD = COMPANY_DIR / "data" / "accounts.md"
-PLATFORMS = ["instagram", "x", "threads", "note"]
-PLATFORM_JA = {"instagram": "Instagram", "x": "X", "threads": "Threads", "note": "note"}
+PLATFORMS = ["instagram", "x", "threads", "note", "tiktok", "youtube"]
+PLATFORM_JA = {"instagram": "Instagram", "x": "X", "threads": "Threads", "note": "note", "tiktok": "TikTok", "youtube": "YouTube"}
 REVENUE_SOURCES = ["note_sales", "amazon_affiliate", "other"]
 
 
