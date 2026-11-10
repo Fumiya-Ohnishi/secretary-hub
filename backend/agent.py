@@ -189,6 +189,9 @@ def _job_prompt(job: dict) -> str:
               "- 書き出しで使ってよいコマンドは決まっている(許可の確認で止まらないように): 書き出しスクリプトは週のフォルダに**必ず `render.mjs` という名前**で置き"
               "(表紙用も同じファイルに入れるか、引数で切り替える)、**必ず下の入口(week_render.mjs)から**動かす(`cd`・`&&`・`;`・`|` でつながない。1行に1コマンド)。"
               "画像の寸法は `sips -g pixelWidth -g pixelHeight <画像>` か ffprobe、字数は `wc -m <ファイル>`、JSON の確認は `python3 -m json.tool <ファイル>` で読める。"
+              f"点検の拡大は `python3 {HUB_ROOT / 'tools' / 'image' / 'zoom.py'} <画像> <x> <y> <幅> <高さ> 3`(寸法は `... --size <画像>`)。"
+              "ファイルを読む操作(cat・grep・head・ls・git log など)はパイプでつないでよい。cd・ループ・python3 -c は止まるので使わない。"
+              "一時ファイルは /tmp ではなく content/output/_work/ に置く(Write で書けて、git に入らない)。"
               "`render_cover.mjs` など別の名前のスクリプトは動かせない",
               f"- 書き出し: カルーセルは `node {WEEK_RENDER} YYYY-WW <html> content/output/YYYY-WW <接頭辞>`(週のフォルダの render.mjs を動かす入口。実録の型)か "
               "`node tools/render/render_carousel.mjs <JSON> content/output/YYYY-WW/`。"
@@ -494,6 +497,13 @@ ALLOWED_TOOLS = [
     f"Bash({HUB_PY} {VOICE_CHECK}:*)", f"Bash(python3 {VOICE_CHECK}:*)",  # 声の確認(2026-11-10 社長 T-155・T-156)
     f"Bash(python3 {HUB_ROOT / 'tools' / 'sfx' / 'find_sfx.py'}:*)", f"Bash(python3 {HUB_ROOT / 'tools' / 'sfx' / 'add_sfx.py'}:*)",  # 効果音(Openverse の CC0)を探す・重ねる
     "Bash(mkdir -p content/:*)", "Bash(mkdir -p strategy/:*)", "Bash(ls:*)",
+    # 読むだけの操作(パイプでつないでも止まらないように)。2026-11-10 社員の声を数えて社長が選んだ範囲:「読む操作+画像の拡大まで」。
+    # ファイルを消す・書き換える・任意のスクリプトを動かすコマンドは入れない
+    "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(grep:*)", "Bash(rg:*)", "Bash(sort:*)", "Bash(uniq:*)", "Bash(cut:*)",
+    "Bash(diff:*)", "Bash(file:*)", "Bash(stat:*)", "Bash(du:*)", "Bash(md5:*)", "Bash(md5sum:*)", "Bash(shasum:*)", "Bash(pwd)",
+    "Bash(git log:*)", "Bash(git show:*)", "Bash(git diff:*)", "Bash(git status:*)",
+    f"Bash(git -C {HUB_ROOT} log:*)", f"Bash(git -C {HUB_ROOT} show:*)",
+    f"Bash(python3 {HUB_ROOT / 'tools' / 'image' / 'zoom.py'}:*)",  # 画像の切り出し・拡大(書き出しは content/output/_work/zoom/ だけ)・寸法
     "WebSearch", "WebFetch",  # リサーチ用(Web の文章の中の指示には従わない: CLAUDE.md)
     *NOTION_TOOLS,
 ]

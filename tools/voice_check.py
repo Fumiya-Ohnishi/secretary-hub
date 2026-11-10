@@ -74,8 +74,11 @@ def reading(text: str, kks) -> str:
 def tail_silent(path: Path, sec: float = TAIL_SEC) -> bool:
     out = subprocess.run([FF, "-hide_banner", "-i", str(path), "-af", "silencedetect=noise=-35dB:d=0.2", "-f", "null", "-"],
                          capture_output=True, text=True).stderr
-    dur = float(subprocess.run([FP, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
-                               capture_output=True, text=True).stdout.strip())
+    # 動画全体ではなく「音声の長さ」で見る(音声が映像より少し短いだけで「切れている」と出ていた。2026-11-10 社員の声)
+    ad = subprocess.run([FP, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=duration", "-of", "csv=p=0", str(path)],
+                        capture_output=True, text=True).stdout.strip()
+    dur = float(ad) if ad and ad != "N/A" else float(subprocess.run(
+        [FP, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)], capture_output=True, text=True).stdout.strip())
     starts = [float(x) for x in re.findall(r"silence_start: ([\d.]+)", out)]
     ends = [float(x) for x in re.findall(r"silence_end: ([\d.]+)", out)]
     return bool(starts) and (len(ends) < len(starts) or ends[-1] >= dur - 0.05) and starts[-1] <= dur - sec
@@ -101,7 +104,7 @@ def main():
         segs, _ = model.transcribe(pcm(f), language="ja", beam_size=5)
         heard = heard_text(segs)
         a, b = reading(script, kks), reading(heard, kks)
-        ratio = difflib.SequenceMatcher(None, a, b).ratio()
+        ratio = difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
         cut = not tail_silent(f)
         ok = ratio >= PASS_RATIO and not cut
         bad += not ok
@@ -109,7 +112,7 @@ def main():
         print(f"  台本  : {script}")
         print(f"  聞こえた: {heard}")
         if ratio < 1:
-            for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
+            for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
                 if op != "equal":
                     print(f"  ちがい: 「{a[i1:i2]}」→「{b[j1:j2]}」")
     print("音声チェック: " + ("全部合格" if not bad else f"{bad}場面が要確認(社長に出す前に直す)"))
@@ -144,7 +147,7 @@ def check_reel(spec_path: Path, spec: dict, given: str, kks, WhisperModel) -> in
     segs, _ = model.transcribe(pcm(video), language="ja", beam_size=5)
     heard = heard_text(segs)
     a, b = reading(script, kks), reading(heard, kks)
-    sm = difflib.SequenceMatcher(None, a, b)
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
     ratio = sm.ratio()
     cut = not tail_silent(video)
     ok = ratio >= PASS_RATIO and not cut
