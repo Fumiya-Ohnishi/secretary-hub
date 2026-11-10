@@ -7,6 +7,7 @@
   または計画の形 {"sounds": {"ping": {"query": "notification", "title": "Notification Sound"}}, "cues": [{"t": 0.4, "sound": "ping", "vol": 0.3}]}
   (計画の形なら、まだ取り込んでいない音を Openverse から CC0 で自動で取り込む。find_sfx.py と同じ)
 - t = 鳴らし始める秒、vol = 音量(1.0 = 元の大きさ。声の邪魔をしないよう 0.2〜0.6 が目安)
+- dur = 長さ(秒。省略で音の長さのまま)。長い音は dur で切って最後を0.3秒で小さくする(セリフとセリフのすき間に収める)
 - 書き出したあと、声の確認(tools/voice_check.py)をもう一度回す(効果音でセリフが聞き取りにくくなっていないか)
 """
 import json
@@ -50,7 +51,11 @@ def main():
             sys.exit(f"効果音のファイルがありません: {f}")
         args += ["-i", str(f)]
         ms = int(float(c["t"]) * 1000)
-        parts.append(f"[{i}:a]aresample=48000,volume={float(c.get('vol', 0.4))},adelay={ms}|{ms}[s{i}]")
+        trim = ""
+        if c.get("dur"):
+            d = float(c["dur"])
+            trim = f"atrim=0:{d},afade=t=out:st={max(0.0, d - 0.3):.2f}:d=0.3,"
+        parts.append(f"[{i}:a]aresample=48000,{trim}volume={float(c.get('vol', 0.4))},adelay={ms}|{ms}[s{i}]")
         labels.append(f"[s{i}]")
     parts.append(f"{''.join(labels)}amix=inputs={len(labels)}:duration=first:normalize=0[a]")
     out.parent.mkdir(parents=True, exist_ok=True)
