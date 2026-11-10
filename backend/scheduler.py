@@ -295,12 +295,21 @@ def start_routines(now: Optional[datetime.datetime] = None) -> List[dict]:
 
 
 async def loop():
+    last_answer_check = 0.0
     while True:
         try:
             if settings()["auto"]:
                 start_routines()
         except Exception as e:
             print("定例の仕事でエラー:", e)
+        try:  # Notion で直接答えた確認に気づいて作業を再開する(5分ごと)
+            import time
+            import agent
+            if time.time() - last_answer_check > 300:
+                last_answer_check = time.time()
+                await agent.resume_answered_in_notion()
+        except Exception as e:
+            print("確認の答えの見回りでエラー:", e)
         try:
             s = settings()
             slot = _slot_due(datetime.datetime.now(), s["times"], s.get("last_slot", ""))

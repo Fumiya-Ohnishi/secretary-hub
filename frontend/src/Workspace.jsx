@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { createTask, patchTask, getDocs, getDoc, getWorklog, getDocTree, createJob, recordRevenue, recordFollowers, getOrg } from "./api.js";
+import { createTask, patchTask, getDocs, getDoc, getWorklog, getDocTree, createJob, recordRevenue, recordFollowers, getOrg, resumeTask } from "./api.js";
 import { Blocks } from "./DocView.jsx";
 import Md from "./Md.jsx";
 import Accounts from "./Accounts.jsx";
@@ -323,6 +323,11 @@ function Tasks({ summary, filter, setFilter, onApprove, onChanged, onOpenDoc, fo
                 {t.note ? <p>{t.note}</p> : <p className="muted">備考なし</p>}
                 <div className="row-actions">
                   {(t.status === "承認待ち" || t.status === "確認待ち") && <button className="btn primary sm" onClick={() => onApprove(t)}>{t.status === "確認待ち" ? "答える" : "承認 / 差し戻し"}</button>}
+                  {/^【(確認|社長判断)】/.test(t.title || "") && (t.status === "承認済み" || t.status === "差し戻し") &&
+                    <button className="btn sm" title="答えを確認を出した部署に伝えて、止まっていた作業の続きを頼む" onClick={async () => {
+                      try { const r = await resumeTask(t.key); notify(`${r.department}に ${r.task} の続きを頼みました`, "ok"); onChanged && onChanged(); }
+                      catch (e) { notify(e.message, "error"); }
+                    }}>部署に続きを頼む</button>}
                   {notionId(t.link) && <button className="btn sm" onClick={() => onOpenDoc(notionId(t.link))}>資料を開く</button>}
                   {t.link && !notionId(t.link) && <a className="btn sm" href={t.link} target="_blank" rel="noreferrer">資料</a>}
                   {t.url && <a className="btn ghost sm" href={t.url} target="_blank" rel="noreferrer">Notion で開く</a>}

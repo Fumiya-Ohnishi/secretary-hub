@@ -325,15 +325,43 @@ async def decide(key: str, body: Decision):
     """承認カードのボタン(または社長の「はい」)から呼ばれる。承認・差し戻しの確定はここだけ"""
     today = f"{datetime.date.today():%m/%d}"
     try:
+        try:  # 答える前の状態(確認待ちだったか)を見ておく
+            before = await company.find_task(key)
+        except Exception:
+            before = {}
         if body.decision == "approve":
             note = f"{today} 社長が秘書ハブで承認" + (f":{body.comment}" if body.comment else "")
-            return await company.update_task(key, status="承認済み", append_note=note)
-        if body.decision == "reject":
+            t = await company.update_task(key, status="承認済み", append_note=note)
+        elif body.decision == "reject":
             note = f"{today} 差し戻し:{body.comment or '(理由なし)'}"
             t = await company.update_task(key, status="差し戻し", append_note=note)
             asyncio.create_task(agent.on_correction(f"タスク {t['id']} {t['title'][:40]}", body.comment or "(理由なし)"))
-            return t
-        return err(ValueError("decision は approve か reject"), 400)
+        else:
+            return err(ValueError("decision は approve か reject"), 400)
+        # 確認タスクに答えたら、確認を出した部署に続きを頼む(2026-11-10)
+        if before.get("status") == "確認待ち" or agent.ASK_TITLE.match(t.get("title") or ""):
+            agent._resumed.add(t.get("key") or key)
+            job = agent.resume_after_answer({**before, **t, "prev_status": before.get("status", "")}, body.decision, body.comment or "")
+            if job:
+                t = {**t, "resumed_job": job["id"]}
+        return t
+    except Exception as e:
+        return err(e)
+
+
+@app.post("/api/tasks/{key}/resume")
+async def resume_task(key: str):
+    """答え済みの確認タスクについて、確認を出した部署に続きを頼む(この仕組みより前に答えた分・頼み直したいとき)"""
+    try:
+        t = await company.find_task(key)
+        if t.get("status") not in ("承認済み", "差し戻し"):
+            return err(ValueError("答え済み(承認済み・差し戻し)の確認タスクだけです"), 400)
+        last = [x.strip() for x in re.split(r"\s*/\s*", t.get("note") or "") if "社長" in x or "差し戻し" in x]
+        job = agent.resume_after_answer({**t, "prev_status": "確認待ち"}, "approve" if t["status"] == "承認済み" else "reject", last[-1] if last else "")
+        if not job:
+            return err(ValueError("どの部署の確認か分かりませんでした(備考に「出どころ: ○○の作業」が無い)。部署の作業タブから頼んでください"), 400)
+        agent._resumed.add(t["key"])
+        return {"task": t["id"], "job": job["id"], "department": job["department_full"]}
     except Exception as e:
         return err(e)
 
