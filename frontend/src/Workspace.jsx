@@ -9,7 +9,7 @@ import Today from "./Today.jsx";
 import Library from "./Library.jsx";
 import { stripTone } from "./speech.js";
 
-export const STATUSES = ["未着手", "進行中", "承認待ち", "承認済み", "完了", "差し戻し"];
+export const STATUSES = ["未着手", "進行中", "確認待ち", "承認待ち", "承認済み", "完了", "差し戻し"];
 const ASSIGNEES = ["秘書", "戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析", "経理", "広報", "人事", "Codex", "社長"];
 const DEPARTMENTS = ["戦略", "収益化", "企画", "ライティング", "デザイン", "画像", "映像", "SNS運用", "品質管理", "分析", "経理", "広報", "人事", "Codex"];
 const DEPT_FULL = { 戦略: "経営戦略部", 収益化: "収益化部", 企画: "企画編集部", ライティング: "ライティング部", デザイン: "デザイン部",
@@ -103,7 +103,7 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, n
   const rules = summary.rule_proposals || [];
   const { revenue, tasks } = summary;
   const contentWaiting = (summary.content_weeks || []).filter((w) => w.counts["承認待ち"]);
-  const approvals = tasks.filter((t) => t.status === "承認待ち");
+  const approvals = tasks.filter((t) => t.status === "確認待ち" || t.status === "承認待ち");
   const doing = tasks.filter((t) => ["進行中", "未着手", "差し戻し"].includes(t.status));
   const running = jobs.filter((j) => j.status === "running");
   const late = tasks.filter(overdue);
@@ -118,7 +118,7 @@ function Home({ summary, jobs, onApprove, onSay, onTab, onOpenTask, onChanged, n
           </div>
         </div>
         <button className={`kpi ${approvals.length + contentWaiting.length ? "attn" : ""}`} onClick={() => onTab("tasks", "承認待ち")}>
-          <div className="kpi-num">{approvals.length + contentWaiting.length}</div><div className="kpi-lbl">承認待ち</div>
+          <div className="kpi-num">{approvals.length + contentWaiting.length}</div><div className="kpi-lbl">確認・承認待ち</div>
         </button>
         <button className="kpi" onClick={() => onTab("tasks", "未完了")}>
           <div className="kpi-num">{doing.length}</div><div className="kpi-lbl">未完了タスク</div>
@@ -322,7 +322,7 @@ function Tasks({ summary, filter, setFilter, onApprove, onChanged, onOpenDoc, fo
                 <DueEditor task={t} onChanged={onChanged} notify={notify} />
                 {t.note ? <p>{t.note}</p> : <p className="muted">備考なし</p>}
                 <div className="row-actions">
-                  {t.status === "承認待ち" && <button className="btn primary sm" onClick={() => onApprove(t)}>承認 / 差し戻し</button>}
+                  {(t.status === "承認待ち" || t.status === "確認待ち") && <button className="btn primary sm" onClick={() => onApprove(t)}>{t.status === "確認待ち" ? "答える" : "承認 / 差し戻し"}</button>}
                   {notionId(t.link) && <button className="btn sm" onClick={() => onOpenDoc(notionId(t.link))}>資料を開く</button>}
                   {t.link && !notionId(t.link) && <a className="btn sm" href={t.link} target="_blank" rel="noreferrer">資料</a>}
                   {t.url && <a className="btn ghost sm" href={t.url} target="_blank" rel="noreferrer">Notion で開く</a>}
@@ -601,7 +601,7 @@ export default function Workspace(props) {
   const { tab, setTab, summary, jobs, health, log, logRef, taskFilter, setTaskFilter, docId, setDocId,
           focusTask, setFocusTask, onApprove, onSay, refresh, notify, week, setWeek, onRule } = props;
   const contentWaiting = summary ? (summary.content_weeks || []).reduce((n, w) => n + (w.counts["承認待ち"] || 0), 0) : 0;
-  const approvals = summary ? summary.tasks.filter((t) => t.status === "承認待ち").length : 0;
+  const approvals = summary ? summary.tasks.filter((t) => t.status === "確認待ち" || t.status === "承認待ち").length : 0;
   const running = jobs.filter((j) => j.status === "running").length;
   const goTab = (t, filter) => { if (filter) setTaskFilter(filter); setTab(t); };
   const openTask = (t) => { setTaskFilter(["完了", "承認済み"].includes(t.status) ? "すべて" : "未完了"); setFocusTask(t.key); setTab("tasks"); };
