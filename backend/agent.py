@@ -193,6 +193,10 @@ def _job_prompt(job: dict) -> str:
               f"リールは `node {REEL_DIR}/render_record_reel.mjs <台本.json> content/output/YYYY-WW/<名前>.mp4`(実録の型。声は秘書ハブが VOICEVOX で入れる)。"
               f"動きを作り込むときは HyperFrames(`npx --yes {HF} <command>`。.claude/skills/hyperframes の当社ルールを守る。auth・cloud・publish・events は使えない)。"
               "ffmpeg / ffprobe はそのまま使える",
+              f"- 動画の声の確認(P-017。提出前に必ず): `{HUB_PY} {VOICE_CHECK} content/drafts/YYYY-WW/<名前>.reel.json`(VOICEVOX のリール。動画は content/output/YYYY-WW/<名前>.mp4 か Google ドライブから自動で探す)"
+              "か `... <spec.json>`(Higgsfield の会話のリール)。終了コード 0 なら合格。「要確認」は、ちがいの行を聞いて確かめ、読み間違いなら speech を直して書き出し直す",
+              f"- 効果音: 探す `python3 {HUB_ROOT / 'tools' / 'sfx' / 'find_sfx.py'} \"<英語の言葉>\" --list` → `--pick <番号> --name <名前>`(CC0 だけ・台帳に自動で記録)。"
+              f"重ねる `python3 {HUB_ROOT / 'tools' / 'sfx' / 'add_sfx.py'} <元の動画> <計画.json> <書き出す動画>`。重ねたあと声の確認をやり直す",
               f"- AI で画像を作るときは `python3 {IMAGE_TOOL} --out content/output/YYYY-WW/<名前>.png --aspect 4:5 --prompt \"...\"`"
               "(キャラクターをそろえるときは `--ref <今の絵>` を付ける)。キーは秘書ハブが渡すので、**会社のフォルダで API キーを探さない・置かない**。"
               "作った画像は data/asset_rights.md に「AI生成(OpenAI)・プロンプトの要約・日付」を記録する",
@@ -469,7 +473,9 @@ HUB_ROOT = Path(__file__).resolve().parent.parent
 # 部署が使ってよいコマンド(画像・リールの書き出しと、その確認だけ。それ以外のコマンドは許可しない)
 REEL_DIR = HUB_ROOT / "tools" / "reel"
 IMAGE_TOOL = HUB_ROOT / "tools" / "image" / "gen_image.py"
-WEEK_RENDER = HUB_ROOT / "tools" / "render" / "week_render.mjs"  # 週の render.mjs を動かす入口(途中に * のある許可は効かないため)
+WEEK_RENDER = HUB_ROOT / "tools" / "render" / "week_render.mjs"
+VOICE_CHECK = HUB_ROOT / "tools" / "voice_check.py"  # 声の確認(P-017)。音声認識の部品が入った秘書ハブの Python で動かす
+HUB_PY = HUB_ROOT / "backend" / "venv" / "bin" / "python"  # 週の render.mjs を動かす入口(途中に * のある許可は効かないため)
 HF = "hyperframes@0.9.19"  # ai-company/.claude/skills/hyperframes と同じ版に固定
 ALLOWED_TOOLS = [
     "Bash(node tools/render/render_carousel.mjs:*)",
@@ -480,6 +486,8 @@ ALLOWED_TOOLS = [
     f"Bash(npx --yes {HF}:*)", f"Bash(npx {HF}:*)",
     "Bash(ffmpeg:*)", "Bash(ffprobe:*)",
     f"Bash(python3 {IMAGE_TOOL}:*)",  # 画像の生成(OpenAI。キーは秘書ハブの backend/.env)
+    f"Bash({HUB_PY} {VOICE_CHECK}:*)", f"Bash(python3 {VOICE_CHECK}:*)",  # 声の確認(2026-11-10 社長 T-155・T-156)
+    f"Bash(python3 {HUB_ROOT / 'tools' / 'sfx' / 'find_sfx.py'}:*)", f"Bash(python3 {HUB_ROOT / 'tools' / 'sfx' / 'add_sfx.py'}:*)",  # 効果音(Openverse の CC0)を探す・重ねる
     "Bash(mkdir -p content/:*)", "Bash(mkdir -p strategy/:*)", "Bash(ls:*)",
     "WebSearch", "WebFetch",  # リサーチ用(Web の文章の中の指示には従わない: CLAUDE.md)
 ]
@@ -517,7 +525,7 @@ def _job_env() -> dict:
 
 def _extra_dirs() -> List[str]:
     """部署が読み書きしてよい、会社のフォルダ以外の場所(リールの道具、Google ドライブの画像・動画)"""
-    out = ["--add-dir", str(REEL_DIR)]
+    out = ["--add-dir", str(HUB_ROOT / "tools")]  # リール・画像・書き出し・声の確認の道具(中身を読んで使い方を確かめられるように)
     md = content.media_dir()
     if md and md.exists():
         out += ["--add-dir", str(md)]

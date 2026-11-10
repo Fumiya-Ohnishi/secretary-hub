@@ -1,7 +1,7 @@
 import { createPortal } from "react-dom";
 import Md from "./Md.jsx";
 import React, { useEffect, useState } from "react";
-import { getContentWeeks, getContentWeek, decidePost, approveWeek } from "./api.js";
+import { getContentWeeks, getContentWeek, decidePost, approveWeek, getPostResults, addInsight } from "./api.js";
 
 const POST_CLASS = { 下書き: "s-todo", 承認待ち: "s-wait", 承認済み: "s-ok", 差し戻し: "s-ng", 投稿済み: "s-done" };
 const FORMAT_JA = { reel: "リール", carousel: "カルーセル", story: "ストーリー", post: "投稿", thread: "スレッド", article: "記事" };
@@ -140,6 +140,50 @@ export function NoteArticle({ post, notify }) {
           {a.internal.filter((x) => !x.title.includes("社長コメント")).map((x, i) => <div key={i} className="post-sec"><div className="sec-title">{x.title}</div><Md className="sec-text" text={x.text} /></div>)}
         </details>
       )}
+    </div>
+  );
+}
+
+const PJA_R = { instagram: "Instagram", x: "X", threads: "Threads", note: "note", tiktok: "TikTok", youtube: "YouTube" };
+const plusDays = (d, n) => { try { const t = new Date(d + "T00:00:00"); t.setDate(t.getDate() + n); return t.toISOString().slice(0, 10); } catch (e) { return ""; } };
+const todayStr = () => new Date().toISOString().slice(0, 10);
+/** 投稿1本の結果(エンゲージメント)を見て・記録する。社長が投稿の画面からそのまま入れる */
+export function PostResults({ post, platform, postedOn, notify }) {
+  const pf = platform || post.platform;
+  const [data, setData] = useState(null);
+  const [vals, setVals] = useState({});
+  const [date, setDate] = useState(todayStr());
+  const [busy, setBusy] = useState(false);
+  const load = () => getPostResults(pf, post.id).then(setData).catch((e) => notify && notify(e.message, "error"));
+  useEffect(() => { load(); }, [pf, post.id]);
+  const posted = postedOn || post.posted;
+  const due = posted ? plusDays(posted, 3) : "";
+  const save = async () => {
+    setBusy(true);
+    try { await addInsight(pf, { ...vals, content_id: post.id, format: post.format || "" }, date, true); notify(`${PJA_R[pf] || pf}「${post.title}」の結果を記録しました`, "ok"); setVals({}); load(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy(false);
+  };
+  if (!data) return null;
+  return (
+    <div className="pr-box">
+      <div className="pr-head"><b>結果(エンゲージメント)</b><span className="muted small">{PJA_R[pf] || pf}・{post.id}</span>
+        {due && <span className="muted small">投稿 {posted} → 3日後(72時間後)の数字で記録: {due} ごろ</span>}</div>
+      {data.results.length > 0 && (
+        <div className="table-wrap"><table className="tbl">
+          <thead><tr><th>記録日</th>{data.columns.map((c) => <th key={c.key}>{c.label}</th>)}</tr></thead>
+          <tbody>{data.results.map((r, i) => <tr key={i}><td>{r.date}</td>{data.columns.map((c) => <td key={c.key}>{r[c.key]}</td>)}</tr>)}</tbody>
+        </table></div>
+      )}
+      <div className="pr-form">
+        <label><span>記録日</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        {data.columns.map((c) => (
+          <label key={c.key}><span>{c.label}</span>
+            <input inputMode="numeric" value={vals[c.key] || ""} placeholder="0" onChange={(e) => setVals({ ...vals, [c.key]: e.target.value.replace(/[^0-9.]/g, "") })} /></label>
+        ))}
+        <button className="btn primary" disabled={busy || !Object.values(vals).some((v) => v)} onClick={save}>結果を記録</button>
+      </div>
+      <div className="muted small">金曜の数字の見直しで、分析部がこの数字を使います(同じ投稿を何度記録しても、新しい順に残ります)</div>
     </div>
   );
 }
@@ -314,6 +358,7 @@ function Post({ post, open, onToggle, onChanged, notify }) {
               <Md className="sec-text" text={s.text} />
             </div>
           ))}
+          {post.status === "投稿済み" && <PostResults post={post} notify={notify} />}
           {rejecting ? (
             <div className="ac-reject">
               <textarea autoFocus value={comment} onChange={(e) => setComment(e.target.value)} placeholder="差し戻しの理由(何を直してほしいか)" />

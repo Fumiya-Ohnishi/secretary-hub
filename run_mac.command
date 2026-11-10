@@ -12,6 +12,11 @@ if [ ! -d backend/venv ]; then
 fi
 # 必要な部品を入れる(入っていれば数秒で終わる)
 backend/venv/bin/pip install -q -r backend/requirements.txt || echo "⚠ 部品のインストールに失敗しました。上のエラーを秘書に見せてください"
+# 声の確認(tools/voice_check.py)に使う音声認識の部品(初回だけ数分。入っていれば何もしない)
+if ! backend/venv/bin/python -c "import faster_whisper, pykakasi" >/dev/null 2>&1; then
+  echo "→ 声の確認に使う部品を入れています(初回だけ数分)..."
+  backend/venv/bin/pip install -q -r tools/requirements-voice.txt || echo "⚠ 声の確認の部品を入れられませんでした(上のエラーを秘書に見せてください)"
+fi
 if [ ! -f backend/.env ]; then
   cp backend/.env.example backend/.env
   echo "→ backend/.env に ANTHROPIC_API_KEY を入力してから、このファイルをもう一度ダブルクリックしてください"

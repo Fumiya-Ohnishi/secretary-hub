@@ -75,7 +75,8 @@ export const search = (q) => call("GET", `/api/search?q=${encodeURIComponent(q)}
 export const getDiagnostics = () => call("GET", "/api/diagnostics");
 export const getAccounts = () => call("GET", "/api/accounts");
 export const getAccount = (p) => call("GET", `/api/accounts/${encodeURIComponent(p)}`);
-export const addInsight = (p, values, date) => call("POST", `/api/accounts/${encodeURIComponent(p)}/insights`, { values, date });
+export const addInsight = (p, values, date, perPost = false) => call("POST", `/api/accounts/${encodeURIComponent(p)}/insights`, { values, date, per_post: perPost });
+export const getPostResults = (p, id) => call("GET", `/api/accounts/${encodeURIComponent(p)}/results?id=${encodeURIComponent(id)}`);
 export const markCrossposted = (p, path, undo = false) => call("POST", `/api/accounts/${encodeURIComponent(p)}/crossposted`, { path, undo });
 export const addImprovement = (p, text) => call("POST", `/api/accounts/${encodeURIComponent(p)}/improvements`, { text });
 export const getKnowledge = () => call("GET", "/api/knowledge");

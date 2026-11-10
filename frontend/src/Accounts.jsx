@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { getContentWeeks, getAccount, addInsight, addImprovement, recordFollowers, markCrossposted } from "./api.js";
-import Content, { PostPreview } from "./Content.jsx";
+import Content, { PostPreview, PostResults } from "./Content.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
 const PLATFORMS = [["instagram", "Instagram"], ["x", "X"], ["threads", "Threads"], ["note", "note"], ["tiktok", "TikTok"], ["youtube", "YouTube"]];
@@ -166,6 +166,7 @@ function Improvements({ data, platform, notify, onDone }) {
 function Crosspost({ data, platform, notify, onDone }) {
   const [view, setView] = useState(null);
   const [busy, setBusy] = useState("");
+  const [resultsFor, setResultsFor] = useState("");
   const todo = data.crosspost.filter((p) => !p.posted_on);
   const done = data.crosspost.filter((p) => p.posted_on);
   const mark = async (p) => {
@@ -181,8 +182,8 @@ function Crosspost({ data, platform, notify, onDone }) {
     catch (e) { notify(e.message, "error"); }
     setBusy("");
   };
-  const row = (p) => (
-    <li key={p.path} className="xp-row">
+  const row = (p) => (<React.Fragment key={p.path}>
+    <li className="xp-row">
       <div className="xp-main">
         <div className="xp-title">
           {p.recommended && <span className="badge s-ask">おすすめ</span>}
@@ -193,11 +194,13 @@ function Crosspost({ data, platform, notify, onDone }) {
       <div className="xp-act">
         <button className="btn" onClick={() => setView(p)}>見る</button>
         {p.posted_on ? <><span className="muted small">投稿済み {p.posted_on}</span>
+            <button className="btn sm primary" onClick={() => setResultsFor(resultsFor === p.path ? "" : p.path)}>結果</button>
             <button className="btn sm" disabled={busy === p.path} onClick={() => unmark(p)} title="間違えて押したとき">取り消す</button></>
           : <button className="btn primary" disabled={!p.ready || busy === p.path} onClick={() => mark(p)}>投稿した</button>}
       </div>
     </li>
-  );
+    {resultsFor === p.path && p.posted_on && <li className="xp-results"><PostResults post={p} platform={platform} postedOn={/^\d/.test(p.posted_on) ? p.posted_on : ""} notify={notify} /></li>}
+  </React.Fragment>);
   return (
     <div className="card">
       <div className="card-head"><h3>{data.name}に出すとよい投稿</h3><span className="muted small">Instagram のリールをそのまま流用・未投稿が上</span></div>
