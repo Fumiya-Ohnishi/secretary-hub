@@ -491,6 +491,7 @@ async def add_revenue(body: RevenueIn):
 class InsightIn(BaseModel):
     values: dict
     date: Optional[str] = None
+    per_post: bool = False  # 投稿ごとの結果(note は記事ごとの表に入れる)
 
 
 class ImprovementIn(BaseModel):
@@ -513,7 +514,15 @@ def get_account(platform: str):
 @app.post("/api/accounts/{platform}/insights")
 def add_insight(platform: str, body: InsightIn):
     try:
-        return accounts.record_insight(platform, body.values, body.date)
+        return accounts.record_insight(platform, body.values, body.date, per_post=body.per_post)
+    except ValueError as e:
+        return err(e, 400)
+
+
+@app.get("/api/accounts/{platform}/results")
+def get_post_results(platform: str, id: str):
+    try:
+        return accounts.post_results(platform, id)
     except ValueError as e:
         return err(e, 400)
 

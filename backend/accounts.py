@@ -64,15 +64,39 @@ def read_insights(platform: str, limit: int = 30) -> List[dict]:
     return rows[-limit:][::-1]
 
 
-def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = None) -> dict:
+# 投稿ごとの結果(2026-11-10 社長: 投稿のところで結果を報告できるように)。note は媒体全体の数字(metric,value)と分けて、記事ごとの表を使う
+POST_INSIGHTS = {**INSIGHTS, "note": ("insights_note_posts.csv", ["content_id", "views", "likes", "comments", "follows"])}
+LABEL_BY_PLATFORM = {"threads": {"views": "閲覧"}, "x": {"impressions": "表示"}, "note": {"views": "ビュー", "likes": "スキ"},
+                     "youtube": {"likes": "高評価", "follows": "登録者の増加"}, "instagram": {"follows": "フォロー増"}}
+
+
+def label(platform: str, col: str) -> str:
+    return LABEL_BY_PLATFORM.get(platform, {}).get(col) or COLUMN_JA.get(col, col)
+
+
+def post_results(platform: str, content_id: str) -> dict:
+    """1本の投稿の結果(新しい順)と、入力する列"""
+    _check(platform)
+    name, cols = POST_INSIGHTS[platform]
+    path = _data(name)
+    rows = []
+    if path.exists():
+        with path.open(newline="") as f:
+            rows = [r for r in csv.DictReader(f) if (r.get("content_id") or "").strip() == content_id]
+    return {"platform": platform, "content_id": content_id,
+            "columns": [{"key": c, "label": label(platform, c)} for c in cols if c not in ("content_id", "format")],
+            "results": rows[::-1]}
+
+
+def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = None, per_post: bool = False) -> dict:
     """投稿1本の数字を記録する(足りない列は空のまま)"""
     _check(platform)
-    name, cols = INSIGHTS[platform]
+    name, cols = (POST_INSIGHTS if per_post else INSIGHTS)[platform]
     row = {"date": date or datetime.date.today().isoformat()}
     for c in cols:
         v = values.get(c, "")
         row[c] = str(v).strip() if v is not None else ""
-    if not any(row[c] for c in cols):
+    if not any(row[c] for c in cols if c not in ("content_id", "format")):
         raise ValueError("記録する数字がありません")
     path = _data(name)
     new = not path.exists() or not path.read_text().strip()
