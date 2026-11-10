@@ -25,6 +25,125 @@ const IG_HANDLE = "ai_hisho_sena";
 const AVATAR = "/faces/normal.jpg";
 
 /** Instagram の投稿画面に近い見え方(スマホの枠)。カルーセルは左右で送る、リールは縦の全画面 */
+// ---------- note の記事: タイトル・本文・ハッシュタグを分けて見せ、それぞれコピーできるようにする ----------
+/** 記事を頭から最後まで Markdown にする(note に貼る用。見出し=##、小見出し=###、箇条書き=-) */
+export const articleMarkdown = (a) => a.blocks.map((b) => (b.heading ? `## ${b.heading}\n\n` : "") + (b.text || "")).join("\n\n").trim();
+
+export async function copyArticle(article, notify) {
+  const text = articleMarkdown(article);  // 頭から最後まで Markdown(## 見出し・- 箇条書き)
+  try {
+    await navigator.clipboard.writeText(text);
+    notify && notify("本文を Markdown でコピーしました(note の本文に貼り付け)", "ok");
+    return true;
+  } catch (e) { notify && notify("コピーできませんでした。本文を選択してコピーしてください", "error"); return false; }
+}
+
+
+const IMG_MARK = /^\s*【画像\s*(\d+)\s*[::]\s*([^\s―—】]+)?[^】]*】\s*$/;
+/** note の画面に近い見た目で記事を見る(見出し画像・タイトル・見出し・図の位置) */
+export function NotePreview({ post, onClose }) {
+  const a = post.article;
+  const imgs = (post.media || []).filter((m) => m.exists && m.kind !== "video" && m.kind !== "file");
+  const imgFor = (n, name) => imgs.find((m) => name && m.name === name) || imgs.find((m) => name && m.name.includes(name.replace(/\.png$/, ""))) || imgs[n - 1];
+  const head = imgs.find((m) => /見出し|_01_/.test(m.name)) || imgs[0];
+  useEffect(() => { const k = (e) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, []);
+  const body = (text) => {
+    const out = []; let buf = [];
+    const flush = () => { if (buf.length) out.push(<Md key={out.length} className="np-text" text={buf.join("\n")} />); buf = []; };
+    for (const line of (text || "").split("\n")) {
+      const m = line.match(IMG_MARK);
+      if (m) { flush(); const im = imgFor(Number(m[1]), m[2]);
+        out.push(im ? <figure key={out.length} className="np-fig"><img src={fileUrl(im.path)} alt={im.name} /></figure>
+                    : <div key={out.length} className="np-missing">{line.trim()}(画像がドライブにありません)</div>); }
+      else if (/^###\s+/.test(line)) { flush(); out.push(<h3 key={out.length}>{line.replace(/^###\s+/, "")}</h3>); }
+      else buf.push(line);
+    }
+    flush();
+    return out;
+  };
+  return createPortal(
+    <div className="pv-back" onClick={onClose}>
+      <div className="np-wrap" onClick={(e) => e.stopPropagation()}>
+        <div className="pv-tabs"><span className="np-label">note のプレビュー(実際の見え方に近い表示)</span>
+          <button className="pv-x" onClick={onClose} aria-label="閉じる">×</button></div>
+        <article className="np-page">
+          {head && <img className="np-head" src={fileUrl(head.path)} alt="見出し画像" />}
+          <h1 className="np-title">{a.title}</h1>
+          <div className="np-author"><img src={AVATAR} alt="" /><span>AI秘書セナ|AI会社の実録</span></div>
+          {a.blocks.map((b, i) => (
+            <section key={i}>{b.heading && <h2>{b.heading}</h2>}{body(b.text)}</section>
+          ))}
+          {a.tags.length > 0 && <div className="np-tags">{a.tags.map((t) => <span key={t}>#{t}</span>)}</div>}
+        </article>
+      </div>
+    </div>, document.body);
+}
+
+export function NoteArticle({ post, notify }) {
+  const a = post.article;
+  const [view, setView] = useState("split");  // split = 分けて見る / md = Markdown(コードブロック)
+  const [preview, setPreview] = useState(false);
+  const md = articleMarkdown(a);
+  const copyText = async (t, label) => {
+    try { await navigator.clipboard.writeText(t); notify(`${label}をコピーしました`, "ok"); }
+    catch (e) { notify("コピーできませんでした", "error"); }
+  };
+  const tags = (a.tags || []).map((t) => "#" + t).join(" ");
+  return (
+    <div className="note-art">
+      {preview && <NotePreview post={post} onClose={() => setPreview(false)} />}
+      <div className="na-bar">
+        <div className="seg">
+          <button className={view === "split" ? "on" : ""} onClick={() => setView("split")}>分けて見る</button>
+          <button className={view === "md" ? "on" : ""} onClick={() => setView("md")}>Markdown(全文)</button>
+        </div>
+        <button className="btn" onClick={() => setPreview(true)}>プレビュー</button>
+      </div>
+      <div className="na-box">
+        <div className="na-head"><span className="na-label">① タイトル</span><span className="muted small">{a.title.length}字</span>
+          <button className="btn sm" onClick={() => copyText(a.title, "タイトル")}>コピー</button></div>
+        <div className="na-title">{a.title}</div>
+      </div>
+      {view === "md" ? (
+        <div className="na-box na-body">
+          <div className="na-head"><span className="na-label">② 本文(Markdown・頭から最後まで)</span><span className="muted small">{md.length.toLocaleString()}字</span>
+            <button className="btn sm primary" onClick={() => copyArticle(a, notify)}>全部コピー</button></div>
+          <div className="muted small na-hint">## = 見出し、### = 小見出し、- = 箇条書き。note の本文にそのまま貼り付けます。【画像N】の行は、その位置に図を入れてから消します</div>
+          <pre className="na-md"><code>{md}</code></pre>
+        </div>
+      ) : (
+      <div className="na-box na-body">
+        <div className="na-head"><span className="na-label">② 本文(記事)</span><span className="muted small">{a.chars.toLocaleString()}字・見出し{a.blocks.filter((b) => b.heading).length}個</span>
+          <button className="btn sm primary" onClick={() => copyArticle(a, notify)}>本文を全部コピー(Markdown)</button></div>
+        <div className="muted small na-hint">コピーは Markdown(## = 見出し)。見出しにならなかったら、その行を選んで note の見出しに設定。【画像N】の所に図を入れます</div>
+        {a.blocks.map((b, i) => (
+          <div key={i} className="na-block">
+            {b.heading && <div className="na-h"><span className="na-tag">見出し</span>{b.heading}
+              <button className="btn ghost sm" onClick={() => copyText(b.heading, "見出し")}>コピー</button></div>}
+            <Md className="sec-text" text={b.text} />
+          </div>
+        ))}
+      </div>
+      )}
+      <div className="na-box">
+        <div className="na-head"><span className="na-label">③ ハッシュタグ</span>
+          {tags && <button className="btn sm" onClick={() => copyText(tags, "ハッシュタグ")}>コピー</button>}</div>
+        {tags ? <div className="na-tags">{a.tags.map((t) => <span key={t} className="chip2">#{t}</span>)}</div>
+              : <div className="muted small">未設定です(記事ファイルに「## ハッシュタグ」が無い)。SNS運用部に付けてもらうか、note の画面で付けてください</div>}
+      </div>
+      {a.memo && <div className="post-sec"><div className="sec-title">社長の投稿メモ</div><Md className="sec-text" text={a.memo} /></div>}
+      {a.internal.filter((x) => x.title.includes("社長コメント")).map((x, i) => (
+        <div key={"c" + i} className="post-sec comment"><div className="sec-title">{x.title}</div><Md className="sec-text" text={x.text} /></div>))}
+      {a.internal.length > 0 && (
+        <details className="na-internal">
+          <summary className="muted small">制作メモ(社内用・コピーしない): {a.internal.map((x) => x.title).join("・")}</summary>
+          {a.internal.filter((x) => !x.title.includes("社長コメント")).map((x, i) => <div key={i} className="post-sec"><div className="sec-title">{x.title}</div><Md className="sec-text" text={x.text} /></div>)}
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function PostPreview({ post, start = 0, onClose }) {
   const items = (post.media || []).filter((m) => m.exists && m.kind !== "file");
   const [i, setI] = useState(Math.min(start, Math.max(0, items.length - 1)));
@@ -188,7 +307,7 @@ function Post({ post, open, onToggle, onChanged, notify }) {
         <div className="post-body">
           {post.media || post.cover ? <MediaPanel post={post} />
             : post.assets.length > 0 && <div className="assets">{post.assets.map((a) => <Asset key={a} path={a} />)}</div>}
-          {post.sections.map((s, i) => (
+          {post.article ? <NoteArticle post={post} notify={notify} /> : post.sections.map((s, i) => (
             <div key={i} className={`post-sec ${s.title.includes("社長コメント") ? "comment" : ""}`}>
               {s.title && <div className="sec-title">{s.title}
                 {s.title.includes("キャプション") && <button className="btn ghost sm" onClick={copy}>コピー</button>}</div>}

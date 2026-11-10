@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getAllPosts, decidePost } from "./api.js";
-import { PostPreview } from "./Content.jsx";
+import { PostPreview, copyArticle, NotePreview } from "./Content.jsx";
 
 /* 「今日」画面: 社長が開いて10秒で、今日やること(投稿・判断)と昨日の成果が分かる */
 
@@ -45,6 +45,12 @@ function stepsFor(post) {
     s.push({ id: "copy", label: "キャプションをコピー", kind: "copy" });
   } else if (post.platform === "x" && post.format === "thread") {
     threadParts(post).forEach((_, i, a) => s.push({ id: `part${i}`, label: `${i + 1}/${a.length} をコピーして投稿`, kind: "part", index: i }));
+  } else if (post.platform === "note" && post.article) {
+    s.push({ id: "n-preview", label: "記事の見え方を確認(プレビュー)", kind: "preview" });
+    if (hasMedia) s.push({ id: "media", label: `見出し画像・図を保存(${(post.media || []).filter((m) => m.exists).length}点)`, kind: "media" });
+    s.push({ id: "n-title", label: "タイトルをコピー", kind: "text", text: post.article.title, what: "タイトル" });
+    s.push({ id: "n-body", label: `本文をコピー(Markdown・${post.article.chars.toLocaleString()}字)`, kind: "article" });
+    if (post.article.tags.length) s.push({ id: "n-tags", label: "ハッシュタグをコピー", kind: "text", text: post.article.tags.map((t) => "#" + t).join(" "), what: "ハッシュタグ" });
   } else if (post.platform === "note") {
     if (hasMedia) s.push({ id: "media", label: "見出し画像を保存", kind: "media" });
     s.push({ id: "copy", label: "本文をコピー", kind: "copy" });
@@ -73,6 +79,8 @@ function PostItem({ post, open, onToggle, now, notify, onChanged, onOpenWeek }) 
     if (st.kind === "approve") return onOpenWeek(post.week);
     if (st.kind === "preview") { setPreview(true); return mark(st.id); }
     if (st.kind === "copy") return copy(post.caption, st.id, post.platform === "instagram" ? "キャプション" : "本文");
+    if (st.kind === "text") return copy(st.text, st.id, st.what);
+    if (st.kind === "article") { if (await copyArticle(post.article, notify)) mark(st.id); return; }
     if (st.kind === "part") return copy(threadParts(post)[st.index], st.id, `${st.index + 1}つ目`);
     if (st.kind === "media") {
       (post.media || []).filter((m) => m.exists).forEach((m, i) => setTimeout(() => {
@@ -92,17 +100,20 @@ function PostItem({ post, open, onToggle, now, notify, onChanged, onOpenWeek }) 
       catch (e) { notify(e.message, "error"); }
     }
   };
-  const btnLabel = { approve: "中身を見る", preview: "見る", media: "保存", copy: "コピー", part: "コピー", posted: "投稿しました" };
+  const btnLabel = { approve: "中身を見る", preview: "見る", media: "保存", copy: "コピー", part: "コピー", text: "コピー", article: "コピー", posted: "投稿しました" };
   const sday = (post.scheduled || "").slice(0, 10);
   const otherDay = sday && sday !== ymd(now);
   const time = (otherDay ? `${Number(sday.slice(5, 7))}/${Number(sday.slice(8, 10))} ` : "") + ((post.scheduled || "").slice(11, 16) || "時刻未定");
   const due = otherDay ? "遅れています" : until(post.scheduled, now);
   const late = !posted && (due.endsWith("過ぎています") || due === "遅れています");
   const doneCount = steps.filter(isDone).length;
-  const textPreview = post.platform === "x" && post.format === "thread" ? threadParts(post) : [post.caption || ""];
+  const textPreview = post.platform === "x" && post.format === "thread" ? threadParts(post)
+    : post.article ? [`【タイトル】${post.article.title}`, ...post.article.blocks.filter((b) => b.heading).map((b) => `【見出し】${b.heading}`)]
+    : [post.caption || ""];
   return (
     <div className={`tp ${posted ? "done" : ""} ${open ? "open" : ""}`}>
-      {preview && <PostPreview post={post} onClose={() => setPreview(false)} />}
+      {preview && (post.article ? <NotePreview post={post} onClose={() => setPreview(false)} />
+                                : <PostPreview post={post} onClose={() => setPreview(false)} />)}
       <button className="tp-head" onClick={onToggle} aria-expanded={open}>
         {post.cover?.exists && <img className="tp-mini" src={fileUrl(post.cover.path)} alt="" />}
         <span className={`pf pf-${post.platform}`}>{PJA[post.platform] || post.platform}</span>
@@ -125,9 +136,9 @@ function PostItem({ post, open, onToggle, now, notify, onChanged, onOpenWeek }) 
             </button>
           ) : (
             <div className="tp-text">
-              {textPreview.slice(0, 3).map((t, i) => <p key={i}>{t}</p>)}
-              {textPreview.length > 3 && <p className="muted">…ほか{textPreview.length - 3}件</p>}
-              <div className="tp-count">{(post.caption || "").length}字</div>
+              {textPreview.slice(0, post.article ? 9 : 3).map((t, i) => <p key={i}>{t}</p>)}
+              {textPreview.length > (post.article ? 9 : 3) && <p className="muted">…ほか{textPreview.length - (post.article ? 9 : 3)}件</p>}
+              <div className="tp-count">{post.article ? post.article.chars : (post.caption || "").length}字</div>
             </div>
           )}
           <ol className="tp-steps">
@@ -136,7 +147,7 @@ function PostItem({ post, open, onToggle, now, notify, onChanged, onOpenWeek }) 
               return (
                 <li key={st.id} className={`${d ? "d" : ""} ${i === nextIdx ? "now" : ""}`}>
                   <span className="n">{d ? "✓" : i + 1}</span><span className="l">{st.label}</span>
-                  {!st.auto && (!d || ["preview", "copy", "part", "media"].includes(st.kind)) &&
+                  {!st.auto && (!d || ["preview", "copy", "part", "media", "text", "article"].includes(st.kind)) &&
                     <button className={`btn sm ${i === nextIdx ? "primary" : ""}`} onClick={() => act(st)}>{d ? "もう一度" : btnLabel[st.kind]}</button>}
                 </li>
               );

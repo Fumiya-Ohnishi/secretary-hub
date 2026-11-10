@@ -1033,3 +1033,45 @@ select.status-sel { color-scheme: dark; }
 .chip2.c-ask { color: #b48cf0; background: rgba(180, 140, 240, .14); }
 
 .tp-undo { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+/* note の記事(タイトル・本文・ハッシュタグを分ける) */
+.note-art { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.na-box { border: 1px solid var(--line2); border-radius: 12px; padding: 12px 14px; background: rgba(255,255,255,.02); }
+.na-body { border-color: rgba(65,201,180,.45); }
+.na-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.na-head .btn { margin-left: auto; }
+.na-label { font-weight: 700; color: #6fe0cc; }
+.na-title { font-size: 17px; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; }
+.na-hint { margin-bottom: 10px; }
+.na-block { padding: 6px 0; border-top: 1px dashed var(--line); }
+.na-block:first-of-type { border-top: 0; }
+.na-h { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; margin: 8px 0 6px; overflow-wrap: anywhere; }
+.na-h .btn { margin-left: auto; flex-shrink: 0; }
+.na-tag { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 99px; background: rgba(65,201,180,.16); color: #6fe0cc; flex-shrink: 0; }
+.na-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.na-internal { border: 1px dashed var(--line2); border-radius: 12px; padding: 8px 12px; opacity: .85; }
+.na-internal summary { cursor: pointer; }
+.na-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.na-md { margin: 0; padding: 12px 14px; border-radius: 10px; background: #0b0e1a; border: 1px solid var(--line2); color: #dfe6ff; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 70vh; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* note のプレビュー(note の記事ページに近い見た目) */
+.np-wrap { display: flex; flex-direction: column; gap: 10px; width: min(720px, 100%); max-height: 100%; }
+.np-label { color: #e8eaf5; font-size: 13px; margin-right: auto; }
+.np-page { background: #fff; color: #08131a; border-radius: 12px; padding: 0 0 40px; overflow: auto; max-height: calc(100vh - 90px);
+  font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif; }
+.np-head { width: 100%; aspect-ratio: 1280 / 670; object-fit: cover; display: block; border-radius: 12px 12px 0 0; }
+.np-page > *:not(.np-head) { margin-left: clamp(16px, 6vw, 56px); margin-right: clamp(16px, 6vw, 56px); }
+.np-title { font-size: clamp(22px, 3.2vw, 30px); font-weight: 700; line-height: 1.5; margin-top: 28px; margin-bottom: 12px; }
+.np-author { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #555; margin-bottom: 28px; }
+.np-author img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+.np-page h2 { font-size: 22px; font-weight: 700; margin: 40px 0 16px; line-height: 1.5; }
+.np-page h3 { font-size: 18px; font-weight: 700; margin: 28px 0 12px; }
+.np-page .np-text { font-size: 16px; line-height: 2; color: #08131a; }
+.np-page .np-text p { margin: 0 0 1.2em; }
+.np-page .np-text ul, .np-page .np-text ol { padding-left: 1.4em; margin: 0 0 1.2em; }
+.np-page .np-text strong, .np-page .np-text b { font-weight: 700; }
+.np-page .np-text code { background: #f2f2f2; color: #08131a; }
+.np-fig { margin: 20px auto; text-align: center; }
+.np-fig img { max-width: 100%; border-radius: 4px; }
+.np-missing { margin: 16px auto; padding: 12px; border: 1px dashed #c33; color: #c33; font-size: 13px; }
+.np-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 32px; }
+.np-tags span { background: #f2f2f2; border-radius: 99px; padding: 4px 12px; font-size: 13px; color: #333; }
