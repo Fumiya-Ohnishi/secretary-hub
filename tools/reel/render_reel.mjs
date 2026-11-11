@@ -15,7 +15,7 @@ import { spawnSync } from "child_process";
 
 const HUB = process.env.HUB_URL || "http://localhost:8000";
 const FPS = Number(process.env.REEL_FPS || 30);
-const INTRO = 0.6, GAP = 0.25, OUTRO = 1.0; // 秒
+const INTRO = 0.1, GAP = 0.25, OUTRO = 1.0; // 秒(2026-11-11: 冒頭の無音 0.6→0.1。0秒目から声)
 
 const [specPath, outPath] = process.argv.slice(2);
 if (!specPath || !outPath) {
