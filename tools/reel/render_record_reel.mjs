@@ -20,7 +20,7 @@ import { spawnSync } from "child_process";
 
 const HUB = process.env.HUB_URL || "http://localhost:8000";
 const FPS = Number(process.env.REEL_FPS || 30);
-const INTRO = 0.4, GAP = 0.3, OUTRO = 1.2;
+const INTRO = 0.1, GAP = 0.3, OUTRO = 1.2; // 2026-11-11: 冒頭の無音 0.4→0.1秒(3秒以内の離脱が50%以上だったため。0秒目から声)
 const [specPath, outPath] = process.argv.slice(2);
 if (!specPath || !outPath) { console.error("使い方: node tools/reel/render_record_reel.mjs <台本.json> <出力.mp4>"); process.exit(1); }
 const spec = JSON.parse(readFileSync(specPath, "utf-8"));
