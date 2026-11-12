@@ -1560,6 +1560,14 @@ def resume_after_answer(task: dict, decision: str, comment: str = "") -> Optiona
              "(最初からやり直さない)。社長の答えが選択肢の記号(A・B など)なら、その案で進める。答えが読み取れないときだけ、"
              "報告の「## 社長への確認」に、何が分からないかを1件書く。")
     job = start_job(dept, instr, title)
+    try:  # 作業のまとまりに「社長の回答」を1行足す(2026-11-12)
+        import threads
+        threads.add_in_background(src.group(1) if src else task.get("title", ""), "✅" if decision == "approve" else "↩️",
+                                  f"社長が {task.get('id', '')} に回答({'承認' if decision == 'approve' else '差し戻し'}): {answer[:300]}"
+                                  f" → {DEPT_FULL.get(dept, dept)}に続きを依頼",
+                                  dept=DEPT_FULL.get(dept, ""), link=task.get("url", ""), link_text="確認タスク", state="進行中")
+    except Exception:
+        pass
     try:
         import scheduler
         scheduler.notify("確認の答えで作業を再開しました", f"{task.get('id', '')} の答えを{DEPT_FULL.get(dept, dept)}に伝えて、続きを頼みました。", "info")

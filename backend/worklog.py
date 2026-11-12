@@ -109,6 +109,14 @@ async def publish(job: dict, files: List[str]) -> dict:
             r = await notion.add_worklog(job.get("title", "作業"), day, job.get("department_full") or "", kind_of(job), status_of(job),
                                          files, job.get("task_key") or "", job["id"], _blocks(job, files))
             result["url"] = r["url"]
+            try:  # 作業のまとまり(やり取りの流れ)に「報告」を1行足す(2026-11-12)
+                import threads
+                dept = job.get("department_full") or job.get("department", "")
+                await threads.add(job.get("title", ""), "📝" if job.get("status") == "done" else "⚠️",
+                                  f"{dept}の報告: {job.get('title', '')}" + ("" if job.get("status") == "done" else "(途中で止まりました)"),
+                                  dept=dept, link=r["url"], link_text="作業ログ", state="進行中", relate_worklog=r["id"])
+            except Exception:
+                pass
             if job.get("task_key") and not str(job["task_key"]).startswith(("meeting:", "routine:")):
                 try:
                     await company.update_task(job["task_key"], link=r["url"])

@@ -130,6 +130,13 @@ async def create_tasks(job: dict, asks: List[dict]) -> List[dict]:
         t = await company.create_task(f"【確認】{name}", "社長", _due(a), _note(a, job), _link(a.get("source", "")), status="確認待ち")
         open_titles.append(name)
         made.append(t)
+        try:  # 作業のまとまりに「社長への確認」を1行足す(2026-11-12)
+            import threads
+            await threads.add(job.get("title", ""), "❓", f"社長への確認 {t.get('id', '')}「{name}」",
+                              dept=job.get("department_full") or "", link=t.get("url", ""), link_text="確認タスク",
+                              state="社長の確認待ち", relate_task=t.get("key", ""))
+        except Exception:
+            pass
     return made
 
 
