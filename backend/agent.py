@@ -805,7 +805,7 @@ TOOLS = [
           {"platform": {"type": "string", "enum": company.PLATFORMS},
            "followers": {"type": "integer"},
            "date": {"type": "string", "description": "YYYY-MM-DD。省略時は今日"},
-           "account": {"type": "string", "enum": ["main", "sub"], "description": "main=本アカウント(定時AI・セナ・既定)/ sub=別アカウント(note fond_egret1686 とひもづく Instagram・Threads・X)"}}, ["platform", "followers"]),
+           "account": {"type": "string", "description": "アカウントの id。main=本アカウント(定時AI・セナ・既定)/ sub=別アカウント1(note fond_egret1686)/ 増えたものは sub2・sub3…(一覧は data/account_sets.json)"}}, ["platform", "followers"]),
     _tool("record_post_insight", "投稿1本の数字(保存・いいね・表示など)を、その媒体の記録(data/insights_*.csv)に書く。"
           "社長が「インスタの○○、保存30」のように報告したときに使う。言われていない数字は空のままにする。",
           {"platform": {"type": "string", "enum": company.PLATFORMS},
@@ -813,7 +813,7 @@ TOOLS = [
            "values": {"type": "object", "description": "列名→数値。instagram: format,reach,saves,likes,comments,profile_visits,follows / "
                       "x: impressions,likes,reposts,replies,follows / threads: views,likes,replies,follows / note: metric,value"},
            "date": {"type": "string", "description": "YYYY-MM-DD。省略時は今日"},
-           "account": {"type": "string", "enum": ["main", "sub"], "description": "main=本アカウント(定時AI・セナ・既定)/ sub=別アカウント(note fond_egret1686 とひもづく Instagram・Threads・X)"}}, ["platform", "values"]),
+           "account": {"type": "string", "description": "アカウントの id。main=本アカウント(定時AI・セナ・既定)/ sub=別アカウント1(note fond_egret1686)/ 増えたものは sub2・sub3…(一覧は data/account_sets.json)"}}, ["platform", "values"]),
     _tool("add_improvement", "アカウントの改善点を1行記録する(data/improvements.md。アカウント画面に出る)。"
           "社長の気づき・分析部の金曜の見直しの結論を残すときに使う。",
           {"platform": {"type": "string", "enum": company.PLATFORMS},
@@ -832,7 +832,7 @@ TOOLS = [
           {"platform": {"type": "string", "enum": company.PLATFORMS},
            "url": {"type": "string", "description": "https:// から始まるプロフィールURL"},
            "opened": {"type": "string", "description": "開設日 YYYY-MM-DD。省略時は今日"},
-           "account": {"type": "string", "enum": ["main", "sub"], "description": "main=本アカウント(定時AI・セナ・既定)/ sub=別アカウント(note fond_egret1686 とひもづく Instagram・Threads・X)"}}, ["platform", "url"]),
+           "account": {"type": "string", "description": "アカウントの id。main=本アカウント(定時AI・セナ・既定)/ sub=別アカウント1(note fond_egret1686)/ 増えたものは sub2・sub3…(一覧は data/account_sets.json)"}}, ["platform", "url"]),
     _tool("create_plan", "期限から逆算して、工程ごとのタスクを日付つきで起票する(逆算スケジュール)。"
           "部署の工程は、前の工程が終わると秘書が自動で部署に依頼する。投稿セットの基本形(週): 週テーマと構成(企画)→原稿・台本(ライティング)"
           "→画像・図解(デザイン/画像)とリール(映像)→媒体ごとの仕上げ(SNS運用、品質管理部のチェック込み)→社長の承認(社長)→投稿(社長)。"

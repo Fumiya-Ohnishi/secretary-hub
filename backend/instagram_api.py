@@ -30,7 +30,7 @@ CACHE = DATA_DIR / "meta_token.json"
 
 def _env(name: str, account: str = "main") -> str:
     """本アカウントは IG_ACCESS_TOKEN、別アカウントは IG_SUB_ACCESS_TOKEN のように読む"""
-    key = name if account == "main" else name.replace("IG_", "IG_SUB_", 1)
+    key = name if account == "main" else name.replace("IG_", f"IG_{account.upper()}_", 1)  # sub → IG_SUB_…、sub2 → IG_SUB2_…
     return os.getenv(key, "").strip()
 
 

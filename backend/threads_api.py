@@ -26,7 +26,7 @@ class ThreadsError(Exception):
 
 
 def _env_token(account: str) -> str:
-    return os.getenv("THREADS_ACCESS_TOKEN" if account == "main" else "THREADS_SUB_ACCESS_TOKEN", "").strip()
+    return os.getenv("THREADS_ACCESS_TOKEN" if account == "main" else f"THREADS_{account.upper()}_ACCESS_TOKEN", "").strip()
 
 
 def _path(account: str) -> Path:

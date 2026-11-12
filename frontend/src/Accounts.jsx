@@ -1,61 +1,120 @@
 import React, { useEffect, useState } from "react";
-import { getContentWeeks, getAccount, addInsight, addImprovement, recordFollowers, markCrossposted, recordRevenue,
-         getProposals, addProposal, patchProposal, proposalRevenue, syncStats } from "./api.js";
+import { getContentWeeks, getAccount, getAccounts, addInsight, addImprovement, recordFollowers, markCrossposted, recordRevenue,
+         getProposals, addProposal, patchProposal, proposalRevenue, syncStats, registerAccount, addAccountSet, startMeeting } from "./api.js";
 import Content, { PostPreview, PostResults } from "./Content.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
 const PLATFORMS = [["instagram", "Instagram"], ["x", "X"], ["threads", "Threads"], ["note", "note"], ["tiktok", "TikTok"], ["youtube", "YouTube"]];
-// アカウントの組(2026-11-12 社長: 複数アカウントを切り替えて、投稿・数字・収益をアカウントごとに見る)
-const SETS = [
-  ["main", "本アカウント", "定時AI・秘書セナ", ["instagram", "x", "threads", "note", "tiktok", "youtube"]],
-  ["sub", "別アカウント", "note の別アカウント(収益化用)", ["note", "instagram", "threads", "x"]],
-  ["work", "請け負い", "ランサーズ・ココナラの提案と入金", []],
-];
+const PJA = Object.fromEntries(PLATFORMS);
 const lsGet = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 
-/** アカウントごとの管理。上でアカウント(本・別・請け負い)を切り替え、その中で媒体を選ぶ */
+/** アカウントごとの管理(2026-11-12 社長: アカウントが増えてもセレクトボックスで選ぶ。どのアカウントも6媒体を並べ、
+ *  登録の無い媒体は「利用なし」=投稿を作らない)。請け負い(ランサーズ・ココナラ)は横のボタン */
 export default function Accounts({ week, setWeek, onChanged, notify, onSay }) {
-  const [set, setSet] = useState(() => lsGet("acctSet", "main"));
+  const [acct, setAcct] = useState(() => lsGet("acctSet", "main"));
   const [sel, setSel] = useState(() => lsGet("acct", "all"));
   const [weeks, setWeeks] = useState([]);
-  const cur = SETS.find((x) => x[0] === set) || SETS[0];
-  const plats = PLATFORMS.filter(([k]) => cur[3].includes(k)).sort((a, b) => cur[3].indexOf(a[0]) - cur[3].indexOf(b[0]));
-  const pickSet = (k) => { setSet(k); lsSet("acctSet", k); const s2 = SETS.find((x) => x[0] === k); if (s2 && sel !== "all" && !s2[3].includes(sel)) pick("all"); };
+  const [sets, setSets] = useState([]);
+  const [summary, setSummary] = useState([]);
+  const work = acct === "work";
+  const pickAcct = (k) => { setAcct(k); lsSet("acctSet", k); };
   const pick = (p) => { setSel(p); lsSet("acct", p); };
   const loadWeeks = () => getContentWeeks().then((r) => setWeeks(r.weeks)).catch(() => {});
+  const loadSets = () => getAccounts(work ? "main" : acct).then((r) => {
+    setSets(r.sets || []); setSummary(r.accounts || []);
+    if (!work && r.sets && !r.sets.some((x) => x.id === acct)) pickAcct("main");
+  }).catch((e) => { if (!work) { pickAcct("main"); } notify(e.message, "error"); });
   useEffect(() => { loadWeeks(); }, []);
-  const waiting = (acct, p) => weeks.reduce((n, w) => n + ((w.by_account?.[acct]?.[p] || {})["承認待ち"] || 0), 0);
-  const changed = () => { loadWeeks(); onChanged(); };
-  const platSel = cur[3].includes(sel) ? sel : "all";
+  useEffect(() => { loadSets(); }, [acct]);
+  const waiting = (a, p) => weeks.reduce((n, w) => n + ((w.by_account?.[a]?.[p] || {})["承認待ち"] || 0), 0);
+  const changed = () => { loadWeeks(); loadSets(); onChanged(); };
+  const cur = sets.find((x) => x.id === acct);
+  const reg = (p) => (summary.find((a) => a.platform === p) || {}).registered;
+  const platSel = PLATFORMS.some(([k]) => k === sel) ? sel : "all";
+  const onSelect = async (v) => {
+    if (v !== "__add") return pickAcct(v);
+    const label = window.prompt("新しいアカウントの名前(画面に出す名前。例: 別アカウント2)", `別アカウント${sets.length}`);
+    if (!label) return;
+    const note = window.prompt("ひとこと説明(任意。例: 料理と献立の note)", "") || "";
+    try { const r = await addAccountSet(label, note); notify(`「${r.label}」を追加しました。媒体ごとに URL を登録すると使えるようになります`, "ok"); pickAcct(r.id); }
+    catch (e) { notify(e.message, "error"); }
+  };
 
   return (
     <div className="accounts-tab">
-      <div className="acct-switch acct-sets">
-        {SETS.map(([k, label, note]) => (
-          <button key={k} className={set === k ? "on" : ""} onClick={() => pickSet(k)} title={note}>
-            {label}{k !== "work" && waiting(k, "all") ? <span className="count warn">{waiting(k, "all")}</span> : null}
-          </button>
-        ))}
+      <div className="acct-top">
+        <label className="acct-select">
+          <span className="muted small">アカウント</span>
+          <select value={work ? "" : acct} onChange={(e) => onSelect(e.target.value)}>
+            {work && <option value="">(選ぶ)</option>}
+            {sets.map((x) => <option key={x.id} value={x.id}>{x.label}{waiting(x.id, "all") ? `(承認待ち ${waiting(x.id, "all")})` : ""}</option>)}
+            <option value="__add">＋ アカウントを追加…</option>
+          </select>
+        </label>
+        <button className={`btn ${work ? "primary" : ""}`} onClick={() => pickAcct(work ? "main" : "work")}>請け負い(ランサーズ・ココナラ)</button>
       </div>
-      {set === "work" ? <Proposals notify={notify} onChanged={onChanged} /> : (
+      {work ? <Proposals notify={notify} onChanged={onChanged} /> : (
         <>
-          <div className="muted small acct-set-note">{cur[2]}</div>
+          {cur?.note && <div className="muted small acct-set-note">{cur.note}</div>}
           <div className="acct-switch">
-            {[["all", "全部"], ...plats].map(([k, label]) => (
-              <button key={k} className={platSel === k ? "on" : ""} onClick={() => pick(k)}
-                      style={platSel === k && k !== "all" ? { borderColor: PLATFORM_COLORS[k], color: PLATFORM_COLORS[k] } : null}>
-                {label}{waiting(set, k) ? <span className="count warn">{waiting(set, k)}</span> : null}
-              </button>
-            ))}
+            {[["all", "全部"], ...PLATFORMS].map(([k, label]) => {
+              const off = k !== "all" && summary.length > 0 && !reg(k);
+              return (
+                <button key={k} className={`${platSel === k ? "on" : ""} ${off ? "off" : ""}`} onClick={() => pick(k)}
+                        title={off ? "利用なし(URL を登録すると使えます)" : ""}
+                        style={platSel === k && k !== "all" ? { borderColor: PLATFORM_COLORS[k], color: PLATFORM_COLORS[k] } : null}>
+                  {label}{off ? <span className="off-tag">利用なし</span> : null}
+                  {waiting(acct, k) ? <span className="count warn">{waiting(acct, k)}</span> : null}
+                </button>
+              );
+            })}
           </div>
           {platSel === "all"
-            ? <Content key={set} week={week} setWeek={setWeek} onChanged={changed} notify={notify} onSay={onSay} account={set} />
-            : <Account key={set + platSel} account={set} platform={platSel} week={week} setWeek={setWeek} onChanged={changed} notify={notify} onSay={onSay} />}
+            ? <Content key={acct} week={week} setWeek={setWeek} onChanged={changed} notify={notify} onSay={onSay} account={acct} />
+            : <Account key={acct + platSel} account={acct} platform={platSel} week={week} setWeek={setWeek} onChanged={changed} notify={notify} onSay={onSay} />}
         </>
       )}
     </div>
   );
+}
+
+/** 登録の無い媒体: 利用なし。URL を入れて登録する(登録すると次の企画会議の議題に入る) */
+function Unregistered({ data, account, platform, notify, onDone }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try { await registerAccount(platform, url.trim(), account); notify(`${data.account_label}の${data.name}を登録しました。次の企画会議から投稿を作ります`, "ok"); setUrl(""); onDone(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy(false);
+  };
+  return (
+    <div className="card unreg">
+      <div className="card-head"><h3>{data.account_label}の{data.name}: 利用なし</h3></div>
+      <p className="muted small">この媒体はまだ登録されていないので、<b>投稿は作りません</b>(企画会議でも考えません)。アカウントを作ったら、プロフィールの URL を登録してください。登録すると、<b>次の企画会議からこの媒体の投稿を作ります</b>(すぐ始めたいときは、登録のあとに出る「投稿を作る会議を始める」を押してください)。</p>
+      <div className="inline-form">
+        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={`${data.name} のプロフィールの URL(https://…)`} />
+        <button className="btn primary" disabled={busy || !/^https:\/\//.test(url.trim())} onClick={save}>登録</button>
+      </div>
+      <div className="muted small" style={{ marginTop: 6 }}>登録するのは URL だけです。パスワードやログイン情報は入れないでください。</div>
+    </div>
+  );
+}
+
+/** 登録済みの媒体: 投稿を作る臨時会議をすぐ始める */
+function StartPostsButton({ data, account, platform, notify }) {
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    if (!window.confirm(`${data.account_label}の${data.name}の投稿を作る会議を、今から始めますか?`)) return;
+    setBusy(true);
+    const topic = `${data.account_label}(account: ${account})の${data.name}(${data.url})の運用を始める。この媒体の運用の型・週の本数・最初の投稿セットを決め、`
+      + `投稿ファイル(front matter に account: ${account} と platform: ${platform})を作って品質管理を通し、承認待ちにする。本アカウントとは完全に分ける`;
+    try { await startMeeting("adhoc", topic, ["企画編集部", "SNS運用部", "ライティング部", "デザイン部", "映像制作部", "収益化部"]); notify("会議を始めました。終わると議事録とやることが届きます", "ok"); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy(false);
+  };
+  return <button className="btn sm" disabled={busy} onClick={go}>{busy ? "始めています…" : "投稿を作る会議を始める"}</button>;
 }
 
 function Account({ account = "main", platform, week, setWeek, onChanged, notify, onSay }) {
@@ -64,6 +123,7 @@ function Account({ account = "main", platform, week, setWeek, onChanged, notify,
   const load = () => getAccount(platform, account).then(setData).catch((e) => notify(e.message, "error"));
   useEffect(() => { load(); }, [platform, account]);
   if (!data) return <div className="empty">読み込み中…</div>;
+  if (!data.registered) return <Unregistered data={data} account={account} platform={platform} notify={notify} onDone={() => { load(); onChanged(); }} />;
   const latest = data.followers_latest;
   const prev = data.followers.length > 1 ? data.followers[data.followers.length - 2] : null;
   const diff = latest && prev ? latest.followers - prev.followers : null;
@@ -76,6 +136,7 @@ function Account({ account = "main", platform, week, setWeek, onChanged, notify,
           <h3>{data.name}</h3>
           {data.url ? <a className="muted small" href={data.url} target="_blank" rel="noreferrer">{data.url}</a>
                     : <span className="muted small">URL 未登録(「{account === "sub" ? "別アカウントの" : ""}{data.name}のURLは〜」と話しかけると登録)</span>}
+          {account !== "main" && <div style={{ marginTop: 6 }}><StartPostsButton data={data} account={account} platform={platform} notify={notify} /></div>}
         </div>
         <div className="acct-kpi">
           <div className="kpi-num">{latest ? latest.followers.toLocaleString() : "—"}</div>

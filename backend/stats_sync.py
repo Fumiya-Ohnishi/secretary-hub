@@ -117,12 +117,10 @@ async def run(only: str = "") -> dict:
     today = datetime.date.today().isoformat()
     st = _state()
     out = {}
-    for account, cfg in accounts.ACCOUNT_SETS.items():
+    for account in company.account_ids():
         for platform in AUTO_PLATFORMS:
             key = f"{account}:{platform}"
             if only and only not in (key, account, platform):
-                continue
-            if platform not in cfg["platforms"] and platform != "youtube":
                 continue
             if not configured(platform, account):
                 out[key] = st[key] = {"ok": False, "connected": False, "at": "", "detail": "未接続"}

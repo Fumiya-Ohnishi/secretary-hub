@@ -108,7 +108,7 @@ async def worklog_backfill():
     except Exception as e:
         print("followers.csv を整えられませんでした:", e)
     try:  # 2026-11-12: 手入力の数字の空欄は 0 にそろえる(本・別アカウント)
-        for acct in ("main", "sub"):
+        for acct in company.account_ids():
             n = accounts.fill_zeros(acct)
             if n:
                 print(f"数字の表の空欄 {n}か所を 0 にしました({acct})")
@@ -175,12 +175,13 @@ def meetings_list():
 class MeetingIn(BaseModel):
     kind: str = "adhoc"
     topic: str = ""
+    departments: Optional[List[str]] = None
 
 
 @app.post("/api/meetings")
 async def meetings_start(body: MeetingIn):
     actions: list = []
-    msg = await agent.run_tool("hold_meeting", {"kind": body.kind, "topic": body.topic}, actions)
+    msg = await agent.run_tool("hold_meeting", {"kind": body.kind, "topic": body.topic, "departments": body.departments}, actions)
     return {"message": msg, "job": next((a["job"] for a in actions if a["type"] == "job"), None)}
 
 
@@ -539,6 +540,20 @@ class InsightIn(BaseModel):
 class ImprovementIn(BaseModel):
     text: str
     account: str = "main"
+
+
+class AccountSetIn(BaseModel):
+    label: str
+    note: str = ""
+
+
+@app.post("/api/account_sets")
+def add_account_set(body: AccountSetIn):
+    """別アカウントを1つ足す(2026-11-12 社長: アカウントが増えても選べるように)"""
+    try:
+        return company.add_account_set(body.label, body.note)
+    except ValueError as e:
+        return err(e, 400)
 
 
 @app.get("/api/accounts")
@@ -988,10 +1003,11 @@ async def diagnostics():
     try:  # 2026-11-12: アカウントごとの自動取得の状態(Instagram・Threads・YouTube)
         import stats_sync
         st = stats_sync._state()
-        for acct, aj in (("main", "本アカウント"), ("sub", "別アカウント")):
+        for acct in company.account_ids():
+            aj = company.account_label(acct)
             for pf, pj in (("instagram", "Instagram"), ("threads", "Threads"), ("youtube", "YouTube")):
-                if acct == "sub" and pf == "youtube":
-                    continue
+                if acct != "main" and pf not in company.registered_platforms(acct):
+                    continue  # 別アカウントで登録の無い媒体は出さない(利用なし)
                 v = st.get(f"{acct}:{pf}") or {}
                 conn = stats_sync.configured(pf, acct)
                 add(f"auto_{acct}_{pf}", f"数字の自動取得 {aj} {pj}", bool(conn and v.get("ok")),

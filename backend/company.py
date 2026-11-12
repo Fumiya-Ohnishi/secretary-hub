@@ -4,11 +4,12 @@
 収益は ai-company/data/revenue.csv。
 """
 import csv
+import json
 import datetime
 import os
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import notion
 
@@ -191,14 +192,70 @@ def summary_text(data: dict) -> str:
 
 # ---------- 数字の記録(収益・フォロワー) ----------
 FOLLOWERS_CSV = COMPANY_DIR / "data" / "followers.csv"
-ACCOUNT_IDS = ("main", "sub")  # main=本アカウント(定時AI) / sub=別アカウント(2026-11-12)
+# ---------- アカウントの組(2026-11-12 社長: 別アカウントが増えても選べるように) ----------
+# ai-company/data/account_sets.json に一覧と、媒体ごとの登録(URL)を持つ。本アカウント(main)の URL は前からの accounts.md
+ACCOUNT_SETS_JSON = COMPANY_DIR / "data" / "account_sets.json"
+DEFAULT_SETS = [
+    {"id": "main", "label": "本アカウント", "note": "定時AI・秘書セナ", "urls": {}},
+    {"id": "sub", "label": "別アカウント1", "note": "note の別アカウント(収益化用)", "urls": {}},
+]
+
+
+def account_sets() -> List[dict]:
+    try:
+        sets = json.loads(ACCOUNT_SETS_JSON.read_text())
+        if not isinstance(sets, list) or not sets:
+            raise ValueError
+    except Exception:
+        sets = [dict(x, urls=dict(x["urls"])) for x in DEFAULT_SETS]
+    if not any(x.get("id") == "main" for x in sets):
+        sets.insert(0, dict(DEFAULT_SETS[0]))
+    for x in sets:
+        x.setdefault("urls", {})
+        x.setdefault("note", "")
+    return sets
+
+
+def _save_sets(sets: List[dict]):
+    ACCOUNT_SETS_JSON.parent.mkdir(parents=True, exist_ok=True)
+    ACCOUNT_SETS_JSON.write_text(json.dumps(sets, ensure_ascii=False, indent=1) + "\n")
+
+
+def account_ids() -> List[str]:
+    return [x["id"] for x in account_sets()]
+
+
+def account_label(account: str) -> str:
+    return next((x["label"] for x in account_sets() if x["id"] == account), account)
+
+
+def check_account(account: str):
+    if account not in account_ids():
+        raise ValueError("アカウントは " + " / ".join(f"{x['id']}({x['label']})" for x in account_sets()) + " のどれかです")
+
+
+def add_account_set(label: str, note: str = "") -> dict:
+    """別アカウントを1つ足す(id は sub2, sub3… を自動で付ける)"""
+    label = " ".join((label or "").split())
+    if not label:
+        raise ValueError("アカウントの名前を入れてください(例: 別アカウント2)")
+    sets = account_sets()
+    if any(x["label"] == label for x in sets):
+        raise ValueError(f"「{label}」はもうあります")
+    ids = {x["id"] for x in sets}
+    n = 2
+    while f"sub{n}" in ids:
+        n += 1
+    new = {"id": "sub" if "sub" not in ids else f"sub{n}", "label": label, "note": " ".join((note or "").split()), "urls": {}}
+    sets.append(new)
+    _save_sets(sets)
+    return new
 
 
 def account_data_dir(account: str = "main") -> Path:
-    """アカウントごとの数字の置き場所。本アカウントは data/ のまま、別アカウントは data/sub/"""
-    if account not in ACCOUNT_IDS:
-        raise ValueError("アカウントは main(本アカウント)か sub(別アカウント)です")
-    return COMPANY_DIR / "data" if account == "main" else COMPANY_DIR / "data" / "sub"
+    """アカウントごとの数字の置き場所。本アカウントは data/ のまま、別アカウントは data/{id}/(例 data/sub/)"""
+    check_account(account)
+    return COMPANY_DIR / "data" if account == "main" else COMPANY_DIR / "data" / account
 
 
 def followers_csv(account: str = "main") -> Path:
@@ -208,14 +265,35 @@ PLATFORMS = ["instagram", "x", "threads", "note", "tiktok", "youtube"]
 PLATFORM_JA = {"instagram": "Instagram", "x": "X", "threads": "Threads", "note": "note", "tiktok": "TikTok", "youtube": "YouTube"}
 # 収益の出どころ(2026-11-12 社長: アカウントごと・請け負いごとに確定した金額を入れられるように)
 # 本アカウント(main)・別アカウント(sub)の媒体は「main_instagram」「sub_note」の形。note の本アカウントは前からの note_sales のまま
-REVENUE_SOURCE_JA = {"note_sales": "note販売(本アカウント)", "amazon_affiliate": "Amazonアフィ",
-                     "sub_note": "note販売(別アカウント)", "lancers": "ランサーズ", "coconala": "ココナラ"}
-_SNS_JA = {"instagram": "Instagram", "x": "X", "threads": "Threads", "tiktok": "TikTok", "youtube": "YouTube"}
-for _acct, _ja in (("main", "本アカウント"), ("sub", "別アカウント")):
-    for _p, _pja in _SNS_JA.items():
-        REVENUE_SOURCE_JA[f"{_acct}_{_p}"] = f"{_pja}({_ja})"
-REVENUE_SOURCE_JA["other"] = "その他"
-REVENUE_SOURCES = list(REVENUE_SOURCE_JA)
+_PJA_ALL = {"instagram": "Instagram", "x": "X", "threads": "Threads", "note": "note", "tiktok": "TikTok", "youtube": "YouTube"}
+_FIXED_SOURCES = {"note_sales": "note販売(本アカウント)", "amazon_affiliate": "Amazonアフィ", "lancers": "ランサーズ", "coconala": "ココナラ"}
+
+
+def revenue_sources() -> Dict[str, str]:
+    """収益の出どころ {キー: 日本語}。アカウントが増えると自動で増える(キーは「アカウントid_媒体」。本アカウントの note だけ note_sales)"""
+    out = dict(_FIXED_SOURCES)
+    for x in account_sets():
+        for p, pja in _PJA_ALL.items():
+            if x["id"] == "main" and p == "note":
+                continue
+            out[f"{x['id']}_{p}"] = f"{pja}販売({x['label']})" if p == "note" else f"{pja}({x['label']})"
+    out["other"] = "その他"
+    return out
+
+
+class _Sources(dict):  # 前からの REVENUE_SOURCE_JA[...] の呼び方をそのまま使えるように(毎回読み直す)
+    def get(self, k, d=None):
+        return revenue_sources().get(k, d)
+
+    def __getitem__(self, k):
+        return revenue_sources()[k]
+
+    def __contains__(self, k):
+        return k in revenue_sources()
+
+
+REVENUE_SOURCE_JA = _Sources()
+REVENUE_SOURCES = list(revenue_sources())
 
 
 def revenue_source(account: str, platform: str) -> str:
@@ -237,7 +315,7 @@ def _append_csv(path: Path, header: List[str], row: List[str]):
 
 
 async def record_revenue(amount: int, source: str = "other", date: Optional[str] = None, memo: str = "") -> dict:
-    if source not in REVENUE_SOURCES:
+    if source not in revenue_sources():
         source = "other"
     date = notion.valid_date(date or "") or datetime.date.today().isoformat()
     amount = int(amount)
@@ -359,15 +437,35 @@ ACCOUNT_HOSTS = {"instagram": ("instagram.com",), "x": ("x.com", "twitter.com"),
 
 
 def account_row_name(platform: str, account: str = "main") -> str:
-    """data/accounts.md の表の1列目。別アカウントは「note(別アカウント…)」の形"""
-    return PLATFORM_JA[platform] if account == "main" else f"{PLATFORM_JA[platform]}(別アカウント)"
+    """data/accounts.md の表の1列目。別アカウントは「note(別アカウント1)」の形"""
+    return PLATFORM_JA[platform] if account == "main" else f"{PLATFORM_JA[platform]}({account_label(account)})"
 
 
 def is_account_row(cell: str, platform: str, account: str = "main") -> bool:
     name = PLATFORM_JA[platform]
     if account == "main":
         return cell == name
-    return cell.startswith(name + "(別アカウント")
+    return cell == account_row_name(platform, account) or (account == "sub" and cell.startswith(name + "(別アカウント"))
+
+
+def account_url(platform: str, account: str = "main") -> str:
+    """その媒体の登録(URL)。別アカウントは account_sets.json、無ければ accounts.md の行"""
+    if account != "main":
+        for x in account_sets():
+            if x["id"] == account:
+                u = (x.get("urls") or {}).get(platform) or {}
+                if u.get("url"):
+                    return u["url"]
+    if ACCOUNTS_MD.exists():
+        for line in ACCOUNTS_MD.read_text().splitlines():
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if line.startswith("|") and len(cells) > 1 and is_account_row(cells[0], platform, account) and cells[1].startswith("http"):
+                return cells[1]
+    return ""
+
+
+def registered_platforms(account: str = "main") -> List[str]:
+    return [p for p in PLATFORMS if account_url(p, account)]
 
 
 async def register_account(platform: str, url: str, opened: Optional[str] = None, account: str = "main") -> dict:
@@ -378,6 +476,14 @@ async def register_account(platform: str, url: str, opened: Optional[str] = None
     if not re.match(r"^https://", url) or not any(h in url.split("/")[2] for h in ACCOUNT_HOSTS[platform]):
         raise ValueError(f"{PLATFORM_JA[platform]} の URL(https://{ACCOUNT_HOSTS[platform][0]}/...)を指定してください")
     opened = notion.valid_date(opened or "") or datetime.date.today().isoformat()
+    check_account(account)
+    newly = not account_url(platform, account)
+    if account != "main":
+        sets = account_sets()
+        for x in sets:
+            if x["id"] == account:
+                x.setdefault("urls", {})[platform] = {"url": url, "opened": opened}
+        _save_sets(sets)
     name = account_row_name(platform, account)
     if ACCOUNTS_MD.exists():
         lines = ACCOUNTS_MD.read_text().splitlines()
@@ -411,15 +517,21 @@ async def register_account(platform: str, url: str, opened: Optional[str] = None
             synced = True
         except Exception as e:
             synced = str(e)
-    return {"platform": platform, "url": url, "opened": opened, "account": account, "notion": synced}
+    if newly:  # 2026-11-12 社長: 登録された次の会議から、その媒体の投稿を作る → 目安箱に議題として入れる
+        try:
+            sug = COMPANY_DIR / "meetings" / "_suggestions.md"
+            if sug.exists():
+                sug.write_text(sug.read_text().rstrip("\n") + f"\n- {opened} 秘書室(社長が登録): **{account_label(account)}の{PLATFORM_JA[platform]}を登録しました**({url})。"
+                               f"次の企画会議で、この媒体の運用の型・本数・最初の投稿を決める(投稿ファイルに account: {account})\n")
+        except Exception as e:
+            print("目安箱に書けませんでした:", e)
+    return {"platform": platform, "url": url, "opened": opened, "account": account, "notion": synced, "new": newly}
 
 
 def accounts_text() -> str:
-    if not ACCOUNTS_MD.exists():
-        return ""
-    got = []
-    for line in ACCOUNTS_MD.read_text().splitlines():
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if line.startswith("|") and len(cells) > 2 and cells[1].startswith("http"):
-            got.append(f"{cells[0]} {cells[1]}")
-    return "- 開設済みアカウント: " + ("、".join(got) if got else "まだなし")
+    """秘書・部署が読む、アカウントごとの登録済みの媒体(登録の無い媒体の投稿は作らない。2026-11-12 社長)"""
+    lines = []
+    for x in account_sets():
+        reg = [f"{PLATFORM_JA[p]} {account_url(p, x['id'])}" for p in registered_platforms(x["id"])]
+        lines.append(f"  - {x['label']}(account: {x['id']}): " + ("、".join(reg) if reg else "登録なし"))
+    return "- アカウントと登録済みの媒体(登録の無い媒体は「利用なし」=投稿を作らない):\n" + "\n".join(lines)
