@@ -26,12 +26,17 @@ INSIGHTS = {  # ファイル名と列(date の次から)。data/README.md と同
     "x": ("insights_x.csv", ["content_id", "impressions", "likes", "reposts", "replies", "follows"]),
     "threads": ("insights_threads.csv", ["content_id", "views", "likes", "replies", "follows"]),
     "note": ("insights_note.csv", ["metric", "value"]),
-    "tiktok": ("insights_tiktok.csv", ["content_id", "views", "likes", "comments", "shares", "saves", "follows"]),
-    "youtube": ("insights_youtube.csv", ["content_id", "views", "likes", "comments", "follows"]),
+    # 2026-11-12 社長: TikTok・YouTube の画面で分かる「見られ方」も記録する(3秒の離脱の対策 P-032 に使う)
+    "tiktok": ("insights_tiktok.csv", ["content_id", "views", "likes", "comments", "shares", "saves", "follows",
+                                       "watch_time_sec", "avg_watch_sec", "full_watch_rate"]),
+    "youtube": ("insights_youtube.csv", ["content_id", "views", "likes", "comments", "follows",
+                                         "watch_hours", "stayed_rate"]),
 }
 COLUMN_JA = {"content_id": "投稿ID", "format": "形式", "reach": "リーチ", "saves": "保存", "likes": "いいね", "comments": "コメント",
              "profile_visits": "プロフィール訪問", "follows": "フォロー増", "impressions": "表示", "reposts": "リポスト",
-             "replies": "返信", "views": "再生", "shares": "シェア", "metric": "項目", "value": "値"}
+             "replies": "返信", "views": "再生", "shares": "シェア", "metric": "項目", "value": "値",
+             "watch_time_sec": "総再生時間(秒)", "avg_watch_sec": "平均視聴時間(秒)", "full_watch_rate": "フル視聴率(%)",
+             "watch_hours": "総再生時間(時間)", "stayed_rate": "視聴を継続(%)"}
 # 修正ログの「対象」から媒体を見分ける言葉
 KEYWORDS = {"instagram": ("Instagram", "インスタ", "リール", "カルーセル"), "x": ("X ", "X(", "Xの", "ツイート", "スレッド"),
             "threads": ("Threads",), "note": ("note",),
@@ -74,7 +79,8 @@ TEXT_COLS = ("content_id", "format", "metric")  # 数字ではない列(空で�
 def fill_zeros(account: str = "main") -> int:
     """手入力の数字の表(insights_*.csv・insights_note_posts.csv)の空欄を 0 にする(2026-11-12 社長)。
     自動で取った数字(auto_*.csv)の空欄は「公式に取れない」の意味なので触らない"""
-    files = {n for n, _ in INSIGHTS.values()} | {n for n, _ in POST_INSIGHTS.values()}
+    files = {n: c for n, c in INSIGHTS.values()}
+    files.update({n: c for n, c in POST_INSIGHTS.values()})
     changed = 0
     for name in sorted(files):
         path = _data(name, account)
@@ -85,6 +91,10 @@ def fill_zeros(account: str = "main") -> int:
             cols = rd.fieldnames or []
             rows = list(rd)
         n = 0
+        want = ["date"] + files[name]
+        if cols != want and set(cols) <= set(want):  # 列が増えたとき(2026-11-12 TikTok・YouTube)は、表の頭をそろえる
+            cols = want
+            n += 1
         for r in rows:
             if not any((r.get(c) or "").strip() for c in cols):
                 continue
