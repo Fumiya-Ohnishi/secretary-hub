@@ -1548,9 +1548,10 @@ def resume_after_answer(task: dict, decision: str, comment: str = "") -> Optiona
     dept = _dept_from_note(task.get("note", ""))
     if not dept:
         return None
-    src = re.search(r"出どころ:\s*[^「]*「([^」]*)」", task.get("note", ""))
+    src = re.search(r"出どころ:\s*[^「]*「(.*?)」の報告", task.get("note", "")) or \
+        re.search(r"出どころ:\s*[^「]*「([^」]*)」", task.get("note", ""))
     answer = comment.strip() or "(コメントなし。備考に選んだ案が書いてあれば、それが答え)"
-    title = f"{task.get('id', '')} への社長の回答を受けて再開" + (f":{src.group(1)[:30]}" if src else "")
+    title = president_asks.resume_title(src.group(1) if src else "", task.get("id", ""), task.get("title", ""))
     instr = (f"社長が確認タスク {task.get('id', '')}「{task.get('title', '')}」に答えました。\n"
              f"- 社長の判断: {'承認(この答えで進める)' if decision == 'approve' else '差し戻し(直してほしい)'}\n"
              f"- 社長のコメント: {answer}\n"
