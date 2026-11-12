@@ -218,7 +218,16 @@ def overview(platform: str, account: str = "main") -> dict:
         "playbook": playbook(platform, account),
         "crosspost": crosspost_candidates(platform) if platform in CROSSPOST and account == "main" else [],
         "revenue": revenue_for(account, platform),
+        "auto": _auto(platform, account),
     }
+
+
+def _auto(platform: str, account: str) -> dict:
+    try:
+        import stats_sync
+        return stats_sync.latest(platform, account)
+    except Exception as e:
+        return {"supported": False, "connected": False, "status": {"detail": str(e)[:120]}, "columns": [], "rows": []}
 
 
 def account_sets() -> List[dict]:

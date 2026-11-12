@@ -81,6 +81,7 @@ export const getPostResults = (p, id, account = "main") => call("GET", `/api/acc
 export const markCrossposted = (p, path, undo = false) => call("POST", `/api/accounts/${encodeURIComponent(p)}/crossposted`, { path, undo });
 export const addImprovement = (p, text, account = "main") => call("POST", `/api/accounts/${encodeURIComponent(p)}/improvements`, { text, account });
 // 請け負いの提案(ランサーズ・ココナラ。2026-11-12)
+export const syncStats = (only = "") => call("POST", `/api/stats/sync${only ? `?only=${encodeURIComponent(only)}` : ""}`);
 export const getProposals = (service) => call("GET", `/api/proposals${service ? `?service=${encodeURIComponent(service)}` : ""}`);
 export const addProposal = (p) => call("POST", "/api/proposals", p);
 export const patchProposal = (id, p) => call("PATCH", `/api/proposals/${encodeURIComponent(id)}`, p);

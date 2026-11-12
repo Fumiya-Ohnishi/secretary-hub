@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { getContentWeeks, getAccount, addInsight, addImprovement, recordFollowers, markCrossposted, recordRevenue,
-         getProposals, addProposal, patchProposal, proposalRevenue } from "./api.js";
+         getProposals, addProposal, patchProposal, proposalRevenue, syncStats } from "./api.js";
 import Content, { PostPreview, PostResults } from "./Content.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
@@ -122,6 +122,7 @@ function Numbers({ data, platform, account = "main", notify, onDone }) {
                     points: data.followers.map((p) => ({ date: p.date, value: p.followers })) }];
   return (
     <>
+      <AutoStats data={data} platform={platform} account={account} notify={notify} onDone={onDone} />
       <div className="card">
         <div className="card-head"><h3>フォロワー数の推移</h3></div>
         {data.followers.length ? <LineChart series={series} unit="人" />
@@ -363,5 +364,51 @@ function Proposals({ notify, onChanged }) {
         <div className="muted small" style={{ marginTop: 8 }}>当社はサービスにログインしません。応募・やりとり・納品は社長が行い、結果をここに入れてください。</div>
       </div>
     </>
+  );
+}
+
+/** 公式の仕組み(API)で自動で取った数字(2026-11-12 社長: つないだアカウントは自動で数字を取りたい) */
+function AutoStats({ data, platform, account, notify, onDone }) {
+  const a = data.auto || {};
+  const [busy, setBusy] = useState(false);
+  if (!a.supported) {
+    return <div className="card auto-card"><div className="muted small">
+      {data.name} は公式の無料の仕組みで数字を自動では取れません(X は有料の API、note・TikTok は公開の API がありません)。下の欄に入力してください。
+    </div></div>;
+  }
+  const run = async () => {
+    setBusy(true);
+    try { const r = await syncStats(`${account}:${platform}`); const v = r[`${account}:${platform}`] || {}; notify(v.ok ? `取得しました: ${v.detail}` : `取れませんでした: ${v.detail}`, v.ok ? "ok" : "error"); onDone(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy(false);
+  };
+  const st = a.status || {};
+  return (
+    <div className="card auto-card">
+      <div className="card-head"><h3>自動で取った数字({data.name} 公式)</h3>
+        <span className="muted small">{a.connected ? (st.at ? `前回 ${st.at.slice(5, 16).replace("T", " ")}・毎朝 8:00 に自動` : "つないであります・毎朝 8:00 に自動") : "未接続"}</span>
+        {a.connected && <button className="btn sm" disabled={busy} onClick={run}>{busy ? "取得中…" : "今すぐ取る"}</button>}</div>
+      {!a.connected ? (
+        <div className="empty">まだつないでいません。会社のフォルダの <b>playbooks/account_connect.md</b>(アカウント連携マニュアル)の手順でつなぐと、フォロワー数と投稿ごとの閲覧数などを毎朝自動で記録します。</div>
+      ) : (
+        <>
+          {st.ok === false && st.detail && <div className="warn-box small">前回は取れませんでした: {st.detail}</div>}
+          {a.rows.length ? (
+            <div className="table-wrap"><table className="tbl">
+              <thead><tr><th>投稿日</th><th>種類</th><th>投稿</th>{a.columns.map((c) => <th key={c.key}>{c.label}</th>)}<th>取った日</th></tr></thead>
+              <tbody>{a.rows.map((r) => (
+                <tr key={r.media_id}>
+                  <td>{r.posted_at}</td><td>{r.kind}</td>
+                  <td className="auto-cap">{r.url ? <a href={r.url} target="_blank" rel="noreferrer">{(r.caption || "(本文なし)").slice(0, 24)}</a> : (r.caption || "").slice(0, 24)}{r.content_id ? <span className="muted small"> {r.content_id}</span> : null}</td>
+                  {a.columns.map((c) => <td key={c.key}>{r[c.key] === "" || r[c.key] == null ? "—" : Number(r[c.key]).toLocaleString()}</td>)}
+                  <td className="muted small">{r.date}</td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          ) : <div className="empty">まだ取っていません。「今すぐ取る」を押すか、次の 8:00 をお待ちください。</div>}
+          <div className="muted small" style={{ marginTop: 6 }}>「—」はその投稿では公式に取れない数字です。投稿日が同じ当社の投稿が1つだけなら、投稿IDを横に出します。</div>
+        </>
+      )}
+    </div>
   );
 }

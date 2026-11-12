@@ -1104,3 +1104,6 @@ select.status-sel { color-scheme: dark; }
 .prop-title { font-weight: 600; margin: 2px 0; overflow-wrap: anywhere; }
 .prop-act { display: flex; gap: 8px; align-items: center; }
 .prop-act select { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; color: var(--text); padding: 6px 8px; font-size: 13px; }
+.auto-card .card-head { gap: 10px; flex-wrap: wrap; }
+.auto-cap { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.warn-box { background: rgba(255, 196, 92, .1); border: 1px solid rgba(255, 196, 92, .35); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; color: var(--warn); }
