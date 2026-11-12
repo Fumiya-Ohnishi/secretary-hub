@@ -55,7 +55,7 @@ def configured(platform: str, account: str = "main") -> bool:
     if platform == "youtube":
         import youtube_api
         import accounts
-        return youtube_api.configured() and bool(accounts.profile_url("youtube", account))
+        return youtube_api.configured(account) and bool(accounts.profile_url("youtube", account))
     return False
 
 
@@ -73,8 +73,8 @@ async def _fetch(platform: str, account: str):
         import youtube_api
         import accounts
         url = accounts.profile_url("youtube", account)
-        ch = await youtube_api.channel(url)
-        items = await youtube_api.my_videos(url)
+        ch = await youtube_api.channel(url, account)
+        items = await youtube_api.my_videos(url, account=account)
         import youtube_analytics  # 2026-11-12: 許可があれば、総再生時間・平均視聴時間・視聴を継続(計算)も足す
         if youtube_analytics.configured(account):
             try:

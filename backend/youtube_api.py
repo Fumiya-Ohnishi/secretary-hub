@@ -18,8 +18,15 @@ class YTError(Exception):
     pass
 
 
-def configured() -> bool:
-    return bool(os.getenv("YOUTUBE_API_KEY", "").strip())
+def configured(account: str = "main") -> bool:
+    """APIキーがあるか、YouTube アナリティクスの許可(youtube.readonly を含む)があれば取れる(2026-11-12)"""
+    if os.getenv("YOUTUBE_API_KEY", "").strip():
+        return True
+    try:
+        import youtube_analytics
+        return youtube_analytics.configured(account)
+    except Exception:
+        return False
 
 
 def channel_id(url: str) -> str:
@@ -29,12 +36,21 @@ def channel_id(url: str) -> str:
     return m.group(1)
 
 
-async def _get(path: str, params: dict) -> dict:
+async def _get(path: str, params: dict, account: str = "main") -> dict:
     key = os.getenv("YOUTUBE_API_KEY", "").strip()
-    if not key:
-        raise YTError("YOUTUBE_API_KEY が未設定です(手順: playbooks/account_connect.md)")
+    headers = {}
+    if key:
+        params = {**params, "key": key}
+    else:  # APIキーが無ければ、YouTube アナリティクスの許可(youtube.readonly)で読む
+        import youtube_analytics
+        if not youtube_analytics.configured(account):
+            raise YTError("YOUTUBE_API_KEY が未設定で、YouTube アナリティクスの許可もありません(手順: playbooks/account_connect.md)")
+        try:
+            headers = {"Authorization": f"Bearer {await youtube_analytics._token(account)}"}
+        except youtube_analytics.YTAError as e:
+            raise YTError(str(e))
     async with httpx.AsyncClient(timeout=30) as c:
-        r = await c.get(f"{API}/{path}", params={**params, "key": key})
+        r = await c.get(f"{API}/{path}", params=params, headers=headers)
     try:
         d = r.json()
     except Exception:
@@ -44,8 +60,8 @@ async def _get(path: str, params: dict) -> dict:
     return d
 
 
-async def channel(url: str) -> dict:
-    d = await _get("channels", {"part": "statistics,contentDetails,snippet", "id": channel_id(url)})
+async def channel(url: str, account: str = "main") -> dict:
+    d = await _get("channels", {"part": "statistics,contentDetails,snippet", "id": channel_id(url)}, account)
     items = d.get("items") or []
     if not items:
         raise YTError("チャンネルが見つかりません(URL の UC… を確かめてください)")
@@ -57,15 +73,15 @@ async def channel(url: str) -> dict:
             "uploads": ((it.get("contentDetails") or {}).get("relatedPlaylists") or {}).get("uploads", "")}
 
 
-async def my_videos(url: str, limit: int = 25) -> List[dict]:
-    ch = await channel(url)
+async def my_videos(url: str, limit: int = 25, account: str = "main") -> List[dict]:
+    ch = await channel(url, account)
     if not ch["uploads"]:
         return []
-    pl = await _get("playlistItems", {"part": "contentDetails", "playlistId": ch["uploads"], "maxResults": min(limit, 50)})
+    pl = await _get("playlistItems", {"part": "contentDetails", "playlistId": ch["uploads"], "maxResults": min(limit, 50)}, account)
     ids = [x["contentDetails"]["videoId"] for x in pl.get("items", [])]
     if not ids:
         return []
-    v = await _get("videos", {"part": "statistics,snippet", "id": ",".join(ids)})
+    v = await _get("videos", {"part": "statistics,snippet", "id": ",".join(ids)}, account)
     out = []
     for it in v.get("items", []):
         st, sn = it.get("statistics") or {}, it.get("snippet") or {}
