@@ -676,6 +676,32 @@ async def proposal_revenue(pid: str, body: ProposalRevenueIn):
         return err(e, 400)
 
 
+# ---------- LINE スタンプ・絵文字(2026-11-12 社長) ----------
+class StampDecision(BaseModel):
+    action: str
+    comment: str = ""
+    url: str = ""
+
+
+@app.get("/api/stamps")
+def stamps_list(kind: Optional[str] = None):
+    import stamps
+    return stamps.list_sets(kind if kind in ("stamp", "emoji") else None)
+
+
+@app.post("/api/stamps/{sid}/decision")
+async def stamps_decide(sid: str, body: StampDecision):
+    """社長がスタンプのセットを承認・差し戻し・申請した・販売中にする(ボタンから)"""
+    import stamps
+    try:
+        r = stamps.decide(sid, body.action, body.comment, body.url)
+        if body.action in ("reject", "line_rejected"):
+            asyncio.create_task(agent.on_correction(f"LINEスタンプ {sid} {r['title'][:40]}", body.comment or "(理由なし)"))
+        return r
+    except (ValueError, KeyError) as e:
+        return err(e, 400)
+
+
 @app.post("/api/stats/sync")
 async def stats_sync_now(only: str = ""):
     """つないだアカウントの数字を今すぐ取る(アカウント画面の「今すぐ取る」ボタン)"""

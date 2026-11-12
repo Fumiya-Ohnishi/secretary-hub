@@ -64,6 +64,33 @@ def sections(body: str) -> List[dict]:
 
 
 # ---------- 読み取り ----------
+def account_id(v: str) -> str:
+    """投稿ファイルの account: をアカウントの id にそろえる(部署が「note別アカウント」「別アカウント1」のように書いても読めるように)"""
+    v = (v or "").strip()
+    if not v:
+        return "main"
+    try:
+        sets = company.account_sets()
+    except Exception:
+        sets = [{"id": "main", "label": "本アカウント"}, {"id": "sub", "label": "別アカウント1"}]
+    ids = {x["id"]: x for x in sets}
+    if v in ids:
+        return v
+    for x in sets:
+        if v == x.get("label"):
+            return x["id"]
+    if v in ("本アカウント", "本", "定時AI"):
+        return "main"
+    m = re.search(r"(\d+)", v)
+    if "別" in v or "sub" in v.lower():
+        if m:
+            for x in sets:
+                if x["id"] != "main" and re.search(r"(\d+)", x.get("label", "")) and re.search(r"(\d+)", x["label"]).group(1) == m.group(1):
+                    return x["id"]
+        return "sub" if "sub" in ids else next((x["id"] for x in sets if x["id"] != "main"), "main")
+    return "main"
+
+
 def _post(path: Path) -> dict:
     meta, body = parse(path.read_text())
     secs = sections(body)
@@ -74,7 +101,7 @@ def _post(path: Path) -> dict:
         "file": path.name,
         "id": meta.get("id", path.stem),
         "platform": meta.get("platform", ""),
-        "account": meta.get("account", "main") or "main",  # 2026-11-12: main=本アカウント / sub=別アカウント
+        "account": account_id(meta.get("account", "")),  # 2026-11-12: main=本アカウント / sub=別アカウント1 / sub2…
         "platform_ja": PLATFORM_JA.get(meta.get("platform", ""), meta.get("platform", "")),
         "format": meta.get("format", ""),
         "title": meta.get("title", path.stem),

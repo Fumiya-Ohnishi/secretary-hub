@@ -406,6 +406,12 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
   useEffect(() => { loadWeeks(); }, []);
   useEffect(() => { setOpen(null); loadWeek(); }, [week]);
   const changed = () => { loadWeek(); loadWeeks(); onChanged(); };
+  // 別アカウントで、選んでいる週にそのアカウントの投稿が無ければ、投稿のある一番新しい週に移る
+  useEffect(() => {
+    if (!weeks || !account || account === "main") return;
+    const has = weeks.filter((w) => Object.keys(w.by_account?.[account] || {}).length);
+    if (has.length && !has.some((w) => w.week === week)) setWeek(has[0].week);
+  }, [weeks, account]);
 
   if (!weeks) return <div className="empty">読み込み中…</div>;
   if (!weeks.length) {
@@ -419,6 +425,9 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
   }
   // account: main=本アカウント / sub=別アカウント(2026-11-12)。未指定なら全部
   const posts = data ? data.posts.filter((p) => (!platform || p.platform === platform) && (!account || (p.account || "main") === account)) : [];
+  // 別アカウントでは、本アカウントの週のテーマ(_week.md)は出さない。週の一覧も、そのアカウントの投稿がある週だけ(2026-11-12 社長)
+  const sub = account && account !== "main";
+  const shownWeeks = sub ? weeks.filter((w) => Object.keys(w.by_account?.[account] || {}).length) : weeks;
   const wcount = (w) => (account ? (w.by_account?.[account]?.[platform || "all"] || {})
                                  : (platform ? (w.by_platform?.[platform] || {}) : w.counts))["承認待ち"] || 0;
   const waiting = posts.filter((p) => p.status === "承認待ち").length;
@@ -432,14 +441,17 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
   return (
     <div className="content-tab">
       <div className="seg">
-        {weeks.map((w) => (
+        {shownWeeks.map((w) => (
           <button key={w.week} className={week === w.week ? "on" : ""} onClick={() => setWeek(w.week)}>
             {w.week}{wcount(w) ? <span className="count warn">{wcount(w)}</span> : null}
           </button>
         ))}
       </div>
-      {data && (
+      {sub && shownWeeks.length === 0 && <div className="empty">このアカウントの投稿はまだありません。投稿ファイルに account: {account} が付いたものがここに出ます。</div>}
+      {data && (!sub || shownWeeks.some((w) => w.week === week)) && (
         <>
+          {sub ? (waiting > 0 && <div className="card week-head"><div className="muted small">{data.week} ・ このアカウントの投稿</div>
+            {!platform && <button className="btn primary" disabled={busy} onClick={approveAll}>承認待ち {waiting}件を全部承認</button>}</div>) : (
           <div className="card week-head">
             <div>
               <div className="muted small">{data.week} のテーマ{data.task ? ` ・ タスク ${data.task}` : ""}</div>
@@ -447,7 +459,7 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
               {data.summary && <WeekNote text={data.summary} />}
             </div>
             {waiting > 0 && !platform && <button className="btn primary" disabled={busy} onClick={approveAll}>承認待ち {waiting}件を全部承認</button>}
-          </div>
+          </div>)}
           {posts.map((p) => (
             <Post key={p.path} post={p} open={open === p.path} onToggle={() => setOpen(open === p.path ? null : p.path)}
                   onChanged={changed} notify={notify} />

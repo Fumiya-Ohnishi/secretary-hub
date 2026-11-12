@@ -266,7 +266,8 @@ PLATFORM_JA = {"instagram": "Instagram", "x": "X", "threads": "Threads", "note":
 # 収益の出どころ(2026-11-12 社長: アカウントごと・請け負いごとに確定した金額を入れられるように)
 # 本アカウント(main)・別アカウント(sub)の媒体は「main_instagram」「sub_note」の形。note の本アカウントは前からの note_sales のまま
 _PJA_ALL = {"instagram": "Instagram", "x": "X", "threads": "Threads", "note": "note", "tiktok": "TikTok", "youtube": "YouTube"}
-_FIXED_SOURCES = {"note_sales": "note販売(本アカウント)", "amazon_affiliate": "Amazonアフィ", "lancers": "ランサーズ", "coconala": "ココナラ"}
+_FIXED_SOURCES = {"note_sales": "note販売(本アカウント)", "amazon_affiliate": "Amazonアフィ", "lancers": "ランサーズ", "coconala": "ココナラ",
+                  "line_creators": "LINEスタンプ・絵文字"}
 
 
 def revenue_sources() -> Dict[str, str]:
