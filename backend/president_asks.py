@@ -21,6 +21,28 @@ OPEN = ("未着手", "進行中", "確認待ち", "承認待ち")
 FIELDS = {"背景": "background", "何について": "background", "選択肢": "options", "おすすめ": "recommend",
           "部署のおすすめ": "recommend", "未回答のとき": "if_no_answer", "期限": "due", "資料": "source"}
 
+# 社長の回答で再開した作業の件名(2026-11-12 社長「社長確認になった後のタイトルが1番わかりにくい」)
+# 以前は「T-312 への社長の回答を受けて再開:T-311 への社長の回答を受けて再開:表示名…」と前の件名に積み重なり、途中で切れていた
+RESUME_PREFIX = re.compile(r"^(?:\s*T-\d+\s*への社長の回答を受けて再開[::]?\s*)+")
+RESUME_SUFFIX = re.compile(r"(?:\s*[((]社長の回答で続き[・･][^))]*[))])+\s*$")
+
+
+def base_title(title: str) -> str:
+    """作業の件名から、再開のたびに付いた前置き・後ろ書きを外して、元の作業名だけにする"""
+    t = re.sub(r"^【[^】]*】", "", (title or "").strip())
+    t = RESUME_SUFFIX.sub("", RESUME_PREFIX.sub("", t))
+    t = re.sub(r"\s*の報告に、社長の判断が要る事項があります$", "", t)
+    return t.strip()
+
+
+def resume_title(work: str, task_id: str, question: str = "") -> str:
+    """再開した作業の件名: 「元の作業名(社長の回答で続き・T-329)」。元の作業名が分からなければ確認の件名を使う"""
+    base = base_title(work) or base_title(question) or "止まっていた作業"
+    if len(base) > 60:
+        base = base[:59] + "…"
+    return f"{base}(社長の回答で続き・{task_id})" if task_id else f"{base}(社長の回答で続き)"
+
+
 FORMAT_HELP = """## 社長への確認
 ### (件名: 何についての判断か、社長が件名だけで分かる1行。例: 47週カルーセル03の表紙を、どの形で出すか)
 - 背景: (何が起きていて、なぜ社長の判断が要るか。点数・社内の言葉は言い換える)
@@ -82,7 +104,7 @@ def _note(a: dict, job: dict) -> str:
                        ("未回答のとき", "if_no_answer"), ("資料", "source")):
         if a.get(key):
             parts.append(f"{label}: {a[key]}")
-    parts.append(f"出どころ: {job.get('department', '')}の作業「{(job.get('title') or '')[:60]}」の報告")
+    parts.append(f"出どころ: {job.get('department', '')}の作業「{base_title(job.get('title') or '')[:60]}」の報告")
     parts.append("決め方: 備考に選んだ案を書いて「承認済み」に(直してほしいときは「差し戻し」)")
     return " / ".join(parts)
 
@@ -108,6 +130,13 @@ async def create_tasks(job: dict, asks: List[dict]) -> List[dict]:
         t = await company.create_task(f"【確認】{name}", "社長", _due(a), _note(a, job), _link(a.get("source", "")), status="確認待ち")
         open_titles.append(name)
         made.append(t)
+        try:  # 作業のまとまりに「社長への確認」を1行足す(2026-11-12)
+            import threads
+            await threads.add(job.get("title", ""), "❓", f"社長への確認 {t.get('id', '')}「{name}」",
+                              dept=job.get("department_full") or "", link=t.get("url", ""), link_text="確認タスク",
+                              state="社長の確認待ち", relate_task=t.get("key", ""))
+        except Exception:
+            pass
     return made
 
 
@@ -139,7 +168,7 @@ async def from_job(job: dict) -> List[dict]:
         except Exception:
             asks = []
         if not asks:  # 取り出せなくても、確認があることだけは必ず残す
-            asks = [{"title": f"{(job.get('title') or '部署の作業')[:50]} の報告に、社長の判断が要る事項があります",
+            asks = [{"title": f"「{base_title(job.get('title') or '')[:50] or '部署の作業'}」で、社長に決めてほしいことがあります(中身は作業ログ)",
                      "background": "作業報告に社長の判断・確認を求める文があります。作業タブか作業ログで報告を読んでください",
                      "source": ""}]
     return await create_tasks(job, asks) if asks else []
