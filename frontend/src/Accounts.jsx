@@ -100,9 +100,13 @@ function Account({ account = "main", platform, week, setWeek, onChanged, notify,
   );
 }
 
+const TEXT_COLS = ["content_id", "format", "metric"];
+const zeroVals = (cols) => Object.fromEntries((cols || []).filter((c) => !TEXT_COLS.includes(c.key)).map((c) => [c.key, "0"]));
+
 function Numbers({ data, platform, account = "main", notify, onDone }) {
   const [fol, setFol] = useState("");
-  const [vals, setVals] = useState({});
+  // 2026-11-12 社長: 数字は 0 から始め、変えなかった欄は 0 で記録する(投稿ID・形式・項目は空から)
+  const [vals, setVals] = useState(() => zeroVals(data.insight_columns));
   const [busy, setBusy] = useState(false);
   const saveFollowers = async () => {
     const n = parseInt(fol, 10);
@@ -114,7 +118,7 @@ function Numbers({ data, platform, account = "main", notify, onDone }) {
   };
   const saveInsight = async () => {
     setBusy(true);
-    try { await addInsight(platform, vals, undefined, false, account); notify("数字を記録しました", "ok"); setVals({}); onDone(); }
+    try { await addInsight(platform, vals, undefined, false, account); notify("数字を記録しました", "ok"); setVals(zeroVals(data.insight_columns)); onDone(); }
     catch (e) { notify(e.message, "error"); }
     setBusy(false);
   };
@@ -147,10 +151,11 @@ function Numbers({ data, platform, account = "main", notify, onDone }) {
         <div className="insight-form">
           {data.insight_columns.map((c) => (
             <label key={c.key}><span>{c.label}</span>
-              <input value={vals[c.key] || ""} onChange={(e) => setVals({ ...vals, [c.key]: e.target.value })}
-                     inputMode={["content_id", "format", "metric"].includes(c.key) ? "text" : "numeric"} /></label>
+              <input value={vals[c.key] ?? ""} onChange={(e) => setVals({ ...vals, [c.key]: e.target.value })}
+                     onFocus={(e) => !TEXT_COLS.includes(c.key) && e.target.select()}
+                     inputMode={TEXT_COLS.includes(c.key) ? "text" : "numeric"} /></label>
           ))}
-          <button className="btn primary" disabled={busy || !Object.values(vals).some((v) => v)} onClick={saveInsight}>記録</button>
+          <button className="btn primary" disabled={busy || !data.insight_columns.some((c) => TEXT_COLS.includes(c.key) && (vals[c.key] || "").trim())} onClick={saveInsight}>記録</button>
         </div>
       </div>
     </>

@@ -107,6 +107,13 @@ async def worklog_backfill():
             print(f"followers.csv の重複 {r['removed']}行をまとめました")
     except Exception as e:
         print("followers.csv を整えられませんでした:", e)
+    try:  # 2026-11-12: 手入力の数字の空欄は 0 にそろえる(本・別アカウント)
+        for acct in ("main", "sub"):
+            n = accounts.fill_zeros(acct)
+            if n:
+                print(f"数字の表の空欄 {n}か所を 0 にしました({acct})")
+    except Exception as e:
+        print("数字の表の空欄を 0 にできませんでした:", e)
     import worklog
     await asyncio.sleep(20)
     since = (datetime.datetime.now() - datetime.timedelta(days=14)).isoformat()
