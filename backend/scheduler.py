@@ -71,10 +71,29 @@ ROUTINES = [
      "instruction": "社員の声担当が data/employee_voice.md の今週の声をテーマごとに数えて hr/voice_YYYY-WW.md にまとめ、"
                     "育成担当が差し戻し(data/corrections.md)と声から指示書(.claude/agents/*.md)の直し案を差分で hr/coaching_YYYY-WW.md に書く(自分で書き換えない)。"
                     "人事部長が組織の改善案を最大3つに絞り、目安箱 meetings/_suggestions.md に足す(17:30の振り返り会議の議題になる)。"},
-    {"id": "news_check", "weekday": 3, "time": "08:30", "department": "戦略", "title": "AIニュースの中間チェック",
-     "instruction": "トレンドウォッチャーが、月曜のリサーチ以降の生成AIの新機能・ニュースを確認する(短く、最大5件)。"
-                    "会社員の仕事に大きく関わるもの(すぐ投稿にする価値があるもの)があれば「速報候補」と書く。"
-                    "結果は strategy/research/YYYY-MM-DD_ニュース.md に保存する。" + RESEARCH_RULES},
+]
+
+# AIの新機能の速報(2026-11-12 社長「AIの新しい機能・使い方・便利な連携のコネクタやアプリが出たら、その日のうちに投稿まで。
+# 各SNSで、インスタはフィードとリールで用意。最新ニュースは最新のうちに早く出さないと意味がない」)。
+# 木曜だけだった中間チェックを、毎日2回(朝・昼)に変え、見つけたらその場で投稿セットまで作る
+NEWS_FLASH = ("AIの新機能の速報チェックと、その日のうちの投稿セットづくり。進め方は playbooks/ai_news.md の「速報(その日のうちに出す)」に従う。\n"
+              "1. トレンドウォッチャーが、前回のチェック(strategy/research/flash/ の最新)以降に出た生成AIの新機能・新しい使い方・"
+              "連携(コネクタ・アプリ・拡張)を公式発表から探す(Claude・ChatGPT・Gemini・Copilot・Notion・Canva など、会社員が使うもの)。"
+              "1件ごとに: 公式の出典URL・発表日・日本で使えるか・料金・会社員のどの作業が楽になるか。"
+              "結果を strategy/research/flash/YYYY-MM-DD_HHMM.md に保存する(無ければ「新しいものは無し」と1行)。\n"
+              "2. 会社員の仕事に効くものが1件でもあれば、その日のうちに出せるよう、すぐ投稿セットを作る(最大2件。一番効くものから)。"
+              "企画編集部(短尺)・ライティング部・デザイン部・映像制作部・SNS運用部の社員を呼んで、"
+              "content/drafts/flash/YYYY-MM-DD_<短い名前>/ に、本アカウントの全媒体の分を作る: "
+              "Instagram フィード(カルーセル)と Instagram リール(台本と書き出し)、Threads、X、TikTok・YouTube ショート(リールの流用)。"
+              "note 別アカウントなど他のアカウントは、そのアカウントの軸に合うときだけ作る。\n"
+              "3. 品質管理部が点検する(速報でも省かない。ただし時間を優先し、直しは1回まで)。"
+              "当社でまだ試していないものは「発表されました(当社では未検証)」と書き、「要らなくなりました」とは言わない。"
+              "試せるものは試して、できた・できなかったを1行添える。\n"
+              "4. 合格したら、秘書が Notion のタスク(状態=承認待ち・担当=社長・件名「【速報】◯◯(発表 MM/DD)の投稿セットを今日出すか」・期限=今日)を作り、"
+              "資料にフォルダの場所を書く。社長がすぐ気づけるよう、報告の最初の行に「速報の承認待ちがあります」と書く。\n" + RESEARCH_RULES)
+ROUTINES += [
+    {"id": "news_flash_am", "daily": True, "time": "07:30", "department": "秘書", "title": "AIの新機能の速報チェック(朝)", "instruction": NEWS_FLASH},
+    {"id": "news_flash_pm", "daily": True, "time": "13:00", "department": "秘書", "title": "AIの新機能の速報チェック(昼)", "instruction": NEWS_FLASH},
 ]
 PLAN_RE = re.compile(r"\[自動 (P[0-9a-f]+)-(\d+)\]")
 DONE = ("完了", "承認済み", "承認待ち", "確認待ち")
@@ -272,7 +291,7 @@ def _routines_due(now: datetime.datetime, s: dict) -> List[dict]:
     if not s.get("routines", True):
         return []
     today, last = now.date().isoformat(), s.get("routine_last", {}) or {}
-    return [r for r in ROUTINES if now.weekday() == r["weekday"] and now.strftime("%H:%M") >= r["time"] and last.get(r["id"]) != today
+    return [r for r in ROUTINES if (r.get("daily") or now.weekday() == r.get("weekday")) and now.strftime("%H:%M") >= r["time"] and last.get(r["id"]) != today
             and (not r.get("first_week") or now.day <= 7)]
 
 
@@ -338,4 +357,4 @@ def summary() -> dict:
     nxt = next((t for t in s["times"] if t > now), s["times"][0] if s["times"] else "")
     wd = "月火水木金土日"
     return {"auto": s["auto"], "times": s["times"], "next": nxt, "unread": notifications(unread_only=True),
-            "routines": [{"title": r["title"], "when": f"{'毎月第1' if r.get('first_week') else '毎週'}{wd[r['weekday']]}曜 {r['time']}", "on": s.get("routines", True)} for r in ROUTINES]}
+            "routines": [{"title": r["title"], "when": f"毎日 {r['time']}" if r.get("daily") else f"{'毎月第1' if r.get('first_week') else '毎週'}{wd[r['weekday']]}曜 {r['time']}", "on": s.get("routines", True)} for r in ROUTINES]}
