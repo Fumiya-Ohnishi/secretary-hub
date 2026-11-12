@@ -456,6 +456,16 @@ function AutoStats({ data, platform, account, notify, onDone }) {
       <div className="card-head"><h3>自動で取った数字({data.name} 公式)</h3>
         <span className="muted small">{a.connected ? (st.at ? `前回 ${st.at.slice(5, 16).replace("T", " ")}・毎朝 8:00 に自動` : "つないであります・毎朝 8:00 に自動") : "未接続"}</span>
         {a.connected && <button className="btn sm" disabled={busy} onClick={run}>{busy ? "取得中…" : "今すぐ取る"}</button>}</div>
+      {platform === "youtube" && a.analytics && (
+        <div className={`yta ${a.analytics.connected && !a.analytics.error ? "ok" : ""}`}>
+          <b>YouTube アナリティクス</b>(総再生時間・平均視聴時間・視聴を継続):{" "}
+          {a.analytics.connected && !a.analytics.error ? <span>つないであります{a.analytics.since ? `(許可 ${a.analytics.since})` : ""}</span>
+            : a.analytics.client ? <>{a.analytics.error ? <span className="ng">{a.analytics.error}</span> : "未接続"}{" "}
+                <a className="btn sm primary" href={`/api/youtube/oauth/start?account=${encodeURIComponent(account)}`} target="_blank" rel="noreferrer">Google で許可する</a></>
+            : <span>未設定(連携マニュアルの手順で .env に YT_OAUTH_CLIENT_ID と YT_OAUTH_CLIENT_SECRET を入れる)</span>}
+          <div className="muted small">一度許可すれば毎朝自動で取ります。「視聴を継続」は YouTube Studio の数字ではなく、エンゲージビュー÷再生数で計算した近い値です(最初の数回は Studio と見比べてください)。</div>
+        </div>
+      )}
       {!a.connected ? (
         <div className="empty">まだつないでいません。会社のフォルダの <b>playbooks/account_connect.md</b>(アカウント連携マニュアル)の手順でつなぐと、フォロワー数と投稿ごとの閲覧数などを毎朝自動で記録します。</div>
       ) : (

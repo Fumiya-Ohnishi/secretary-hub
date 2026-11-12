@@ -1125,3 +1125,7 @@ select.status-sel { color-scheme: dark; }
 .stamp-grid a.bad { outline: 2px solid var(--ng); }
 .stamp-name { display: block; font-size: 10px; color: var(--sub); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .warn-box ul { margin: 4px 0 0 18px; padding: 0; }
+.yta { margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--line2); border-radius: 10px; font-size: 13px; line-height: 1.7; }
+.yta.ok { border-color: rgba(111, 214, 161, .5); }
+.yta .ng { color: var(--ng); }
+.yta .btn { margin-left: 6px; }
