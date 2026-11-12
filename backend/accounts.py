@@ -79,6 +79,39 @@ LABEL_BY_PLATFORM = {"threads": {"views": "閲覧"}, "x": {"impressions": "表�
                      "youtube": {"likes": "高評価", "follows": "登録者の増加"}, "instagram": {"follows": "フォロー増"}}
 
 
+TEXT_COLS = ("content_id", "format", "metric")  # 数字ではない列(空でも 0 にしない)
+
+
+def fill_zeros(account: str = "main") -> int:
+    """手入力の数字の表(insights_*.csv・insights_note_posts.csv)の空欄を 0 にする(2026-11-12 社長)。
+    自動で取った数字(auto_*.csv)の空欄は「公式に取れない」の意味なので触らない"""
+    files = {n for n, _ in INSIGHTS.values()} | {n for n, _ in POST_INSIGHTS.values()}
+    changed = 0
+    for name in sorted(files):
+        path = _data(name, account)
+        if not path.exists():
+            continue
+        with path.open(newline="") as f:
+            rd = csv.DictReader(f)
+            cols = rd.fieldnames or []
+            rows = list(rd)
+        n = 0
+        for r in rows:
+            if not any((r.get(c) or "").strip() for c in cols):
+                continue
+            for c in cols:
+                if c not in TEXT_COLS and c != "date" and not (r.get(c) or "").strip():
+                    r[c] = "0"
+                    n += 1
+        if n:
+            with path.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=cols)
+                w.writeheader()
+                w.writerows(rows)
+            changed += n
+    return changed
+
+
 def label(platform: str, col: str) -> str:
     return LABEL_BY_PLATFORM.get(platform, {}).get(col) or COLUMN_JA.get(col, col)
 
@@ -106,8 +139,12 @@ def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = 
     for c in cols:
         v = values.get(c, "")
         row[c] = str(v).strip() if v is not None else ""
-    if not any(row[c] for c in cols if c not in ("content_id", "format")):
-        raise ValueError("記録する数字がありません")
+        if c not in TEXT_COLS and not row[c]:
+            row[c] = "0"  # 2026-11-12 社長: 変わらなかった(入れなかった)数字は 0 で記録する
+    if "metric" in cols and not row.get("metric"):
+        raise ValueError("項目(metric)を入れてください")
+    if per_post and not row.get("content_id"):
+        raise ValueError("投稿IDがありません")
     path = _data(name, account)
     path.parent.mkdir(parents=True, exist_ok=True)
     new = not path.exists() or not path.read_text().strip()
@@ -218,7 +255,16 @@ def overview(platform: str, account: str = "main") -> dict:
         "playbook": playbook(platform, account),
         "crosspost": crosspost_candidates(platform) if platform in CROSSPOST and account == "main" else [],
         "revenue": revenue_for(account, platform),
+        "auto": _auto(platform, account),
     }
+
+
+def _auto(platform: str, account: str) -> dict:
+    try:
+        import stats_sync
+        return stats_sync.latest(platform, account)
+    except Exception as e:
+        return {"supported": False, "connected": False, "status": {"detail": str(e)[:120]}, "columns": [], "rows": []}
 
 
 def account_sets() -> List[dict]:

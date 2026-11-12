@@ -107,6 +107,13 @@ async def worklog_backfill():
             print(f"followers.csv の重複 {r['removed']}行をまとめました")
     except Exception as e:
         print("followers.csv を整えられませんでした:", e)
+    try:  # 2026-11-12: 手入力の数字の空欄は 0 にそろえる(本・別アカウント)
+        for acct in ("main", "sub"):
+            n = accounts.fill_zeros(acct)
+            if n:
+                print(f"数字の表の空欄 {n}か所を 0 にしました({acct})")
+    except Exception as e:
+        print("数字の表の空欄を 0 にできませんでした:", e)
     import worklog
     await asyncio.sleep(20)
     since = (datetime.datetime.now() - datetime.timedelta(days=14)).isoformat()
@@ -127,12 +134,15 @@ async def instagram_loop():
         try:
             now = datetime.datetime.now()
             today = now.date().isoformat()
+            if now.strftime("%H:%M") >= "08:00" and last_day != today:
+                # 2026-11-12: つないだ全アカウント(本・別)の Instagram・Threads・YouTube のフォロワーと投稿ごとの数字を1日1回
+                last_day = today
+                import stats_sync
+                r = await stats_sync.run()
+                bad = [k for k, v in r.items() if v.get("connected") and not v.get("ok")]
+                if bad:
+                    print("数字の自動取得で失敗:", {k: r[k]["detail"] for k in bad})
             if instagram_api.configured() and now.strftime("%H:%M") >= "08:00":
-                if last_day != today:  # 自社のフォロワー数を1日1回
-                    last_day = today
-                    m = await instagram_api.me()
-                    if m.get("followers_count") is not None:
-                        company.record_followers("instagram", int(m["followers_count"]))
                 if now.weekday() == 0 and last_week != today:  # 月曜: 週次リサーチ(8:30)の前に参考アカウントの数字
                     last_week = today
                     r = await instagram_api.refresh_watched()
@@ -651,6 +661,13 @@ async def proposal_revenue(pid: str, body: ProposalRevenueIn):
         return err(e, 400)
 
 
+@app.post("/api/stats/sync")
+async def stats_sync_now(only: str = ""):
+    """つないだアカウントの数字を今すぐ取る(アカウント画面の「今すぐ取る」ボタン)"""
+    import stats_sync
+    return await stats_sync.run(only)
+
+
 @app.post("/api/reports/weekly")
 async def make_report(week: Optional[str] = None):
     if not agent.API_KEY:
@@ -964,10 +981,24 @@ async def diagnostics():
             m = await instagram_api.me()
             add("instagram_api", "Instagram の数字(Meta 公式)", True, f"@{m.get('username')}・フォロワー {m.get('followers_count')}・トークン {instagram_api.token_status()}")
         except Exception as e:
-            add("instagram_api", "Instagram の数字(Meta 公式)", False, str(e)[:120], "ai-company の playbooks/instagram_api_setup.md")
+            add("instagram_api", "Instagram の数字(Meta 公式)", False, str(e)[:120], "ai-company の playbooks/account_connect.md")
     else:
         add("instagram_api", "Instagram の数字(Meta 公式)", False, "未設定(参考アカウントの数字は公開ページで見える範囲だけ)",
-            "ai-company の playbooks/instagram_api_setup.md の手順で .env に IG_ACCESS_TOKEN を入れる")
+            "ai-company の playbooks/account_connect.md の手順で .env に IG_ACCESS_TOKEN を入れる")
+    try:  # 2026-11-12: アカウントごとの自動取得の状態(Instagram・Threads・YouTube)
+        import stats_sync
+        st = stats_sync._state()
+        for acct, aj in (("main", "本アカウント"), ("sub", "別アカウント")):
+            for pf, pj in (("instagram", "Instagram"), ("threads", "Threads"), ("youtube", "YouTube")):
+                if acct == "sub" and pf == "youtube":
+                    continue
+                v = st.get(f"{acct}:{pf}") or {}
+                conn = stats_sync.configured(pf, acct)
+                add(f"auto_{acct}_{pf}", f"数字の自動取得 {aj} {pj}", bool(conn and v.get("ok")),
+                    (v.get("detail") or ("つないであります(次の 8:00 に取ります)" if conn else "未接続")) + (f"(前回 {v['at'][5:16].replace('T', ' ')})" if v.get("at") else ""),
+                    "ai-company の playbooks/account_connect.md(アカウント連携マニュアル)")
+    except Exception as e:
+        print("自動取得の診断でエラー:", e)
     add("live2d", "Live2D(Cubism Core)", core.exists(), "配置済み" if core.exists() else "未配置(静止画で表示中)",
         "README「Live2D の秘書」の手順で live2dcubismcore.js を置く")
     s = scheduler.summary()

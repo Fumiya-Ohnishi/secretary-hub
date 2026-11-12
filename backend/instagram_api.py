@@ -10,7 +10,8 @@ backend/.env:
   META_APP_ID=       Meta の開発者画面のアプリID(長期への交換に使う)
   META_APP_SECRET=   同じくアプリシークレット
   IG_USER_ID=        (任意)自社の Instagram ビジネスアカウントID。空なら自動で探す
-手順は ai-company の playbooks/instagram_api_setup.md
+  (別アカウント)IG_SUB_ACCESS_TOKEN= / IG_SUB_USER_ID=  … 2026-11-12 追加。アプリID・シークレットは同じものを使う
+手順は ai-company の playbooks/account_connect.md(アカウント連携マニュアル)
 """
 import datetime
 import json
@@ -23,15 +24,26 @@ import httpx
 
 VERSION = os.getenv("META_GRAPH_VERSION", "v23.0").strip()
 API = f"https://graph.facebook.com/{VERSION}"
-CACHE = Path(__file__).resolve().parent / "data" / "meta_token.json"  # git に入らない場所
+DATA_DIR = Path(__file__).resolve().parent / "data"  # git に入らない場所
+CACHE = DATA_DIR / "meta_token.json"
+
+
+def _env(name: str, account: str = "main") -> str:
+    """本アカウントは IG_ACCESS_TOKEN、別アカウントは IG_SUB_ACCESS_TOKEN のように読む"""
+    key = name if account == "main" else name.replace("IG_", "IG_SUB_", 1)
+    return os.getenv(key, "").strip()
+
+
+def _cache_path(account: str = "main") -> Path:
+    return CACHE if account == "main" else DATA_DIR / f"meta_token_{account}.json"
 
 
 class IGError(Exception):
     pass
 
 
-def token_status() -> str:
-    c = _cache()
+def token_status(account: str = "main") -> str:
+    c = _cache(account)
     if c.get("kind") == "page":
         return "期限なし(ページのトークン)"
     if c.get("expires"):
@@ -39,28 +51,29 @@ def token_status() -> str:
     return "短い期限(約1時間。META_APP_ID と META_APP_SECRET を入れると長期にできます)" if c.get("token") else "未設定"
 
 
-def configured() -> bool:
-    return bool(os.getenv("IG_ACCESS_TOKEN", "").strip() or _cache().get("token"))
+def configured(account: str = "main") -> bool:
+    return bool(_env("IG_ACCESS_TOKEN", account) or _cache(account).get("token"))
 
 
-def _cache() -> dict:
+def _cache(account: str = "main") -> dict:
     try:
-        return json.loads(CACHE.read_text())
+        return json.loads(_cache_path(account).read_text())
     except Exception:
         return {}
 
 
-def _save_cache(d: dict):
-    CACHE.parent.mkdir(exist_ok=True)
-    CACHE.write_text(json.dumps(d, ensure_ascii=False))
+def _save_cache(d: dict, account: str = "main"):
+    path = _cache_path(account)
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps(d, ensure_ascii=False))
     try:
-        CACHE.chmod(0o600)
+        path.chmod(0o600)
     except Exception:
         pass
 
 
-async def _get(path: str, params: dict, token: Optional[str] = None) -> dict:
-    params = {**params, "access_token": token or await access_token()}
+async def _get(path: str, params: dict, token: Optional[str] = None, account: str = "main") -> dict:
+    params = {**params, "access_token": token or await access_token(account)}
     async with httpx.AsyncClient(timeout=30) as c:
         r = await c.get(f"{API}/{path.lstrip('/')}", params=params)
     data = r.json() if r.headers.get("content-type", "").startswith(("application/json", "text/javascript")) else {}
@@ -69,7 +82,7 @@ async def _get(path: str, params: dict, token: Optional[str] = None) -> dict:
         msg = err.get("message") or r.text[:200]
         code = err.get("code")
         if code == 190:
-            msg = "トークンの期限切れか無効です。Graph API エクスプローラーで発行し直して .env の IG_ACCESS_TOKEN を替えてください"
+            msg = "トークンの期限切れか無効です。Graph API エクスプローラーで発行し直して .env の IG_ACCESS_TOKEN(別アカウントは IG_SUB_ACCESS_TOKEN)を替えてください"
         elif code in (4, 17, 32, 613):
             msg = "Meta の利用回数の上限に達しました。1時間ほど待ってください"
         elif code == 10 or code == 200:
@@ -78,10 +91,10 @@ async def _get(path: str, params: dict, token: Optional[str] = None) -> dict:
     return data
 
 
-async def access_token() -> str:
+async def access_token(account: str = "main") -> str:
     """使うトークン。.env のものが変わっていれば、長期(約60日)に交換して保存する。期限が近ければ延長する"""
-    env_tok = os.getenv("IG_ACCESS_TOKEN", "").strip()
-    c = _cache()
+    env_tok = _env("IG_ACCESS_TOKEN", account)
+    c = _cache(account)
     if env_tok and c.get("source") != env_tok[-12:]:
         c = {"token": env_tok, "source": env_tok[-12:], "expires": ""}
         c.update(await _exchange(env_tok))
@@ -94,17 +107,17 @@ async def access_token() -> str:
                     c.update(token=found["page_token"], expires="", kind="page")
             except IGError:
                 pass
-        _save_cache(c)
+        _save_cache(c, account)
     elif c.get("expires") and c.get("kind") != "page":
         try:
             left = datetime.datetime.fromisoformat(c["expires"]) - datetime.datetime.now()
             if left < datetime.timedelta(days=10):
                 c.update(await _exchange(c["token"]))
-                _save_cache(c)
+                _save_cache(c, account)
         except Exception:
             pass
     if not c.get("token"):
-        raise IGError("IG_ACCESS_TOKEN が未設定です(手順: playbooks/instagram_api_setup.md)")
+        raise IGError(("IG_ACCESS_TOKEN" if account == "main" else "IG_SUB_ACCESS_TOKEN") + " が未設定です(手順: playbooks/account_connect.md)")
     return c["token"]
 
 
@@ -157,26 +170,61 @@ async def _find_ig(token: Optional[str] = None) -> dict:
                   "トークンを発行し直すとき、確認画面で Instagram の @アカウントにもチェックを入れてください(instagram_basic の許可も必要)")
 
 
-async def my_ig_id() -> str:
-    if os.getenv("IG_USER_ID", "").strip():
-        return os.getenv("IG_USER_ID").strip()
-    c = _cache()
+async def my_ig_id(account: str = "main") -> str:
+    if _env("IG_USER_ID", account):
+        return _env("IG_USER_ID", account)
+    c = _cache(account)
     if c.get("ig_user_id"):
         return c["ig_user_id"]
-    found = await _find_ig()
+    found = await _find_ig(token=await access_token(account))
     c.update(ig_user_id=found["ig_user_id"], ig_username=found["ig_username"])
     if found.get("page_token") and c.get("kind") != "page" and c.get("expires"):
         c.update(token=found["page_token"], expires="", kind="page")  # 期限なしのページ用トークンに切り替える
-    _save_cache(c)
+    _save_cache(c, account)
     return c["ig_user_id"]
 
 
 MEDIA_FIELDS = "caption,media_type,media_product_type,like_count,comments_count,timestamp,permalink"
 
 
-async def me() -> dict:
-    uid = await my_ig_id()
-    return await _get(uid, {"fields": "username,followers_count,follows_count,media_count"})
+async def me(account: str = "main") -> dict:
+    uid = await my_ig_id(account)
+    return await _get(uid, {"fields": "username,followers_count,follows_count,media_count"}, account=account)
+
+
+# ---------- 自社の投稿ごとの数字(2026-11-12 社長: 投稿の閲覧数も自動で取りたい) ----------
+# Meta の 2025年以降の指標: views(閲覧数)・reach・saved・shares・total_interactions(いいね・コメントは投稿の項目)
+MEDIA_METRICS = ["views", "reach", "saved", "shares", "total_interactions"]
+
+
+async def my_media(account: str = "main", limit: int = 25) -> List[dict]:
+    """自社アカウントの最近の投稿と、投稿ごとの数字(取れない指標は空のまま)"""
+    uid = await my_ig_id(account)
+    d = await _get(f"{uid}/media", {"fields": "id," + MEDIA_FIELDS, "limit": limit}, account=account)
+    out = []
+    for m in d.get("data", []):
+        row = {"media_id": m["id"], "posted_at": (m.get("timestamp") or "")[:10], **_media(m)}
+        metrics = list(MEDIA_METRICS)
+        vals: Dict[str, Optional[int]] = {}
+        for _ in range(3):  # 古い投稿・種類によって使えない指標があれば、その指標を外して取り直す
+            try:
+                ins = await _get(f"{m['id']}/insights", {"metric": ",".join(metrics)}, account=account)
+                for it in ins.get("data", []):
+                    v = (it.get("values") or [{}])[0].get("value")
+                    if v is None:
+                        v = (it.get("total_value") or {}).get("value")
+                    vals[it.get("name")] = v
+                break
+            except IGError as e:
+                bad = [x for x in metrics if x in str(e)]
+                if not bad:
+                    break
+                metrics = [x for x in metrics if x not in bad]
+                if not metrics:
+                    break
+        row.update({k: vals.get(k) for k in MEDIA_METRICS})
+        out.append(row)
+    return out
 
 
 def username_from(url: str) -> str:

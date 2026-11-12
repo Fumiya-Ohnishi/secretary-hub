@@ -155,13 +155,15 @@ export function PostResults({ post, platform, postedOn, notify }) {
   const [date, setDate] = useState(todayStr());
   const [busy, setBusy] = useState(false);
   const acct = post.account || "main";
-  const load = () => getPostResults(pf, post.id, acct).then(setData).catch((e) => notify && notify(e.message, "error"));
+  // 2026-11-12 社長: 数字は 0 から始め、変えなかった欄は 0 で記録する
+  const zeros = (d) => Object.fromEntries((d?.columns || []).map((c) => [c.key, "0"]));
+  const load = () => getPostResults(pf, post.id, acct).then((d) => { setData(d); setVals(zeros(d)); }).catch((e) => notify && notify(e.message, "error"));
   useEffect(() => { load(); }, [pf, post.id]);
   const posted = postedOn || post.posted;
   const due = posted ? plusDays(posted, 3) : "";
   const save = async () => {
     setBusy(true);
-    try { await addInsight(pf, { ...vals, content_id: post.id, format: post.format || "" }, date, true, acct); notify(`${PJA_R[pf] || pf}「${post.title}」の結果を記録しました`, "ok"); setVals({}); load(); }
+    try { await addInsight(pf, { ...vals, content_id: post.id, format: post.format || "" }, date, true, acct); notify(`${PJA_R[pf] || pf}「${post.title}」の結果を記録しました`, "ok"); load(); }
     catch (e) { notify(e.message, "error"); }
     setBusy(false);
   };
@@ -180,9 +182,10 @@ export function PostResults({ post, platform, postedOn, notify }) {
         <label><span>記録日</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
         {data.columns.map((c) => (
           <label key={c.key}><span>{c.label}</span>
-            <input inputMode="numeric" value={vals[c.key] || ""} placeholder="0" onChange={(e) => setVals({ ...vals, [c.key]: e.target.value.replace(/[^0-9.]/g, "") })} /></label>
+            <input inputMode="numeric" value={vals[c.key] ?? "0"} placeholder="0" onFocus={(e) => e.target.select()}
+                   onChange={(e) => setVals({ ...vals, [c.key]: e.target.value.replace(/[^0-9.]/g, "") })} /></label>
         ))}
-        <button className="btn primary" disabled={busy || !Object.values(vals).some((v) => v)} onClick={save}>結果を記録</button>
+        <button className="btn primary" disabled={busy} onClick={save}>結果を記録</button>
       </div>
       <div className="muted small">金曜の数字の見直しで、分析部がこの数字を使います(同じ投稿を何度記録しても、新しい順に残ります)</div>
     </div>
