@@ -21,10 +21,11 @@ import httpx
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 import asyncio
+import html
 
 import json
 import subprocess
@@ -702,6 +703,32 @@ async def stamps_decide(sid: str, body: StampDecision):
         return err(e, 400)
 
 
+# ---------- YouTube アナリティクス(最初に一度だけ Google で許可する。2026-11-12) ----------
+@app.get("/api/youtube/oauth/start")
+def yt_oauth_start(account: str = "main"):
+    import youtube_analytics
+    from fastapi.responses import RedirectResponse
+    try:
+        company.check_account(account)
+        return RedirectResponse(youtube_analytics.auth_url(account))
+    except Exception as e:
+        return HTMLResponse(f"<meta charset='utf-8'><p>始められませんでした: {html.escape(str(e))}</p>", status_code=400)
+
+
+@app.get("/api/youtube/oauth/callback")
+async def yt_oauth_callback(code: str = "", state: str = "", error: str = ""):
+    import youtube_analytics
+    if error:
+        return HTMLResponse(f"<meta charset='utf-8'><p>許可されませんでした({html.escape(error)})。秘書ハブに戻ってやり直してください。</p>")
+    try:
+        r = await youtube_analytics.finish(code, state)
+        return HTMLResponse("<meta charset='utf-8'><h2>YouTube アナリティクスをつなぎました</h2>"
+                            f"<p>チャンネル: {html.escape(r.get('channel') or '(名前は取れませんでした)')}</p>"
+                            "<p>このタブは閉じて、秘書ハブに戻ってください。毎朝 8:00 に自動で数字を取ります。</p>")
+    except Exception as e:
+        return HTMLResponse(f"<meta charset='utf-8'><p>つなげませんでした: {html.escape(str(e))}</p>", status_code=400)
+
+
 @app.post("/api/stats/sync")
 async def stats_sync_now(only: str = ""):
     """つないだアカウントの数字を今すぐ取る(アカウント画面の「今すぐ取る」ボタン)"""
@@ -1039,6 +1066,14 @@ async def diagnostics():
                 add(f"auto_{acct}_{pf}", f"数字の自動取得 {aj} {pj}", bool(conn and v.get("ok")),
                     (v.get("detail") or ("つないであります(次の 8:00 に取ります)" if conn else "未接続")) + (f"(前回 {v['at'][5:16].replace('T', ' ')})" if v.get("at") else ""),
                     "ai-company の playbooks/account_connect.md(アカウント連携マニュアル)")
+        import youtube_analytics
+        for acct in company.account_ids():
+            if acct != "main" and "youtube" not in company.registered_platforms(acct):
+                continue
+            ya = youtube_analytics.status(acct)
+            add(f"yta_{acct}", f"YouTube アナリティクス {company.account_label(acct)}(総再生時間・視聴を継続)", ya["connected"] and not ya["error"],
+                (ya["error"] or (f"つないであります(許可 {ya['since']}・{ya['channel']})" if ya["connected"] else ("未接続(「Google で許可する」を押す)" if ya["client"] else "未設定"))),
+                "ai-company の playbooks/account_connect.md の「YouTube アナリティクス」")
     except Exception as e:
         print("自動取得の診断でエラー:", e)
     add("live2d", "Live2D(Cubism Core)", core.exists(), "配置済み" if core.exists() else "未配置(静止画で表示中)",
