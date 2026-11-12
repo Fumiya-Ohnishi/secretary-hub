@@ -796,20 +796,24 @@ TOOLS = [
           "(確定は社長のボタンか「はい」で行う)。", {"week": {"type": "string", "description": "YYYY-WW。省略時は最新の週"}}, []),
     _tool("record_revenue", "収益を記録する(data/revenue.csv と Notion の収益DB)。社長が売上を報告したときに使う。",
           {"amount": {"type": "integer", "description": "金額(円)"},
-           "source": {"type": "string", "enum": company.REVENUE_SOURCES, "description": "note_sales=note販売, amazon_affiliate=Amazonアフィ, other=その他"},
+           "source": {"type": "string", "enum": company.REVENUE_SOURCES, "description": "note_sales=本アカウントのnote販売, sub_note=別アカウントのnote販売, "
+                      "lancers=ランサーズ, coconala=ココナラ, main_instagram など=本アカウントの媒体, sub_instagram など=別アカウントの媒体, "
+                      "amazon_affiliate=Amazonアフィ, other=その他。請け負いの入金は、秘書ハブのアカウント>請け負いで社長が入れるのが基本"},
            "date": {"type": "string", "description": "YYYY-MM-DD。省略時は今日"},
            "memo": {"type": "string"}}, ["amount", "source"]),
     _tool("record_followers", "媒体のフォロワー数を記録する(data/followers.csv)。",
           {"platform": {"type": "string", "enum": company.PLATFORMS},
            "followers": {"type": "integer"},
-           "date": {"type": "string", "description": "YYYY-MM-DD。省略時は今日"}}, ["platform", "followers"]),
+           "date": {"type": "string", "description": "YYYY-MM-DD。省略時は今日"},
+           "account": {"type": "string", "enum": ["main", "sub"], "description": "main=本アカウント(定時AI・セナ・既定)/ sub=別アカウント(note fond_egret1686 とひもづく Instagram・Threads・X)"}}, ["platform", "followers"]),
     _tool("record_post_insight", "投稿1本の数字(保存・いいね・表示など)を、その媒体の記録(data/insights_*.csv)に書く。"
           "社長が「インスタの○○、保存30」のように報告したときに使う。言われていない数字は空のままにする。",
           {"platform": {"type": "string", "enum": company.PLATFORMS},
            "content_id": {"type": "string", "description": "投稿ID(例 2026-46-01)。分からなければ投稿の題名"},
            "values": {"type": "object", "description": "列名→数値。instagram: format,reach,saves,likes,comments,profile_visits,follows / "
                       "x: impressions,likes,reposts,replies,follows / threads: views,likes,replies,follows / note: metric,value"},
-           "date": {"type": "string", "description": "YYYY-MM-DD。省略時は今日"}}, ["platform", "values"]),
+           "date": {"type": "string", "description": "YYYY-MM-DD。省略時は今日"},
+           "account": {"type": "string", "enum": ["main", "sub"], "description": "main=本アカウント(定時AI・セナ・既定)/ sub=別アカウント(note fond_egret1686 とひもづく Instagram・Threads・X)"}}, ["platform", "values"]),
     _tool("add_improvement", "アカウントの改善点を1行記録する(data/improvements.md。アカウント画面に出る)。"
           "社長の気づき・分析部の金曜の見直しの結論を残すときに使う。",
           {"platform": {"type": "string", "enum": company.PLATFORMS},
@@ -827,7 +831,8 @@ TOOLS = [
     _tool("register_account", "開設したSNSアカウントのURLを台帳(data/accounts.md と Notion)に記録する。URLだけを扱う。",
           {"platform": {"type": "string", "enum": company.PLATFORMS},
            "url": {"type": "string", "description": "https:// から始まるプロフィールURL"},
-           "opened": {"type": "string", "description": "開設日 YYYY-MM-DD。省略時は今日"}}, ["platform", "url"]),
+           "opened": {"type": "string", "description": "開設日 YYYY-MM-DD。省略時は今日"},
+           "account": {"type": "string", "enum": ["main", "sub"], "description": "main=本アカウント(定時AI・セナ・既定)/ sub=別アカウント(note fond_egret1686 とひもづく Instagram・Threads・X)"}}, ["platform", "url"]),
     _tool("create_plan", "期限から逆算して、工程ごとのタスクを日付つきで起票する(逆算スケジュール)。"
           "部署の工程は、前の工程が終わると秘書が自動で部署に依頼する。投稿セットの基本形(週): 週テーマと構成(企画)→原稿・台本(ライティング)"
           "→画像・図解(デザイン/画像)とリール(映像)→媒体ごとの仕上げ(SNS運用、品質管理部のチェック込み)→社長の承認(社長)→投稿(社長)。"
@@ -982,7 +987,7 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         return f"記録しました: {r['date']} {r['source']} {r['amount']}円{note}。今月の合計は{company.read_revenue()['month_total']}円です。"
 
     if name == "record_followers":
-        r = company.record_followers(args["platform"], args["followers"], args.get("date"))
+        r = company.record_followers(args["platform"], args["followers"], args.get("date"), args.get("account") or "main")
         actions.append({"type": "refresh"})
         return f"記録しました: {r['date']} {company.PLATFORM_JA[r['platform']]} {r['followers']}人"
 
@@ -991,7 +996,7 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         vals = dict(args.get("values") or {})
         if args.get("content_id"):
             vals["content_id"] = args["content_id"]
-        r = accounts.record_insight(args["platform"], vals, args.get("date"))
+        r = accounts.record_insight(args["platform"], vals, args.get("date"), account=args.get("account") or "main")
         actions.append({"type": "refresh"})
         got = "、".join(f"{accounts.COLUMN_JA.get(k, k)} {v}" for k, v in r.items() if v and k not in ("date", "content_id"))
         return f"記録しました: {r['date']} {company.PLATFORM_JA[args['platform']]} {r.get('content_id', '')} {got}"
@@ -1040,7 +1045,7 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
                 "評価が終わると台帳と Notion に反映されます。")
 
     if name == "register_account":
-        r = await company.register_account(args["platform"], args["url"], args.get("opened"))
+        r = await company.register_account(args["platform"], args["url"], args.get("opened"), args.get("account") or "main")
         note = "" if r["notion"] in (True, None) else f"(Notion への記録は失敗: {r['notion']})"
         return f"台帳に記録しました: {company.PLATFORM_JA[r['platform']]} {r['url']}(開設 {r['opened']}){note}"
 

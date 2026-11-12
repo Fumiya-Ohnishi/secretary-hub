@@ -17,6 +17,12 @@ import company
 
 PLATFORMS = company.PLATFORMS
 PLATFORM_JA = company.PLATFORM_JA
+# アカウントの組(2026-11-12 社長: 複数アカウントを切り替えて見たい)
+# main=本アカウント(定時AI・セナ)/ sub=別アカウント(note fond_egret1686 と、ひもづく Instagram・Threads・X)
+ACCOUNT_SETS = {
+    "main": {"label": "本アカウント", "note": "定時AI・秘書セナ", "platforms": PLATFORMS},
+    "sub": {"label": "別アカウント", "note": "note の別アカウント(収益化用)", "platforms": ["note", "instagram", "threads", "x"]},
+}
 INSIGHTS = {  # ファイル名と列(date の次から)。data/README.md と同じ
     "instagram": ("insights_ig.csv", ["content_id", "format", "reach", "saves", "likes", "comments", "profile_visits", "follows"]),
     "x": ("insights_x.csv", ["content_id", "impressions", "likes", "reposts", "replies", "follows"]),
@@ -34,29 +40,32 @@ KEYWORDS = {"instagram": ("Instagram", "インスタ", "リール", "カルー�
             "tiktok": ("TikTok", "ティックトック"), "youtube": ("YouTube", "ショート", "Shorts")}
 
 
-def _data(name: str) -> Path:
-    return company.COMPANY_DIR / "data" / name
+def _data(name: str, account: str = "main") -> Path:
+    return company.account_data_dir(account) / name
 
 
-def _check(platform: str):
-    if platform not in PLATFORMS:
-        raise ValueError(f"媒体は {' / '.join(PLATFORMS)} のどれかです")
+def _check(platform: str, account: str = "main"):
+    if account not in ACCOUNT_SETS:
+        raise ValueError("アカウントは main(本アカウント)か sub(別アカウント)です")
+    plats = ACCOUNT_SETS[account]["platforms"]
+    if platform not in plats:
+        raise ValueError(f"媒体は {' / '.join(plats)} のどれかです")
 
 
-def profile_url(platform: str) -> str:
-    md = _data("accounts.md")
+def profile_url(platform: str, account: str = "main") -> str:
+    md = company.ACCOUNTS_MD
     if not md.exists():
         return ""
     for line in md.read_text().splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if line.startswith("|") and len(cells) > 1 and cells[0] == PLATFORM_JA[platform] and cells[1].startswith("http"):
+        if line.startswith("|") and len(cells) > 1 and company.is_account_row(cells[0], platform, account) and cells[1].startswith("http"):
             return cells[1]
     return ""
 
 
-def read_insights(platform: str, limit: int = 30) -> List[dict]:
+def read_insights(platform: str, limit: int = 30, account: str = "main") -> List[dict]:
     name, _ = INSIGHTS[platform]
-    path = _data(name)
+    path = _data(name, account)
     if not path.exists():
         return []
     with path.open(newline="") as f:
@@ -74,11 +83,11 @@ def label(platform: str, col: str) -> str:
     return LABEL_BY_PLATFORM.get(platform, {}).get(col) or COLUMN_JA.get(col, col)
 
 
-def post_results(platform: str, content_id: str) -> dict:
+def post_results(platform: str, content_id: str, account: str = "main") -> dict:
     """1本の投稿の結果(新しい順)と、入力する列"""
-    _check(platform)
+    _check(platform, account)
     name, cols = POST_INSIGHTS[platform]
-    path = _data(name)
+    path = _data(name, account)
     rows = []
     if path.exists():
         with path.open(newline="") as f:
@@ -88,9 +97,10 @@ def post_results(platform: str, content_id: str) -> dict:
             "results": rows[::-1]}
 
 
-def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = None, per_post: bool = False) -> dict:
+def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = None, per_post: bool = False,
+                   account: str = "main") -> dict:
     """投稿1本の数字を記録する(足りない列は空のまま)"""
-    _check(platform)
+    _check(platform, account)
     name, cols = (POST_INSIGHTS if per_post else INSIGHTS)[platform]
     row = {"date": date or datetime.date.today().isoformat()}
     for c in cols:
@@ -98,7 +108,8 @@ def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = 
         row[c] = str(v).strip() if v is not None else ""
     if not any(row[c] for c in cols if c not in ("content_id", "format")):
         raise ValueError("記録する数字がありません")
-    path = _data(name)
+    path = _data(name, account)
+    path.parent.mkdir(parents=True, exist_ok=True)
     new = not path.exists() or not path.read_text().strip()
     with path.open("a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["date"] + cols)
@@ -111,7 +122,11 @@ def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = 
 IMPROVEMENTS = "improvements.md"
 
 
-def read_improvements(platform: str) -> List[dict]:
+def _improve_head(platform: str, account: str = "main") -> str:
+    return PLATFORM_JA[platform] if account == "main" else f"別アカウント {PLATFORM_JA[platform]}"
+
+
+def read_improvements(platform: str, account: str = "main") -> List[dict]:
     path = _data(IMPROVEMENTS)
     if not path.exists():
         return []
@@ -122,14 +137,14 @@ def read_improvements(platform: str) -> List[dict]:
             cur = m.group(1).strip()
             continue
         m = re.match(r"^-\s+(?:(\d{4}-\d{2}-\d{2})\s+)?(.+)", line)
-        if m and cur == PLATFORM_JA[platform]:
+        if m and cur == _improve_head(platform, account):
             out.append({"date": m.group(1) or "", "text": m.group(2).strip()})
     return out[::-1]
 
 
-def add_improvement(platform: str, text: str, date: Optional[str] = None) -> dict:
+def add_improvement(platform: str, text: str, date: Optional[str] = None, account: str = "main") -> dict:
     """改善点を1行足す(媒体の見出しが無ければ作る)"""
-    _check(platform)
+    _check(platform, account)
     text = " ".join(text.split())
     if not text:
         raise ValueError("改善点が空です")
@@ -137,7 +152,7 @@ def add_improvement(platform: str, text: str, date: Optional[str] = None) -> dic
     path = _data(IMPROVEMENTS)
     lines = path.read_text().splitlines() if path.exists() else [
         "# 改善点(アカウントごと。分析部の金曜の見直し・社長の気づき・差し戻しから)", ""]
-    head = f"## {PLATFORM_JA[platform]}"
+    head = f"## {_improve_head(platform, account)}"
     if head not in lines:
         lines += ["", head]
     i = lines.index(head) + 1
@@ -164,31 +179,56 @@ def corrections_for(platform: str, limit: int = 10) -> List[dict]:
     return out[-limit:][::-1]
 
 
-def playbook(platform: str) -> str:
+def playbook(platform: str, account: str = "main") -> str:
+    """ルール。別アカウントは playbooks/sub/{媒体}.md があればそれ、無ければ本アカウントのルールを参考として返す"""
+    if account == "sub":
+        sub = company.COMPANY_DIR / "playbooks" / "sub" / f"{platform}.md"
+        if sub.exists():
+            return sub.read_text()
+        base = company.COMPANY_DIR / "playbooks" / f"{platform}.md"
+        return ("(別アカウント用のルールはまだありません。playbooks/sub/" + platform + ".md ができるとここに出ます。"
+                "以下は本アカウントのルールで、参考です)\n\n" + (base.read_text() if base.exists() else ""))
     path = company.COMPANY_DIR / "playbooks" / f"{platform}.md"
     return path.read_text() if path.exists() else ""
 
 
-def overview(platform: str) -> dict:
-    _check(platform)
-    series = company.read_followers().get(platform, [])
+def revenue_for(account: str, platform: str) -> dict:
+    """その媒体の確定した収益(revenue.csv のうち出どころが合うもの)"""
+    src = company.revenue_source(account, platform)
+    rev = company.read_revenue_all()
+    rows = [r for r in rev if r["source"] == src]
+    month = datetime.date.today().strftime("%Y-%m")
+    return {"source": src, "source_ja": company.REVENUE_SOURCE_JA.get(src, src), "rows": rows[::-1][:30],
+            "month_total": sum(r["amount"] for r in rows if r["date"].startswith(month)),
+            "all_total": sum(r["amount"] for r in rows)}
+
+
+def overview(platform: str, account: str = "main") -> dict:
+    _check(platform, account)
+    series = company.read_followers(account).get(platform, [])
     _, cols = INSIGHTS[platform]
     return {
-        "platform": platform, "name": PLATFORM_JA[platform], "url": profile_url(platform),
+        "platform": platform, "account": account, "account_label": ACCOUNT_SETS[account]["label"],
+        "name": PLATFORM_JA[platform], "url": profile_url(platform, account),
         "followers": series, "followers_latest": series[-1] if series else None,
         "insight_columns": [{"key": c, "label": COLUMN_JA.get(c, c)} for c in cols],
-        "insights": read_insights(platform),
-        "improvements": read_improvements(platform),
-        "corrections": corrections_for(platform),
-        "playbook": playbook(platform),
-        "crosspost": crosspost_candidates(platform) if platform in CROSSPOST else [],
+        "insights": read_insights(platform, account=account),
+        "improvements": read_improvements(platform, account),
+        "corrections": corrections_for(platform) if account == "main" else [],
+        "playbook": playbook(platform, account),
+        "crosspost": crosspost_candidates(platform) if platform in CROSSPOST and account == "main" else [],
+        "revenue": revenue_for(account, platform),
     }
 
 
-def summary() -> List[dict]:
-    f = company.read_followers()
-    return [{"platform": p, "name": PLATFORM_JA[p], "url": profile_url(p),
-             "followers_latest": (f.get(p) or [None])[-1]} for p in PLATFORMS]
+def account_sets() -> List[dict]:
+    return [{"id": k, "label": v["label"], "note": v["note"], "platforms": v["platforms"]} for k, v in ACCOUNT_SETS.items()]
+
+
+def summary(account: str = "main") -> List[dict]:
+    f = company.read_followers(account)
+    return [{"platform": p, "name": PLATFORM_JA[p], "url": profile_url(p, account),
+             "followers_latest": (f.get(p) or [None])[-1]} for p in ACCOUNT_SETS[account]["platforms"]]
 
 
 # ---------- TikTok・YouTube に出すとよい投稿(2026-11-10 社長の指示) ----------

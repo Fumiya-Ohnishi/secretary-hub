@@ -1,42 +1,68 @@
 import React, { useEffect, useState } from "react";
-import { getContentWeeks, getAccount, addInsight, addImprovement, recordFollowers, markCrossposted } from "./api.js";
+import { getContentWeeks, getAccount, addInsight, addImprovement, recordFollowers, markCrossposted, recordRevenue,
+         getProposals, addProposal, patchProposal, proposalRevenue } from "./api.js";
 import Content, { PostPreview, PostResults } from "./Content.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
 const PLATFORMS = [["instagram", "Instagram"], ["x", "X"], ["threads", "Threads"], ["note", "note"], ["tiktok", "TikTok"], ["youtube", "YouTube"]];
+// アカウントの組(2026-11-12 社長: 複数アカウントを切り替えて、投稿・数字・収益をアカウントごとに見る)
+const SETS = [
+  ["main", "本アカウント", "定時AI・秘書セナ", ["instagram", "x", "threads", "note", "tiktok", "youtube"]],
+  ["sub", "別アカウント", "note の別アカウント(収益化用)", ["note", "instagram", "threads", "x"]],
+  ["work", "請け負い", "ランサーズ・ココナラの提案と入金", []],
+];
+const lsGet = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 
-/** アカウントごとの管理。「全部」は4媒体の投稿をまとめて承認、各媒体は投稿・数字・改善点・ルールを1か所に */
+/** アカウントごとの管理。上でアカウント(本・別・請け負い)を切り替え、その中で媒体を選ぶ */
 export default function Accounts({ week, setWeek, onChanged, notify, onSay }) {
-  const [sel, setSel] = useState(() => { try { return localStorage.getItem("acct") || "all"; } catch (e) { return "all"; } });
+  const [set, setSet] = useState(() => lsGet("acctSet", "main"));
+  const [sel, setSel] = useState(() => lsGet("acct", "all"));
   const [weeks, setWeeks] = useState([]);
-  const pick = (p) => { setSel(p); try { localStorage.setItem("acct", p); } catch (e) {} };
+  const cur = SETS.find((x) => x[0] === set) || SETS[0];
+  const plats = PLATFORMS.filter(([k]) => cur[3].includes(k)).sort((a, b) => cur[3].indexOf(a[0]) - cur[3].indexOf(b[0]));
+  const pickSet = (k) => { setSet(k); lsSet("acctSet", k); const s2 = SETS.find((x) => x[0] === k); if (s2 && sel !== "all" && !s2[3].includes(sel)) pick("all"); };
+  const pick = (p) => { setSel(p); lsSet("acct", p); };
   const loadWeeks = () => getContentWeeks().then((r) => setWeeks(r.weeks)).catch(() => {});
   useEffect(() => { loadWeeks(); }, []);
-  const waiting = (p) => weeks.reduce((n, w) => n + ((p === "all" ? w.counts : (w.by_platform?.[p] || {}))["承認待ち"] || 0), 0);
+  const waiting = (acct, p) => weeks.reduce((n, w) => n + ((w.by_account?.[acct]?.[p] || {})["承認待ち"] || 0), 0);
   const changed = () => { loadWeeks(); onChanged(); };
+  const platSel = cur[3].includes(sel) ? sel : "all";
 
   return (
     <div className="accounts-tab">
-      <div className="acct-switch">
-        {[["all", "全部"], ...PLATFORMS].map(([k, label]) => (
-          <button key={k} className={sel === k ? "on" : ""} onClick={() => pick(k)}
-                  style={sel === k && k !== "all" ? { borderColor: PLATFORM_COLORS[k], color: PLATFORM_COLORS[k] } : null}>
-            {label}{waiting(k) ? <span className="count warn">{waiting(k)}</span> : null}
+      <div className="acct-switch acct-sets">
+        {SETS.map(([k, label, note]) => (
+          <button key={k} className={set === k ? "on" : ""} onClick={() => pickSet(k)} title={note}>
+            {label}{k !== "work" && waiting(k, "all") ? <span className="count warn">{waiting(k, "all")}</span> : null}
           </button>
         ))}
       </div>
-      {sel === "all"
-        ? <Content week={week} setWeek={setWeek} onChanged={changed} notify={notify} onSay={onSay} />
-        : <Account key={sel} platform={sel} week={week} setWeek={setWeek} onChanged={changed} notify={notify} onSay={onSay} />}
+      {set === "work" ? <Proposals notify={notify} onChanged={onChanged} /> : (
+        <>
+          <div className="muted small acct-set-note">{cur[2]}</div>
+          <div className="acct-switch">
+            {[["all", "全部"], ...plats].map(([k, label]) => (
+              <button key={k} className={platSel === k ? "on" : ""} onClick={() => pick(k)}
+                      style={platSel === k && k !== "all" ? { borderColor: PLATFORM_COLORS[k], color: PLATFORM_COLORS[k] } : null}>
+                {label}{waiting(set, k) ? <span className="count warn">{waiting(set, k)}</span> : null}
+              </button>
+            ))}
+          </div>
+          {platSel === "all"
+            ? <Content key={set} week={week} setWeek={setWeek} onChanged={changed} notify={notify} onSay={onSay} account={set} />
+            : <Account key={set + platSel} account={set} platform={platSel} week={week} setWeek={setWeek} onChanged={changed} notify={notify} onSay={onSay} />}
+        </>
+      )}
     </div>
   );
 }
 
-function Account({ platform, week, setWeek, onChanged, notify, onSay }) {
+function Account({ account = "main", platform, week, setWeek, onChanged, notify, onSay }) {
   const [data, setData] = useState(null);
   const [section, setSection] = useState("posts");
-  const load = () => getAccount(platform).then(setData).catch((e) => notify(e.message, "error"));
-  useEffect(() => { load(); }, [platform]);
+  const load = () => getAccount(platform, account).then(setData).catch((e) => notify(e.message, "error"));
+  useEffect(() => { load(); }, [platform, account]);
   if (!data) return <div className="empty">読み込み中…</div>;
   const latest = data.followers_latest;
   const prev = data.followers.length > 1 ? data.followers[data.followers.length - 2] : null;
@@ -46,10 +72,10 @@ function Account({ platform, week, setWeek, onChanged, notify, onSay }) {
     <>
       <div className="card acct-head" style={{ borderTopColor: PLATFORM_COLORS[platform] }}>
         <div>
-          <div className="muted small">アカウント</div>
+          <div className="muted small">{data.account_label}</div>
           <h3>{data.name}</h3>
           {data.url ? <a className="muted small" href={data.url} target="_blank" rel="noreferrer">{data.url}</a>
-                    : <span className="muted small">URL 未登録(「{data.name}のURLは〜」と話しかけると登録)</span>}
+                    : <span className="muted small">URL 未登録(「{account === "sub" ? "別アカウントの" : ""}{data.name}のURLは〜」と話しかけると登録)</span>}
         </div>
         <div className="acct-kpi">
           <div className="kpi-num">{latest ? latest.followers.toLocaleString() : "—"}</div>
@@ -57,7 +83,7 @@ function Account({ platform, week, setWeek, onChanged, notify, onSay }) {
         </div>
       </div>
       <div className="seg">
-        {[["posts", "投稿"], ["numbers", "数字"], ["improve", "改善点"], ["rules", "ルール"]].map(([k, l]) => (
+        {[["posts", "投稿"], ["numbers", "数字"], ["revenue", "収益"], ["improve", "改善点"], ["rules", "ルール"]].map(([k, l]) => (
           <button key={k} className={section === k ? "on" : ""} onClick={() => setSection(k)}>
             {l}{k === "improve" && data.improvements.length ? <span className="count">{data.improvements.length}</span> : null}
           </button>
@@ -65,15 +91,16 @@ function Account({ platform, week, setWeek, onChanged, notify, onSay }) {
       </div>
       {section === "posts" && data.crosspost && (platform === "tiktok" || platform === "youtube") &&
         <Crosspost data={data} platform={platform} notify={notify} onDone={() => { load(); onChanged(); }} />}
-      {section === "posts" && !(platform === "tiktok" || platform === "youtube") && <Content week={week} setWeek={setWeek} onChanged={onChanged} notify={notify} onSay={onSay} platform={platform} />}
-      {section === "numbers" && <Numbers data={data} platform={platform} notify={notify} onDone={() => { load(); onChanged(); }} />}
-      {section === "improve" && <Improvements data={data} platform={platform} notify={notify} onDone={load} />}
+      {section === "posts" && !(platform === "tiktok" || platform === "youtube") && <Content week={week} setWeek={setWeek} onChanged={onChanged} notify={notify} onSay={onSay} platform={platform} account={account} />}
+      {section === "numbers" && <Numbers data={data} platform={platform} account={account} notify={notify} onDone={() => { load(); onChanged(); }} />}
+      {section === "revenue" && <Revenue data={data} notify={notify} onDone={() => { load(); onChanged(); }} />}
+      {section === "improve" && <Improvements data={data} platform={platform} account={account} notify={notify} onDone={load} />}
       {section === "rules" && <div className="card"><div className="sec-text">{data.playbook || "ルールはまだありません。"}</div></div>}
     </>
   );
 }
 
-function Numbers({ data, platform, notify, onDone }) {
+function Numbers({ data, platform, account = "main", notify, onDone }) {
   const [fol, setFol] = useState("");
   const [vals, setVals] = useState({});
   const [busy, setBusy] = useState(false);
@@ -81,13 +108,13 @@ function Numbers({ data, platform, notify, onDone }) {
     const n = parseInt(fol, 10);
     if (Number.isNaN(n)) return;
     setBusy(true);
-    try { await recordFollowers({ platform, followers: n }); notify(`${data.name} のフォロワー ${n}人を記録しました`, "ok"); setFol(""); onDone(); }
+    try { await recordFollowers({ platform, followers: n, account }); notify(`${data.name} のフォロワー ${n}人を記録しました`, "ok"); setFol(""); onDone(); }
     catch (e) { notify(e.message, "error"); }
     setBusy(false);
   };
   const saveInsight = async () => {
     setBusy(true);
-    try { await addInsight(platform, vals); notify("数字を記録しました", "ok"); setVals({}); onDone(); }
+    try { await addInsight(platform, vals, undefined, false, account); notify("数字を記録しました", "ok"); setVals({}); onDone(); }
     catch (e) { notify(e.message, "error"); }
     setBusy(false);
   };
@@ -129,12 +156,12 @@ function Numbers({ data, platform, notify, onDone }) {
   );
 }
 
-function Improvements({ data, platform, notify, onDone }) {
+function Improvements({ data, platform, account = "main", notify, onDone }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
-    try { await addImprovement(platform, text); notify("改善点を記録しました", "ok"); setText(""); onDone(); }
+    try { await addImprovement(platform, text, account); notify("改善点を記録しました", "ok"); setText(""); onDone(); }
     catch (e) { notify(e.message, "error"); }
     setBusy(false);
   };
@@ -213,5 +240,128 @@ function Crosspost({ data, platform, notify, onDone }) {
       </div>
       {view && <PostPreview post={view} onClose={() => setView(null)} />}
     </div>
+  );
+}
+
+const yen = (n) => `${Number(n || 0).toLocaleString()}円`;
+const today = () => new Date().toISOString().slice(0, 10);
+
+/** その媒体の確定した収益を入れる(2026-11-12 社長: 収益が確定したら入力できる仕組み) */
+function Revenue({ data, notify, onDone }) {
+  const rv = data.revenue || { rows: [] };
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(today());
+  const [memo, setMemo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    const n = parseInt(amount.replace(/[^0-9]/g, ""), 10);
+    if (!n) return;
+    if (!window.confirm(`${rv.source_ja} に ${yen(n)}(${date})を記録します。確定した金額ですか?`)) return;
+    setBusy(true);
+    try { await recordRevenue({ amount: n, source: rv.source, date, memo }); notify(`${rv.source_ja} ${yen(n)} を記録しました`, "ok"); setAmount(""); setMemo(""); onDone(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy(false);
+  };
+  return (
+    <div className="card">
+      <div className="card-head"><h3>収益({rv.source_ja})</h3>
+        <span className="muted small">今月 {yen(rv.month_total)} ・ 合計 {yen(rv.all_total)}</span></div>
+      {rv.rows.length ? (
+        <div className="table-wrap"><table className="tbl">
+          <thead><tr><th>日付</th><th>金額</th><th>メモ</th></tr></thead>
+          <tbody>{rv.rows.map((r, i) => <tr key={i}><td>{r.date}</td><td>{yen(r.amount)}</td><td>{r.memo}</td></tr>)}</tbody>
+        </table></div>
+      ) : <div className="empty">まだ記録がありません。売上が確定したら(note の売上管理・各アプリの収益の画面で確かめてから)下に入れてください。</div>}
+      <div className="insight-form">
+        <label><span>確定した日</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <label><span>金額(円)</span><input inputMode="numeric" value={amount} placeholder="例 500" onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ""))} /></label>
+        <label className="wide"><span>メモ</span><input value={memo} placeholder="例 有料記事「大掃除の段取り表」2件" onChange={(e) => setMemo(e.target.value)} /></label>
+        <button className="btn primary" disabled={busy || !amount} onClick={save}>収益を記録</button>
+      </div>
+      <div className="muted small">記録すると、会社の収益(data/revenue.csv)と Notion の収益にも入ります。手数料を引いた後の金額か前の金額かは、メモに書いてください。</div>
+    </div>
+  );
+}
+
+const P_STATUS_CLASS = { "提案した": "s-todo", "やりとり中": "s-doing", "採用": "s-ok", "不採用": "s-ng", "納品した": "s-ask", "入金済み": "s-done" };
+
+/** 請け負いの提案と入金(ランサーズ・ココナラ。2026-11-12 社長) */
+function Proposals({ notify, onChanged }) {
+  const [service, setService] = useState(() => lsGet("propSvc", "lancers"));
+  const [data, setData] = useState(null);
+  const [form, setForm] = useState({ title: "", url: "", amount: "", memo: "" });
+  const [busy, setBusy] = useState("");
+  const load = () => getProposals(service).then(setData).catch((e) => notify(e.message, "error"));
+  useEffect(() => { load(); }, [service]);
+  const pickSvc = (k) => { setService(k); lsSet("propSvc", k); };
+  const add = async () => {
+    setBusy("add");
+    try { const r = await addProposal({ service, ...form }); notify(`${r.id}「${r.title}」を記録しました`, "ok"); setForm({ title: "", url: "", amount: "", memo: "" }); load(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy("");
+  };
+  const setStatus = async (r, status) => {
+    setBusy(r.id);
+    try { await patchProposal(r.id, { status }); load(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy("");
+  };
+  const toRevenue = async (r) => {
+    const v = window.prompt(`${r.id}「${r.title}」の入金が確定した金額(円)`, r.amount || "");
+    if (v === null) return;
+    setBusy(r.id);
+    try { const x = await proposalRevenue(r.id, v.replace(/[^0-9]/g, "")); notify(`${yen(x.revenue.amount)} を収益(${data.services.find((s) => s.id === r.service)?.label})に入れました`, "ok"); load(); onChanged(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy("");
+  };
+  if (!data) return <div className="empty">読み込み中…</div>;
+  const sm = data.summary;
+  return (
+    <>
+      <div className="acct-switch">
+        {data.services.map((s) => <button key={s.id} className={service === s.id ? "on" : ""} onClick={() => pickSvc(s.id)}>{s.label}</button>)}
+      </div>
+      <div className="card">
+        <div className="prop-kpis">
+          <div><div className="kpi-num">{sm.proposals}</div><div className="kpi-lbl">提案数(今月 {sm.this_month})</div></div>
+          <div><div className="kpi-num">{sm.won}</div><div className="kpi-lbl">採用</div></div>
+          <div><div className="kpi-num">{sm.win_rate === null ? "—" : `${sm.win_rate}%`}</div><div className="kpi-lbl">採用率(決まったものの中)</div></div>
+          <div><div className="kpi-num">{yen(sm.paid_total)}</div><div className="kpi-lbl">入金済み</div></div>
+          <div><div className="kpi-num">{yen(sm.expected_total)}</div><div className="kpi-lbl">入金待ち(採用・納品)</div></div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-head"><h3>提案した案件を記録</h3><span className="muted small">応募を送ったら入れる</span></div>
+        <div className="insight-form">
+          <label className="wide"><span>案件名</span><input value={form.title} placeholder="例 会議の議事録の整形(5本)" onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
+          <label className="wide"><span>案件のURL</span><input value={form.url} placeholder="https://www.lancers.jp/work/detail/..." onChange={(e) => setForm({ ...form, url: e.target.value })} /></label>
+          <label><span>提案した金額(円)</span><input inputMode="numeric" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value.replace(/[^0-9]/g, "") })} /></label>
+          <label className="wide"><span>メモ</span><input value={form.memo} placeholder="例 納期3日・応募文は案A" onChange={(e) => setForm({ ...form, memo: e.target.value })} /></label>
+          <button className="btn primary" disabled={busy === "add" || !form.title.trim()} onClick={add}>記録</button>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-head"><h3>提案した案件</h3><span className="muted small">新しい順・状態を押して変える</span></div>
+        {data.rows.length ? (
+          <ul className="prop-list">{data.rows.map((r) => (
+            <li key={r.id} className="prop-row">
+              <div className="prop-main">
+                <div><span className={`badge ${P_STATUS_CLASS[r.status] || ""}`}>{r.status}</span> <span className="muted small">{r.id} ・ {r.date}</span></div>
+                <div className="prop-title">{r.url ? <a href={r.url} target="_blank" rel="noreferrer">{r.title}</a> : r.title}</div>
+                <div className="muted small">{r.amount ? yen(r.amount) : "金額未入力"}{r.memo ? ` ・ ${r.memo}` : ""}{r.revenue_date ? ` ・ 収益に記録済み(${r.revenue_date})` : ""}</div>
+              </div>
+              <div className="prop-act">
+                <select value={r.status} disabled={busy === r.id} onChange={(e) => setStatus(r, e.target.value)}>
+                  {data.statuses.map((s) => <option key={s}>{s}</option>)}
+                </select>
+                {!r.revenue_date && ["採用", "納品した", "入金済み"].includes(r.status) &&
+                  <button className="btn sm primary" disabled={busy === r.id} onClick={() => toRevenue(r)}>入金を収益に入れる</button>}
+              </div>
+            </li>
+          ))}</ul>
+        ) : <div className="empty">まだありません。応募を送ったら、上で記録してください。</div>}
+        <div className="muted small" style={{ marginTop: 8 }}>当社はサービスにログインしません。応募・やりとり・納品は社長が行い、結果をここに入れてください。</div>
+      </div>
+    </>
   );
 }

@@ -420,10 +420,11 @@ REVENUE_DB = os.getenv("NOTION_REVENUE_DB", "0ca816aeacb8476d9326f5623b3def3d").
 REVENUE_SOURCE_JA = {"note_sales": "note販売", "amazon_affiliate": "Amazonアフィ", "other": "その他"}
 
 
-async def add_revenue(date: str, source: str, amount: int, memo: str) -> None:
+async def add_revenue(date: str, source: str, amount: int, memo: str, label: Optional[str] = None) -> None:
+    name = label or REVENUE_SOURCE_JA.get(source, "その他")
     await _req("POST", "/pages", json={"parent": {"database_id": REVENUE_DB}, "properties": {
-        "メモ": {"title": _text(memo or REVENUE_SOURCE_JA.get(source, source))},
-        "ソース": {"select": {"name": REVENUE_SOURCE_JA.get(source, "その他")}},
+        "メモ": {"title": _text(memo or name)},
+        "ソース": {"select": {"name": name}},
         "金額": {"number": amount},
         "日付": {"date": {"start": date}},
     }})

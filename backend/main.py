@@ -35,6 +35,7 @@ from fastapi.responses import StreamingResponse
 import agent
 import company
 import accounts
+import proposals
 import reels
 import content
 import corrections
@@ -481,9 +482,9 @@ def content_schedule(body: ScheduleIn):
 
 
 @app.post("/api/content/weeks/{week}/approve")
-async def content_approve_week(week: str):
+async def content_approve_week(week: str, account: Optional[str] = None):
     try:
-        return await content.approve_week(week)
+        return await content.approve_week(week, account)
     except Exception as e:
         return err(e, 400)
 
@@ -500,12 +501,14 @@ class FollowersIn(BaseModel):
     platform: str
     followers: int
     date: Optional[str] = None
+    account: str = "main"
 
 
 class AccountIn(BaseModel):
     platform: str
     url: str
     opened: Optional[str] = None
+    account: str = "main"
 
 
 @app.post("/api/metrics/revenue")
@@ -520,21 +523,26 @@ class InsightIn(BaseModel):
     values: dict
     date: Optional[str] = None
     per_post: bool = False  # 投稿ごとの結果(note は記事ごとの表に入れる)
+    account: str = "main"
 
 
 class ImprovementIn(BaseModel):
     text: str
+    account: str = "main"
 
 
 @app.get("/api/accounts")
-def get_accounts():
-    return {"accounts": accounts.summary()}
+def get_accounts(account: str = "main"):
+    try:
+        return {"accounts": accounts.summary(account), "sets": accounts.account_sets()}
+    except (ValueError, KeyError) as e:
+        return err(e, 400)
 
 
 @app.get("/api/accounts/{platform}")
-def get_account(platform: str):
+def get_account(platform: str, account: str = "main"):
     try:
-        return accounts.overview(platform)
+        return accounts.overview(platform, account)
     except ValueError as e:
         return err(e, 404)
 
@@ -542,15 +550,15 @@ def get_account(platform: str):
 @app.post("/api/accounts/{platform}/insights")
 def add_insight(platform: str, body: InsightIn):
     try:
-        return accounts.record_insight(platform, body.values, body.date, per_post=body.per_post)
+        return accounts.record_insight(platform, body.values, body.date, per_post=body.per_post, account=body.account)
     except ValueError as e:
         return err(e, 400)
 
 
 @app.get("/api/accounts/{platform}/results")
-def get_post_results(platform: str, id: str):
+def get_post_results(platform: str, id: str, account: str = "main"):
     try:
-        return accounts.post_results(platform, id)
+        return accounts.post_results(platform, id, account)
     except ValueError as e:
         return err(e, 400)
 
@@ -572,7 +580,7 @@ def crossposted(platform: str, body: CrosspostIn):
 @app.post("/api/accounts/{platform}/improvements")
 def add_improvement(platform: str, body: ImprovementIn):
     try:
-        return accounts.add_improvement(platform, body.text)
+        return accounts.add_improvement(platform, body.text, account=body.account)
     except ValueError as e:
         return err(e, 400)
 
@@ -580,7 +588,7 @@ def add_improvement(platform: str, body: ImprovementIn):
 @app.post("/api/metrics/followers")
 def add_followers(body: FollowersIn):
     try:
-        return company.record_followers(body.platform, body.followers, body.date)
+        return company.record_followers(body.platform, body.followers, body.date, body.account)
     except ValueError as e:
         return err(e, 400)
 
@@ -588,8 +596,58 @@ def add_followers(body: FollowersIn):
 @app.post("/api/accounts")
 async def add_account(body: AccountIn):
     try:
-        return await company.register_account(body.platform, body.url, body.opened)
+        return await company.register_account(body.platform, body.url, body.opened, body.account)
     except ValueError as e:
+        return err(e, 400)
+
+
+# ---------- 請け負いの提案(ランサーズ・ココナラ。2026-11-12 社長) ----------
+class ProposalIn(BaseModel):
+    service: str
+    title: str
+    url: str = ""
+    amount: str = ""
+    memo: str = ""
+    date: Optional[str] = None
+
+
+class ProposalPatch(BaseModel):
+    status: Optional[str] = None
+    amount: Optional[str] = None
+    memo: Optional[str] = None
+
+
+class ProposalRevenueIn(BaseModel):
+    amount: Optional[str] = None
+    date: Optional[str] = None
+
+
+@app.get("/api/proposals")
+def get_proposals(service: Optional[str] = None):
+    return proposals.listing(service)
+
+
+@app.post("/api/proposals")
+def add_proposal(body: ProposalIn):
+    try:
+        return proposals.add(body.service, body.title, body.url, body.amount, body.memo, body.date)
+    except ValueError as e:
+        return err(e, 400)
+
+
+@app.patch("/api/proposals/{pid}")
+def patch_proposal(pid: str, body: ProposalPatch):
+    try:
+        return proposals.update(pid, body.status, body.amount, body.memo)
+    except (ValueError, KeyError) as e:
+        return err(e, 400)
+
+
+@app.post("/api/proposals/{pid}/revenue")
+async def proposal_revenue(pid: str, body: ProposalRevenueIn):
+    try:
+        return await proposals.record_revenue(pid, body.amount, body.date)
+    except (ValueError, KeyError) as e:
         return err(e, 400)
 
 

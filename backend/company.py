@@ -28,20 +28,44 @@ def task_source() -> str:
 
 
 # ---------- 収益 ----------
+def read_revenue_all() -> List[dict]:
+    """revenue.csv の全部の行(古い順)"""
+    rows = []
+    if REVENUE_CSV.exists():
+        with REVENUE_CSV.open() as f:
+            for r in csv.DictReader(f):
+                try:
+                    src = r.get("source", "")
+                    rows.append({"date": r.get("date", ""), "source": src, "source_ja": REVENUE_SOURCE_JA.get(src, src),
+                                 "amount": int(float(r.get("amount", 0) or 0)), "memo": r.get("memo", "")})
+                except ValueError:
+                    pass
+    return rows
+
+
 def read_revenue() -> dict:
     rows = []
     if REVENUE_CSV.exists():
         with REVENUE_CSV.open() as f:
             for r in csv.DictReader(f):
                 try:
-                    rows.append({"date": r.get("date", ""), "source": r.get("source", ""),
+                    src = r.get("source", "")
+                    rows.append({"date": r.get("date", ""), "source": src, "source_ja": REVENUE_SOURCE_JA.get(src, src),
                                  "amount": int(float(r.get("amount", 0) or 0)), "memo": r.get("memo", "")})
                 except ValueError:
                     pass
     today = datetime.date.today()
     month = today.strftime("%Y-%m")
     m_total = sum(r["amount"] for r in rows if r["date"].startswith(month))
-    return {"month": month, "month_total": m_total, "goal": GOAL,
+    by_month: dict = {}
+    by_all: dict = {}
+    for r in rows:
+        by_all[r["source"]] = by_all.get(r["source"], 0) + r["amount"]
+        if r["date"].startswith(month):
+            by_month[r["source"]] = by_month.get(r["source"], 0) + r["amount"]
+    by_source = [{"source": k, "source_ja": REVENUE_SOURCE_JA.get(k, k), "month": by_month.get(k, 0), "all": v}
+                 for k, v in sorted(by_all.items(), key=lambda kv: -kv[1])]
+    return {"month": month, "month_total": m_total, "goal": GOAL, "by_source": by_source,
             "progress": round(m_total / GOAL * 100), "all_total": sum(r["amount"] for r in rows),
             "today_total": sum(r["amount"] for r in rows if r["date"] == today.isoformat()),
             "rows": rows[-20:]}
@@ -167,10 +191,39 @@ def summary_text(data: dict) -> str:
 
 # ---------- 数字の記録(収益・フォロワー) ----------
 FOLLOWERS_CSV = COMPANY_DIR / "data" / "followers.csv"
+ACCOUNT_IDS = ("main", "sub")  # main=本アカウント(定時AI) / sub=別アカウント(2026-11-12)
+
+
+def account_data_dir(account: str = "main") -> Path:
+    """アカウントごとの数字の置き場所。本アカウントは data/ のまま、別アカウントは data/sub/"""
+    if account not in ACCOUNT_IDS:
+        raise ValueError("アカウントは main(本アカウント)か sub(別アカウント)です")
+    return COMPANY_DIR / "data" if account == "main" else COMPANY_DIR / "data" / "sub"
+
+
+def followers_csv(account: str = "main") -> Path:
+    return account_data_dir(account) / "followers.csv"
 ACCOUNTS_MD = COMPANY_DIR / "data" / "accounts.md"
 PLATFORMS = ["instagram", "x", "threads", "note", "tiktok", "youtube"]
 PLATFORM_JA = {"instagram": "Instagram", "x": "X", "threads": "Threads", "note": "note", "tiktok": "TikTok", "youtube": "YouTube"}
-REVENUE_SOURCES = ["note_sales", "amazon_affiliate", "other"]
+# 収益の出どころ(2026-11-12 社長: アカウントごと・請け負いごとに確定した金額を入れられるように)
+# 本アカウント(main)・別アカウント(sub)の媒体は「main_instagram」「sub_note」の形。note の本アカウントは前からの note_sales のまま
+REVENUE_SOURCE_JA = {"note_sales": "note販売(本アカウント)", "amazon_affiliate": "Amazonアフィ",
+                     "sub_note": "note販売(別アカウント)", "lancers": "ランサーズ", "coconala": "ココナラ"}
+_SNS_JA = {"instagram": "Instagram", "x": "X", "threads": "Threads", "tiktok": "TikTok", "youtube": "YouTube"}
+for _acct, _ja in (("main", "本アカウント"), ("sub", "別アカウント")):
+    for _p, _pja in _SNS_JA.items():
+        REVENUE_SOURCE_JA[f"{_acct}_{_p}"] = f"{_pja}({_ja})"
+REVENUE_SOURCE_JA["other"] = "その他"
+REVENUE_SOURCES = list(REVENUE_SOURCE_JA)
+
+
+def revenue_source(account: str, platform: str) -> str:
+    """アカウントと媒体から、収益の出どころのキーを決める"""
+    if account == "main" and platform == "note":
+        return "note_sales"
+    key = f"{account}_{platform}"
+    return key if key in REVENUE_SOURCE_JA else "other"
 
 
 def _append_csv(path: Path, header: List[str], row: List[str]):
@@ -192,17 +245,18 @@ async def record_revenue(amount: int, source: str = "other", date: Optional[str]
     synced = None
     if notion.configured():
         try:
-            await notion.add_revenue(date, source, amount, memo)
+            await notion.add_revenue(date, source, amount, memo, REVENUE_SOURCE_JA.get(source))
             synced = True
         except Exception as e:
             synced = str(e)
     return {"date": date, "source": source, "amount": amount, "memo": memo, "notion": synced}
 
 
-def _read_follower_rows() -> List[dict]:
+def _read_follower_rows(account: str = "main") -> List[dict]:
     rows = []
-    if FOLLOWERS_CSV.exists():
-        with FOLLOWERS_CSV.open() as f:
+    path = followers_csv(account)
+    if path.exists():
+        with path.open() as f:
             for r in csv.DictReader(f):
                 try:
                     rows.append({"date": notion.valid_date(r["date"]), "platform": r["platform"].strip().lower(),
@@ -212,10 +266,10 @@ def _read_follower_rows() -> List[dict]:
     return rows
 
 
-def normalize_followers() -> dict:
+def normalize_followers(account: str = "main") -> dict:
     """followers.csv を整える: 同じ日・同じ媒体の行は最後の値だけ残し、日付→媒体の順に並べる。
     数字の無い媒体は埋めない(推測の数字を作らない。抜けは「未記録」として扱う)"""
-    rows = _read_follower_rows()
+    rows = _read_follower_rows(account)
     if not rows:
         return {"rows": 0, "removed": 0}
     latest = {}
@@ -224,8 +278,9 @@ def normalize_followers() -> dict:
             latest[(r["date"], r["platform"])] = r["followers"]
     order = {p: i for i, p in enumerate(PLATFORMS)}
     keys = sorted(latest, key=lambda k: (k[0], order[k[1]]))
-    FOLLOWERS_CSV.parent.mkdir(parents=True, exist_ok=True)
-    with FOLLOWERS_CSV.open("w", newline="") as f:
+    path = followers_csv(account)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["date", "platform", "followers"])
         for d, p in keys:
@@ -233,14 +288,16 @@ def normalize_followers() -> dict:
     return {"rows": len(keys), "removed": len(rows) - len(keys)}
 
 
-def record_followers(platform: str, followers: int, date: Optional[str] = None) -> dict:
+def record_followers(platform: str, followers: int, date: Optional[str] = None, account: str = "main") -> dict:
     """同じ日・同じ媒体がすでにあれば上書きする(重複させない)"""
     if platform not in PLATFORMS:
         raise ValueError(f"媒体は {' / '.join(PLATFORMS)} のどれかです")
     date = notion.valid_date(date or "") or datetime.date.today().isoformat()
-    _append_csv(FOLLOWERS_CSV, ["date", "platform", "followers"], [date, platform, str(int(followers))])
-    normalize_followers()
-    return {"date": date, "platform": platform, "followers": int(followers)}
+    path = followers_csv(account)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _append_csv(path, ["date", "platform", "followers"], [date, platform, str(int(followers))])
+    normalize_followers(account)
+    return {"date": date, "platform": platform, "followers": int(followers), "account": account}
 
 
 def followers_gaps(days: int = 7) -> List[str]:
@@ -250,11 +307,12 @@ def followers_gaps(days: int = 7) -> List[str]:
     return [p for p in PLATFORMS if p not in seen]
 
 
-def read_followers() -> dict:
+def read_followers(account: str = "main") -> dict:
     """媒体ごとの推移 {platform: [{date, followers}]}(同じ日は最後の値)"""
     series: dict = {p: {} for p in PLATFORMS}
-    if FOLLOWERS_CSV.exists():
-        with FOLLOWERS_CSV.open() as f:
+    path = followers_csv(account)
+    if path.exists():
+        with path.open() as f:
             for r in csv.DictReader(f):
                 try:
                     series.setdefault(r["platform"], {})[r["date"]] = int(float(r["followers"]))
@@ -300,7 +358,19 @@ ACCOUNT_HOSTS = {"instagram": ("instagram.com",), "x": ("x.com", "twitter.com"),
                  "threads": ("threads.net", "threads.com"), "note": ("note.com",)}
 
 
-async def register_account(platform: str, url: str, opened: Optional[str] = None) -> dict:
+def account_row_name(platform: str, account: str = "main") -> str:
+    """data/accounts.md の表の1列目。別アカウントは「note(別アカウント…)」の形"""
+    return PLATFORM_JA[platform] if account == "main" else f"{PLATFORM_JA[platform]}(別アカウント)"
+
+
+def is_account_row(cell: str, platform: str, account: str = "main") -> bool:
+    name = PLATFORM_JA[platform]
+    if account == "main":
+        return cell == name
+    return cell.startswith(name + "(別アカウント")
+
+
+async def register_account(platform: str, url: str, opened: Optional[str] = None, account: str = "main") -> dict:
     """data/accounts.md の表に URL と開設日を書き、Notion の「アカウント台帳」ページにも記録する"""
     if platform not in PLATFORMS:
         raise ValueError(f"媒体は {' / '.join(PLATFORMS)} のどれかです")
@@ -308,15 +378,21 @@ async def register_account(platform: str, url: str, opened: Optional[str] = None
     if not re.match(r"^https://", url) or not any(h in url.split("/")[2] for h in ACCOUNT_HOSTS[platform]):
         raise ValueError(f"{PLATFORM_JA[platform]} の URL(https://{ACCOUNT_HOSTS[platform][0]}/...)を指定してください")
     opened = notion.valid_date(opened or "") or datetime.date.today().isoformat()
-    name = PLATFORM_JA[platform]
+    name = account_row_name(platform, account)
     if ACCOUNTS_MD.exists():
         lines = ACCOUNTS_MD.read_text().splitlines()
+        last_row = None
         for i, line in enumerate(lines):
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            if line.startswith("|") and cells and cells[0] == name:
+            if line.startswith("|"):
+                last_row = i
+            if line.startswith("|") and cells and is_account_row(cells[0], platform, account):
                 cells[1], cells[2] = url, opened
                 lines[i] = "| " + " | ".join(cells) + " |"
                 break
+        else:
+            if last_row is not None:  # 表に無い(別アカウントの SNS など)→ 表の最後に足す
+                lines.insert(last_row + 1, f"| {name} | {url} | {opened} | — | y/n |")
         ACCOUNTS_MD.write_text("\n".join(lines) + "\n")
     synced = None
     if notion.configured():
@@ -335,7 +411,7 @@ async def register_account(platform: str, url: str, opened: Optional[str] = None
             synced = True
         except Exception as e:
             synced = str(e)
-    return {"platform": platform, "url": url, "opened": opened, "notion": synced}
+    return {"platform": platform, "url": url, "opened": opened, "account": account, "notion": synced}
 
 
 def accounts_text() -> str:
