@@ -17,7 +17,7 @@ MEETING_DB = os.getenv("NOTION_MEETING_DB", "829d077c4b49458693c6739888105d13").
 KINDS = {
     "planning": {"name": "企画会議", "depts": ["企画編集部", "ライティング部", "デザイン部", "映像制作部", "SNS運用部", "データ分析部", "広報部"],
                  "devil": "planner-contrarian(逆張りの企画担当)",
-                 "agenda": "今週のテーマを決める。月曜の週次リサーチ(strategy/research/ の最新)と資料室を読み、各部署から『作りやすさ・伸びそうか・懸念』を出し、編集長が決める。企画するのはアカウントごとに登録済みの媒体だけ(ai-company/data/account_sets.json の urls と data/accounts.md。登録の無い媒体=利用なしは企画しない)。目安箱に「〜を登録しました」があれば、その媒体の運用の型・本数・最初の投稿を議題に入れる。別アカウントの投稿には account: id を付ける"},
+                 "agenda": "今週のテーマを決める。月曜の週次リサーチ(strategy/research/ の最新)と資料室を読み、各部署から『作りやすさ・伸びそうか・懸念』を出し、編集長が決める。企画するのはアカウントごとに登録済みの媒体だけ(ai-company/data/account_sets.json の urls と data/accounts.md。登録の無い媒体=利用なしは企画しない)。目安箱に「〜を登録しました」があれば、その媒体の運用の型・本数・最初の投稿を議題に入れる。別アカウントの投稿には account: id を付ける。あわせて今週の LINE スタンプ1セット・絵文字1セットのテーマを決める(ai-company/playbooks/line_stamps.md。content/stamps/ に作って承認待ちにする)"},
     "review": {"name": "振り返り会議", "depts": ["経営戦略部", "企画編集部", "ライティング部", "デザイン部", "画像制作部", "映像制作部", "SNS運用部", "品質管理部", "データ分析部", "人事部"],
                "devil": "risk-analyst(リスクアナリスト)",
                "agenda": "今週の振り返り。数字(data/*.csv・data/improvements.md)と差し戻し(data/corrections.md)・作業後の知見(knowledge/lessons.md)を見て、よかったこと・まずかったこと・次に試すことを出す"},

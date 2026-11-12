@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { getContentWeeks, getAccount, getAccounts, addInsight, addImprovement, recordFollowers, markCrossposted, recordRevenue,
-         getProposals, addProposal, patchProposal, proposalRevenue, syncStats, registerAccount, addAccountSet, startMeeting } from "./api.js";
+         getProposals, addProposal, patchProposal, proposalRevenue, syncStats, registerAccount, addAccountSet, startMeeting, getStamps, decideStamp } from "./api.js";
 import Content, { PostPreview, PostResults } from "./Content.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
@@ -17,7 +17,7 @@ export default function Accounts({ week, setWeek, onChanged, notify, onSay }) {
   const [weeks, setWeeks] = useState([]);
   const [sets, setSets] = useState([]);
   const [summary, setSummary] = useState([]);
-  const work = acct === "work";
+  const work = acct === "work" || acct === "stamps";
   const pickAcct = (k) => { setAcct(k); lsSet("acctSet", k); };
   const pick = (p) => { setSel(p); lsSet("acct", p); };
   const loadWeeks = () => getContentWeeks().then((r) => setWeeks(r.weeks)).catch(() => {});
@@ -52,9 +52,11 @@ export default function Accounts({ week, setWeek, onChanged, notify, onSay }) {
             <option value="__add">＋ アカウントを追加…</option>
           </select>
         </label>
-        <button className={`btn ${work ? "primary" : ""}`} onClick={() => pickAcct(work ? "main" : "work")}>請け負い(ランサーズ・ココナラ)</button>
+        <button className={`btn ${acct === "work" ? "primary" : ""}`} onClick={() => pickAcct(acct === "work" ? "main" : "work")}>請け負い(ランサーズ・ココナラ)</button>
+        <button className={`btn ${acct === "stamps" ? "primary" : ""}`} onClick={() => pickAcct(acct === "stamps" ? "main" : "stamps")}>LINEスタンプ・絵文字</button>
       </div>
-      {work ? <Proposals notify={notify} onChanged={onChanged} /> : (
+      {acct === "stamps" ? <Stamps notify={notify} onChanged={onChanged} />
+        : acct === "work" ? <Proposals notify={notify} onChanged={onChanged} /> : (
         <>
           {cur?.note && <div className="muted small acct-set-note">{cur.note}</div>}
           <div className="acct-switch">
@@ -476,5 +478,94 @@ function AutoStats({ data, platform, account, notify, onDone }) {
         </>
       )}
     </div>
+  );
+}
+
+const STAMP_CLASS = { "下書き": "s-todo", "承認待ち": "s-ask", "承認済み": "s-ok", "差し戻し": "s-ng", "申請した": "s-doing", "販売中": "s-done", "リジェクト": "s-ng" };
+
+/** LINE スタンプ・絵文字(2026-11-12 社長: 週に1つずつ。会議はボタンでいつでも開ける。申請は社長が LINE Creators Market で) */
+function Stamps({ notify, onChanged }) {
+  const [data, setData] = useState(null);
+  const [open, setOpen] = useState("");
+  const [busy, setBusy] = useState("");
+  const load = () => getStamps().then(setData).catch((e) => notify(e.message, "error"));
+  useEffect(() => { load(); }, []);
+  const meeting = async () => {
+    const idea = window.prompt("会議で考えてほしい案があれば(空のままでもよい。例: 圧力上司・社畜・動物)", "") ?? null;
+    if (idea === null) return;
+    setBusy("meeting");
+    const topic = "LINEスタンプ・絵文字の企画(週にスタンプ1セット・絵文字1セットが目安)。数を増やして買われる可能性を上げる。"
+      + (idea ? `社長の案: ${idea}。` : "")
+      + "テーマ案を複数出し(動物・社畜・圧力上司・季節・日常のあいさつ など)、今週作るセットを決めて、画像は ChatGPT(OpenAI)で作る。"
+      + "ai-company/playbooks/line_stamps.md の規格と禁止事項(既存のキャラクターに似せない・実在の人物を使わない・AI使用を申告)を守り、"
+      + "content/stamps/{セットID}/_set.md と画像を作って品質管理を通し、承認待ちにする";
+    try { await startMeeting("adhoc", topic, ["企画編集部", "デザイン部", "画像制作部", "ライティング部", "品質管理部", "収益化部"]); notify("スタンプの企画会議を始めました。終わると議事録とやることが届きます", "ok"); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy("");
+  };
+  const act = async (s, action) => {
+    let comment = "", url = "";
+    if (action === "reject" || action === "line_rejected") {
+      comment = window.prompt(action === "reject" ? "差し戻しの理由(部署が直すときに読みます)" : "LINE の審査で落ちた理由(メールの文をそのまま貼る)", "") ?? null;
+      if (comment === null) return;
+    }
+    if (action === "on_sale") {
+      url = window.prompt("販売ページの URL(任意。https://store.line.me/…)", "") ?? null;
+      if (url === null) return;
+    }
+    setBusy(s.id);
+    try { await decideStamp(s.id, action, comment, url); notify(`「${s.title}」を更新しました`, "ok"); load(); onChanged(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy("");
+  };
+  if (!data) return <div className="empty">読み込み中…</div>;
+  const tw = data.this_week;
+  return (
+    <>
+      <div className="card">
+        <div className="card-head"><h3>今週({data.week})</h3>
+          <button className="btn primary" disabled={busy === "meeting"} onClick={meeting}>スタンプ・絵文字の企画会議を開く</button></div>
+        <div className="prop-kpis">
+          <div><div className="kpi-num">{tw.stamp}/{data.target.stamp}</div><div className="kpi-lbl">スタンプ(今週作った数/目安)</div></div>
+          <div><div className="kpi-num">{tw.emoji}/{data.target.emoji}</div><div className="kpi-lbl">絵文字(今週作った数/目安)</div></div>
+          <div><div className="kpi-num">{data.counts["販売中"] || 0}</div><div className="kpi-lbl">販売中のセット</div></div>
+          <div><div className="kpi-num">{(data.counts["承認済み"] || 0)}</div><div className="kpi-lbl">申請待ち(承認済み)</div></div>
+        </div>
+        <div className="muted small" style={{ marginTop: 8 }}>申請のしかたは会社のフォルダの <b>playbooks/line_stamps.md</b>(LINEスタンプ申請の手順書)。申請・販売開始は社長が LINE Creators Market で行い、終わったらここのボタンを押してください。</div>
+      </div>
+      <div className="card">
+        <div className="card-head"><h3>スタンプ・絵文字のセット</h3><span className="muted small">新しい順</span></div>
+        {data.sets.length ? (
+          <ul className="prop-list">{data.sets.map((s) => (
+            <li key={s.id} className="prop-row stamp-row">
+              {s.main_image && <img className="stamp-thumb" src={`/api/content/file?path=${encodeURIComponent(s.main_image.path)}`} alt="" />}
+              <div className="prop-main">
+                <div><span className={`badge ${STAMP_CLASS[s.status] || ""}`}>{s.status}</span> <span className="muted small">{s.kind_ja} ・ {s.id}{s.count ? ` ・ ${s.count}個` : ""}</span></div>
+                <div className="prop-title">{s.sale_url ? <a href={s.sale_url} target="_blank" rel="noreferrer">{s.title}</a> : s.title}</div>
+                <div className="muted small">{s.theme}{s.submitted ? ` ・ 申請 ${s.submitted}` : ""}{s.on_sale ? ` ・ 販売開始 ${s.on_sale}` : ""}</div>
+              </div>
+              <div className="prop-act">
+                <button className="btn sm" onClick={() => setOpen(open === s.id ? "" : s.id)}>{open === s.id ? "閉じる" : "中身を見る"}</button>
+                {s.status === "承認待ち" && <><button className="btn sm primary" disabled={busy === s.id} onClick={() => act(s, "approve")}>承認</button>
+                  <button className="btn sm" disabled={busy === s.id} onClick={() => act(s, "reject")}>差し戻し</button></>}
+                {(s.status === "承認済み" || s.status === "リジェクト") && <button className="btn sm primary" disabled={busy === s.id} onClick={() => act(s, "submitted")}>LINEに申請した</button>}
+                {s.status === "申請した" && <><button className="btn sm primary" disabled={busy === s.id} onClick={() => act(s, "on_sale")}>販売を始めた</button>
+                  <button className="btn sm" disabled={busy === s.id} onClick={() => act(s, "line_rejected")}>審査で落ちた</button></>}
+              </div>
+              {open === s.id && (
+                <div className="stamp-detail">
+                  {s.images.length ? <div className="stamp-grid">{s.images.map((i) => (
+                    <a key={i.path} href={`/api/content/file?path=${encodeURIComponent(i.path)}`} target="_blank" rel="noreferrer" title={i.name}>
+                      <img src={`/api/content/file?path=${encodeURIComponent(i.path)}`} alt={i.name} /></a>))}</div>
+                    : <div className="empty">画像はまだありません(content/output/stamps/{s.id}/ に置かれるとここに出ます)。</div>}
+                  {s.sections.map((sec) => <div key={sec.title} className="stamp-sec"><b>{sec.title}</b><div className="sec-text">{sec.text}</div></div>)}
+                </div>
+              )}
+            </li>
+          ))}</ul>
+        ) : <div className="empty">まだありません。「スタンプ・絵文字の企画会議を開く」を押すと、部署が案を出して作り始めます。</div>}
+      </div>
+      <Revenue data={{ revenue: data.revenue }} notify={notify} onDone={() => { load(); onChanged(); }} />
+    </>
   );
 }

@@ -83,6 +83,8 @@ export const addImprovement = (p, text, account = "main") => call("POST", `/api/
 // 請け負いの提案(ランサーズ・ココナラ。2026-11-12)
 export const registerAccount = (platform, url, account = "main") => call("POST", "/api/accounts", { platform, url, account });
 export const addAccountSet = (label, note = "") => call("POST", "/api/account_sets", { label, note });
+export const getStamps = () => call("GET", "/api/stamps");
+export const decideStamp = (id, action, comment = "", url = "") => call("POST", `/api/stamps/${encodeURIComponent(id)}/decision`, { action, comment, url });
 export const syncStats = (only = "") => call("POST", `/api/stats/sync${only ? `?only=${encodeURIComponent(only)}` : ""}`);
 export const getProposals = (service) => call("GET", `/api/proposals${service ? `?service=${encodeURIComponent(service)}` : ""}`);
 export const addProposal = (p) => call("POST", "/api/proposals", p);
