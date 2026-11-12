@@ -684,9 +684,9 @@ class StampDecision(BaseModel):
 
 
 @app.get("/api/stamps")
-def stamps_list():
+def stamps_list(kind: Optional[str] = None):
     import stamps
-    return stamps.list_sets()
+    return stamps.list_sets(kind if kind in ("stamp", "emoji") else None)
 
 
 @app.post("/api/stamps/{sid}/decision")
