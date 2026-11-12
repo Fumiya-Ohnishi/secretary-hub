@@ -74,6 +74,7 @@ def _post(path: Path) -> dict:
         "file": path.name,
         "id": meta.get("id", path.stem),
         "platform": meta.get("platform", ""),
+        "account": meta.get("account", "main") or "main",  # 2026-11-12: main=本アカウント / sub=別アカウント
         "platform_ja": PLATFORM_JA.get(meta.get("platform", ""), meta.get("platform", "")),
         "format": meta.get("format", ""),
         "title": meta.get("title", path.stem),
@@ -188,12 +189,16 @@ def list_weeks() -> List[dict]:
         meta, _ = parse((wd / "_week.md").read_text()) if (wd / "_week.md").exists() else ({}, "")
         counts: Dict[str, int] = {}
         by_platform: Dict[str, Dict[str, int]] = {}
+        by_account: Dict[str, Dict[str, Dict[str, int]]] = {}  # {account: {platform か "all": {状態: 件数}}}
         for p in posts:
             counts[p["status"]] = counts.get(p["status"], 0) + 1
             bp = by_platform.setdefault(p["platform"], {})
             bp[p["status"]] = bp.get(p["status"], 0) + 1
+            for key in (p["platform"], "all"):
+                ba = by_account.setdefault(p["account"], {}).setdefault(key, {})
+                ba[p["status"]] = ba.get(p["status"], 0) + 1
         weeks.append({"week": wd.name, "theme": meta.get("theme", ""), "task": meta.get("task", ""),
-                      "count": len(posts), "counts": counts, "by_platform": by_platform})
+                      "count": len(posts), "counts": counts, "by_platform": by_platform, "by_account": by_account})
     return weeks
 
 
@@ -337,11 +342,11 @@ async def decide(rel: str, decision: str, comment: str = "") -> dict:
     return post
 
 
-async def approve_week(week: str) -> dict:
+async def approve_week(week: str, account: Optional[str] = None) -> dict:
     data = get_week(week)
     n = 0
     for p in data["posts"]:
-        if p["status"] == "承認待ち":
+        if p["status"] == "承認待ち" and (not account or p["account"] == account):
             _set_status(p["path"], "承認済み")
             n += 1
     await sync_week_task(week)

@@ -154,13 +154,14 @@ export function PostResults({ post, platform, postedOn, notify }) {
   const [vals, setVals] = useState({});
   const [date, setDate] = useState(todayStr());
   const [busy, setBusy] = useState(false);
-  const load = () => getPostResults(pf, post.id).then(setData).catch((e) => notify && notify(e.message, "error"));
+  const acct = post.account || "main";
+  const load = () => getPostResults(pf, post.id, acct).then(setData).catch((e) => notify && notify(e.message, "error"));
   useEffect(() => { load(); }, [pf, post.id]);
   const posted = postedOn || post.posted;
   const due = posted ? plusDays(posted, 3) : "";
   const save = async () => {
     setBusy(true);
-    try { await addInsight(pf, { ...vals, content_id: post.id, format: post.format || "" }, date, true); notify(`${PJA_R[pf] || pf}「${post.title}」の結果を記録しました`, "ok"); setVals({}); load(); }
+    try { await addInsight(pf, { ...vals, content_id: post.id, format: post.format || "" }, date, true, acct); notify(`${PJA_R[pf] || pf}「${post.title}」の結果を記録しました`, "ok"); setVals({}); load(); }
     catch (e) { notify(e.message, "error"); }
     setBusy(false);
   };
@@ -388,7 +389,7 @@ function Post({ post, open, onToggle, onChanged, notify }) {
 }
 
 /** 投稿セット(週ごと)。台本・キャプション・画像を見て、承認・差し戻し・投稿済みを付ける */
-export default function Content({ week, setWeek, onChanged, notify, onSay, platform = null }) {
+export default function Content({ week, setWeek, onChanged, notify, onSay, platform = null, account = null }) {
   const [weeks, setWeeks] = useState(null);
   const [data, setData] = useState(null);
   const [open, setOpen] = useState(null);
@@ -413,12 +414,14 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
       </div>
     );
   }
-  const posts = data ? data.posts.filter((p) => !platform || p.platform === platform) : [];
-  const wcount = (w) => (platform ? (w.by_platform?.[platform] || {}) : w.counts)["承認待ち"] || 0;
+  // account: main=本アカウント / sub=別アカウント(2026-11-12)。未指定なら全部
+  const posts = data ? data.posts.filter((p) => (!platform || p.platform === platform) && (!account || (p.account || "main") === account)) : [];
+  const wcount = (w) => (account ? (w.by_account?.[account]?.[platform || "all"] || {})
+                                 : (platform ? (w.by_platform?.[platform] || {}) : w.counts))["承認待ち"] || 0;
   const waiting = posts.filter((p) => p.status === "承認待ち").length;
   const approveAll = async () => {
     setBusy(true);
-    try { const r = await approveWeek(week); notify(`${week} の ${r.approved}件を承認しました`, "ok"); changed(); }
+    try { const r = await approveWeek(week, account || undefined); notify(`${week} の ${r.approved}件を承認しました`, "ok"); changed(); }
     catch (e) { notify(e.message, "error"); }
     setBusy(false);
   };
