@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getKnowledge, searchKnowledge, addPref, decidePref, listVideoRefs, uploadVideoRef } from "./api.js";
+import { getKnowledge, searchKnowledge, addPref, decidePref, listVideoRefs, uploadVideoRef, getMuse, saveMuse } from "./api.js";
 import Md from "./Md.jsx";
 
 /* 資料室: 会社の知見の棚。社長の好み(確定/確認待ち)の確認、知見の検索、最近の知見 */
@@ -71,6 +71,38 @@ function VideoRefs({ notify }) {
   );
 }
 
+/* Muse の答え: 社長が Instagram の Muse に決まった質問をし、答えを貼る(週次リサーチ・速報チェックが読む) */
+function MuseBox({ notify }) {
+  const [d, setD] = useState(null);
+  const [kind, setKind] = useState("weekly_top");
+  const [text, setText] = useState("");
+  const load = () => getMuse().then(setD).catch(() => {});
+  useEffect(() => { load(); }, []);
+  if (!d) return null;
+  const q = d.questions.find((x) => x.id === kind);
+  const copy = async (t) => { try { await navigator.clipboard.writeText(t); notify("質問をコピーしました。Muse に貼ってください", "ok"); } catch { notify("コピーできませんでした。長押しで選んでください", "error"); } };
+  const save = async () => {
+    try { const r = await saveMuse(text, kind); notify(`保存しました(URL ${r.urls}件)。次のリサーチで部署が読みます`, "ok"); setText(""); load(); }
+    catch (e) { notify(e.message, "error"); }
+  };
+  return (
+    <section className="card">
+      <div className="card-head"><h3>📱 Muse の答え</h3>
+        <span className="muted small">Instagram の Muse に質問をコピーして聞き、答えをここに貼ります。社長の画面でしか見えない流行を、週次リサーチと速報チェックが使います</span></div>
+      <div className="pr-form">
+        <label><span>質問</span>
+          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+            {d.questions.map((x) => <option key={x.id} value={x.id}>{x.text.slice(0, 28)}…({x.when})</option>)}
+          </select></label>
+        {q && <div className="muse-q"><span>{q.text}</span> <button className="btn sm" onClick={() => copy(q.text)}>コピー</button></div>}
+        <label><span>Muse の答え</span><textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="Muse の答えをそのまま貼る(URL も一緒に)" /></label>
+        <button className="btn primary" disabled={text.trim().length < 10} onClick={save}>保存</button>
+      </div>
+      {d.recent.length > 0 && <div className="muted small">最近の答え: {d.recent.slice(0, 5).map((r) => r.at.replace("T", " ")).join(" / ")}</div>}
+    </section>
+  );
+}
+
 export default function Library({ notify }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState("");
@@ -98,6 +130,7 @@ export default function Library({ notify }) {
         </form>
       </div>
 
+      <MuseBox notify={notify} />
       <VideoRefs notify={notify} />
 
       {prefs.pending.length > 0 && (

@@ -807,6 +807,22 @@ def list_video_refs():
     return {"items": video_ref.listing()}
 
 
+# ---------- Muse の答え(2026-11-13 T-333 社長「A 試す」) ----------
+@app.get("/api/muse")
+def get_muse():
+    import muse
+    return {"questions": muse.QUESTIONS, "recent": muse.recent(14)}
+
+
+@app.post("/api/muse")
+def post_muse(body: dict):
+    import muse
+    try:
+        return muse.save(body.get("text", ""), body.get("kind", ""))
+    except ValueError as e:
+        return err(e, 400)
+
+
 @app.get("/api/notifications")
 def get_notifications():
     return {"notifications": scheduler.notifications()}
