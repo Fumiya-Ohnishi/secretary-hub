@@ -27,46 +27,74 @@ function PendingPref({ p, onDone, notify }) {
   );
 }
 
-/* 参考動画の分析: 社長が送った動画を、秘書ハブがカット・音量・言葉・静止画に分けて、映像制作部が秒ごとに分析する(2026-11-13) */
+/* 参考動画の分析: 社長が送った動画を、秘書ハブがカット・音量・言葉・静止画に分けて、映像制作部が秒ごとに分析する(2026-11-13)
+   11/13 社長「アップロードしたか分かりにくい・左に寄りすぎ」→ 置き場所を広く、送信中は進み具合、送ったら結果を枠の中に出す */
+const fmtMB = (n) => `${(n / 1024 / 1024).toFixed(1)}MB`;
+const STATUS_TONE = (st) => /失敗|止まり/.test(st) ? "ng" : /分析中|作成中/.test(st) ? "run" : "ok";
+
 function VideoRefs({ notify }) {
   const [items, setItems] = useState([]);
   const [file, setFile] = useState(null);
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [pct, setPct] = useState(null);       // 送信中の進み具合(0〜100)
+  const [result, setResult] = useState(null); // 送り終わったときの知らせ
+  const [over, setOver] = useState(false);
   const [open, setOpen] = useState(null);
+  const inputRef = React.useRef(null);
   const load = () => listVideoRefs().then((r) => setItems(r.items)).catch(() => {});
-  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
+  useEffect(() => { load(); const t = setInterval(load, 10000); return () => clearInterval(t); }, []);
+  const pick = (f) => { if (f) { setFile(f); setResult(null); if (!name) setName(f.name.replace(/\.[^.]+$/, "")); } };
   const send = async () => {
-    if (!file) return;
-    setBusy(true);
-    try { await uploadVideoRef(file, name, note); notify("動画を受け取りました。分けて材料を作り、映像制作部に分析を頼みます(数分〜)", "ok"); setFile(null); setName(""); setNote(""); load(); }
-    catch (e) { notify(e.message, "error"); }
-    setBusy(false);
+    if (!file || pct !== null) return;
+    setPct(0); setResult(null);
+    try {
+      const r = await uploadVideoRef(file, name, note, (p) => setPct(p));
+      setResult(r.duplicate
+        ? { tone: "warn", text: `同じ動画を${r.when || "さっき"}受け取っています。二重には分析しません(下の一覧で進み具合が見られます)` }
+        : { tone: "ok", text: `「${r.name}」を受け取りました。カット・音量・言葉に分けてから、映像制作部が分析します(数分〜10分ほど)` });
+      setFile(null); setName(""); setNote(""); if (inputRef.current) inputRef.current.value = "";
+      load();
+    } catch (e) { setResult({ tone: "ng", text: `送れませんでした: ${e.message}` }); notify(e.message, "error"); }
+    setPct(null);
   };
   return (
-    <section className="card">
+    <section className="card vr">
       <div className="card-head"><h3>🎬 参考動画の分析</h3>
         <span className="muted small">リールの画面収録を入れると、カット・音量・言葉・テロップの出方を秒ごとに分析します(他の人の動画は分析だけに使い、転載しません)</span></div>
-      <div className="pr-form">
-        <label><span>動画</span><input type="file" accept="video/*" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
-        <label><span>名前</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="例 yamayuki_design デザイン20選" /></label>
-        <label><span>見てほしい所</span><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="例 BGMの入り方とテロップの出る速さ" /></label>
-        <button className="btn primary" disabled={!file || busy} onClick={send}>{busy ? "送信中…" : "分析してもらう"}</button>
+      <div className="vr-form">
+        <label className={`vr-drop ${over ? "over" : ""} ${file ? "has" : ""}`}
+               onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
+               onDrop={(e) => { e.preventDefault(); setOver(false); pick(e.dataTransfer.files?.[0]); }}>
+          <input ref={inputRef} type="file" accept="video/*" onChange={(e) => pick(e.target.files?.[0])} />
+          {file ? <><b>🎞 {file.name}</b><span>{fmtMB(file.size)}・ほかの動画にするときは、もう一度ここを押す</span></>
+                : <><b>＋ 動画を選ぶ(ここに置いてもOK)</b><span>iPhone の画面収録(音も入ります)など。600MB まで</span></>}
+        </label>
+        <div className="vr-fields">
+          <label><span>名前</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="例 yamayuki_design デザイン20選" /></label>
+          <label><span>見てほしい所</span><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="例 BGMの入り方とテロップの出る速さ" /></label>
+          <button className="btn primary vr-send" disabled={!file || pct !== null} onClick={send}>
+            {pct !== null ? (pct < 100 ? `送信中… ${pct}%` : "受け取り中…") : "分析してもらう"}</button>
+        </div>
       </div>
-      {items.length > 0 && <ul className="plain">
-        {items.map((it) => (
-          <li key={it.folder || it.id}>
-            {it.running ? <span>{it.name} — <b>{it.status}</b>{it.error ? `(${it.error})` : ""}</span> : (
-              <>
-                <button className="btn sm ghost" onClick={() => setOpen(open === it.folder ? null : it.folder)}>{it.done ? "▶ 分析を読む" : "作成中"}</button> {it.name}
-                <span className="muted small"> {it.folder}</span>
-                {open === it.folder && it.done && <div className="md-box"><Md text={it.summary} /><div className="muted small">続きは {it.folder}/analysis.md</div></div>}
-              </>
-            )}
-          </li>
-        ))}
-      </ul>}
+      {pct !== null && <div className="vr-bar"><i style={{ width: `${Math.max(pct, 2)}%` }} /></div>}
+      {result && <div className={`vr-msg ${result.tone}`}>{result.tone === "ok" ? "✓ " : result.tone === "ng" ? "✕ " : "! "}{result.text}</div>}
+      {items.length > 0 && <div className="vr-list">
+        {items.map((it) => {
+          const st = it.running ? it.status : it.done ? "分析ができました" : "作成中";
+          return (
+            <div key={it.folder || it.id} className="vr-item">
+              <div className="vr-row">
+                <span className={`vr-chip ${STATUS_TONE(st)}`}>{st}</span>
+                <b className="vr-name">{it.name}</b>
+                {it.error && <span className="muted small">{it.error}</span>}
+                {it.done && <button className="btn sm ghost" onClick={() => setOpen(open === it.folder ? null : it.folder)}>{open === it.folder ? "閉じる" : "▶ 分析を読む"}</button>}
+              </div>
+              {open === it.folder && it.done && <div className="md-box"><Md text={it.summary} /><div className="muted small">続きは {it.folder}/analysis.md</div></div>}
+            </div>
+          );
+        })}
+      </div>}
     </section>
   );
 }

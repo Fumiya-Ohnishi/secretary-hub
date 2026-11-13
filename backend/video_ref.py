@@ -182,12 +182,14 @@ def _work(ref_id: str) -> Path:
 
 
 def save_upload(chunks, filename: str) -> str:
+    """動画を秘書ハブの中に保存し、受付番号を返す。中身の指紋(sha1)も残す(同じ動画の二重送信を見分ける)"""
+    import hashlib
     ref_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     work = _work(ref_id)
     work.mkdir(parents=True, exist_ok=True)
     ext = (Path(filename or "").suffix.lower() or ".mp4")[:6]
     dest = work / f"source{ext}"
-    size = 0
+    size, h = 0, hashlib.sha1()
     with dest.open("wb") as f:
         for c in chunks:
             size += len(c)
@@ -195,11 +197,33 @@ def save_upload(chunks, filename: str) -> str:
                 f.close()
                 shutil.rmtree(work, ignore_errors=True)
                 raise ValueError("動画が大きすぎます(600MBまで)")
+            h.update(c)
             f.write(c)
     if size == 0:
         shutil.rmtree(work, ignore_errors=True)
         raise ValueError("動画が空でした")
+    (work / "meta.json").write_text(json.dumps({"sha1": h.hexdigest(), "size": size, "filename": filename}, ensure_ascii=False))
     return ref_id
+
+
+def find_duplicate(ref_id: str, hours: int = 24) -> Optional[dict]:
+    """同じ中身の動画を hours 時間以内に受け取っていれば、その受付の情報(2026-11-13 同じ動画が3回送られた)"""
+    try:
+        me = json.loads((_work(ref_id) / "meta.json").read_text())
+    except Exception:
+        return None
+    cutoff = datetime.datetime.now() - datetime.timedelta(hours=hours)
+    for d in sorted(DATA.glob("*/"), reverse=True):
+        if d.name == ref_id or not d.is_dir():
+            continue
+        try:
+            when = datetime.datetime.strptime(d.name, "%Y%m%d%H%M%S")
+            other = json.loads((d / "meta.json").read_text())
+        except Exception:
+            continue
+        if when >= cutoff and other.get("sha1") == me.get("sha1"):
+            return {"id": d.name, "when": f"{when:%m/%d %H:%M} に", **(_state.get(d.name) or {})}
+    return None
 
 
 def analyze(ref_id: str, name: str, note: str = "", start_job: bool = True) -> dict:
@@ -233,6 +257,10 @@ def analyze(ref_id: str, name: str, note: str = "", start_job: bool = True) -> d
 
 
 def start(ref_id: str, name: str, note: str) -> dict:
+    dup = find_duplicate(ref_id)
+    if dup:  # 同じ動画はもう一度分析しない(受け取った分は消す)
+        shutil.rmtree(_work(ref_id), ignore_errors=True)
+        return {**dup, "duplicate": True, "name": dup.get("name") or name}
     _state[ref_id] = {"id": ref_id, "name": name, "status": "分析の材料を作成中", "error": "", "folder": "", "job": ""}
     threading.Thread(target=analyze, args=(ref_id, name, note), daemon=True).start()
     return _state[ref_id]
@@ -247,7 +275,7 @@ def listing() -> List[dict]:
         jobs = {}
     root = company.COMPANY_DIR / OUT_REL
     done = {}
-    for d in sorted(root.glob("*/"), reverse=True)[:30] if root.exists() else []:
+    for d in sorted((x for x in root.glob("*") if x.is_dir()), reverse=True)[:30] if root.exists() else []:
         a = d / "analysis.md"
         done[str(d.relative_to(company.COMPANY_DIR))] = a.read_text(encoding="utf-8")[:1500] if a.exists() else None
     running = []
