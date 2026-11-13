@@ -184,7 +184,7 @@ function JobAlerts({ jobs, onSay, onTab }) {
   ));
 }
 
-function Yesterday({ metrics, jobs, revenue }) {
+function Yesterday({ metrics, jobs, revenue, usage }) {
   const f = metrics?.followers || {};
   const rows = Object.keys(PJA).filter((p) => f[p]?.length).map((p) => {
     const s = f[p], last = s[s.length - 1], prev = s.length > 1 ? s[s.length - 2] : null;
@@ -203,6 +203,10 @@ function Yesterday({ metrics, jobs, revenue }) {
           <small>{rows.length ? rows.map((r) => `${PJA[r.p]} ${r.n}`).join(" / ") : "まだ記録がありません"}</small></div>
         <div className="t-k"><b>¥{(revenue?.month_total || 0).toLocaleString()}</b><span>今月の収益</span><small>目標 ¥{(revenue?.goal || 50000).toLocaleString()}</small></div>
         <div className="t-k"><b>{done}</b><span>AI社員が終えた仕事</span><small>この24時間</small></div>
+        {usage && <div className="t-k" title={`入力 ${usage.input.toLocaleString()} / 出力 ${usage.output.toLocaleString()} トークン・${usage.calls}回(1ドル=${usage.rate}円で概算)`}>
+          <b>¥{usage.jpy.toLocaleString()}</b><span>今月の AI 利用料(秘書の頭脳・API)</span>
+          <small>{(usage.by_model || []).length ? usage.by_model.map((b) => `${b.role} ¥${b.jpy.toLocaleString()}`).join(" / ") : "内訳は次の利用から"}
+            {usage.prev_jpy != null ? ` ・先月 ¥${usage.prev_jpy.toLocaleString()}` : ""}。部署の作業はプランの枠(ここに入らない)</small></div>}
       </div>
     </section>
   );
@@ -285,7 +289,7 @@ export default function Today({ summary, jobs, onApprove, onSay, onTab, onOpenTa
             {running.slice(0, 3).map((j) => <div key={j.id} className="t-row" onClick={() => onTab("jobs")}><span className="chip2 c-run">作業中</span><span className="t-row-t">{j.department_full || j.department + "部"}:{j.title}</span><span className="go">見る ›</span></div>)}
             {!decisions && !running.length && <div className="empty">いま判断が必要なものはありません。</div>}
           </section>
-          <Yesterday metrics={summary.metrics} jobs={jobs} revenue={rev} />
+          <Yesterday metrics={summary.metrics} jobs={jobs} revenue={rev} usage={summary.usage} />
         </div>
       </div>
 

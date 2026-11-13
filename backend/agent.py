@@ -89,13 +89,22 @@ def add_usage(resp):
     cost_in = (fresh + cache_read * 0.1 + cache_write * 1.25) / 1e6 * pin
     m["usd"] = round(m["usd"] + cost_in + out / 1e6 * pout, 4)
     m["calls"] += 1
+    # どこにかかったか(モデル別)。会話=上位のモデル、決まった仕事=安いモデル(2026-11-13 社長「どこにかかっているか見たい」)
+    bm = m.setdefault("by_model", {}).setdefault(used, {"usd": 0.0, "calls": 0})
+    bm["usd"] = round(bm["usd"] + cost_in + out / 1e6 * pout, 4)
+    bm["calls"] += 1
     _save_json(USAGE_FILE, data)
 
 
 def usage_summary() -> dict:
     month = datetime.date.today().strftime("%Y-%m")
     m = _load_json(USAGE_FILE, {}).get(month, {"input": 0, "output": 0, "usd": 0.0, "calls": 0})
-    return {**m, "month": month, "jpy": round(m["usd"] * USD_JPY), "rate": USD_JPY}
+    by = [{"model": k, "jpy": round(v["usd"] * USD_JPY), "calls": v["calls"],
+           "role": "決まった仕事" if k.startswith("claude-haiku") else "秘書との会話など"} for k, v in (m.get("by_model") or {}).items()]
+    prev_month = (datetime.date.today().replace(day=1) - datetime.timedelta(days=1)).strftime("%Y-%m")
+    prev = _load_json(USAGE_FILE, {}).get(prev_month)
+    return {**m, "month": month, "jpy": round(m["usd"] * USD_JPY), "rate": USD_JPY, "by_model": by,
+            "prev_jpy": round(prev["usd"] * USD_JPY) if prev else None}
 
 # ---------- 部署への作業依頼(Claude Code) ----------
 # 部署(Notion の担当名 → 組織図の部署名)。旧部署名は新しい部署に読み替える
