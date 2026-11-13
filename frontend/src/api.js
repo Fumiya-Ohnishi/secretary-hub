@@ -97,3 +97,13 @@ export const addPref = (p) => call("POST", "/api/knowledge/prefs", p);
 export const decidePref = (id, approve, revised = "") => call("POST", `/api/knowledge/prefs/${encodeURIComponent(id)}`, { approve, revised });
 export const getMeetings = () => call("GET", "/api/meetings");
 export const startMeeting = (kind, topic = "", departments = null) => call("POST", "/api/meetings", { kind, topic, departments });
+
+// 参考動画の分析(動画は本文そのままで送る)
+export const listVideoRefs = () => call("GET", "/api/video_refs");
+export async function uploadVideoRef(file, name, note) {
+  const q = new URLSearchParams({ name: name || "", note: note || "" });
+  const r = await fetch(`/api/video_refs?${q}`, { method: "POST", headers: { "x-filename": encodeURIComponent(file.name) }, body: file });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `通信エラー(${r.status})`);
+  return data;
+}

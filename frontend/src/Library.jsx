@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { getKnowledge, searchKnowledge, addPref, decidePref } from "./api.js";
+import { getKnowledge, searchKnowledge, addPref, decidePref, listVideoRefs, uploadVideoRef } from "./api.js";
+import Md from "./Md.jsx";
 
 /* 資料室: 会社の知見の棚。社長の好み(確定/確認待ち)の確認、知見の検索、最近の知見 */
 const ICON = { failures: "⚠", wins: "★", reviews: "✓", research: "🔍", numbers: "📈", prefs: "♥" };
@@ -23,6 +24,50 @@ function PendingPref({ p, onDone, notify }) {
         <button className="btn sm ghost" onClick={() => act(false)}>却下(記録しない)</button>
       </div>
     </div>
+  );
+}
+
+/* 参考動画の分析: 社長が送った動画を、秘書ハブがカット・音量・言葉・静止画に分けて、映像制作部が秒ごとに分析する(2026-11-13) */
+function VideoRefs({ notify }) {
+  const [items, setItems] = useState([]);
+  const [file, setFile] = useState(null);
+  const [name, setName] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(null);
+  const load = () => listVideoRefs().then((r) => setItems(r.items)).catch(() => {});
+  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
+  const send = async () => {
+    if (!file) return;
+    setBusy(true);
+    try { await uploadVideoRef(file, name, note); notify("動画を受け取りました。分けて材料を作り、映像制作部に分析を頼みます(数分〜)", "ok"); setFile(null); setName(""); setNote(""); load(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy(false);
+  };
+  return (
+    <section className="card">
+      <div className="card-head"><h3>🎬 参考動画の分析</h3>
+        <span className="muted small">リールの画面収録を入れると、カット・音量・言葉・テロップの出方を秒ごとに分析します(他の人の動画は分析だけに使い、転載しません)</span></div>
+      <div className="pr-form">
+        <label><span>動画</span><input type="file" accept="video/*" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
+        <label><span>名前</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="例 yamayuki_design デザイン20選" /></label>
+        <label><span>見てほしい所</span><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="例 BGMの入り方とテロップの出る速さ" /></label>
+        <button className="btn primary" disabled={!file || busy} onClick={send}>{busy ? "送信中…" : "分析してもらう"}</button>
+      </div>
+      {items.length > 0 && <ul className="plain">
+        {items.map((it) => (
+          <li key={it.folder || it.id}>
+            {it.running ? <span>{it.name} — <b>{it.status}</b>{it.error ? `(${it.error})` : ""}</span> : (
+              <>
+                <button className="btn sm ghost" onClick={() => setOpen(open === it.folder ? null : it.folder)}>{it.done ? "▶ 分析を読む" : "作成中"}</button> {it.name}
+                <span className="muted small"> {it.folder}</span>
+                {open === it.folder && it.done && <div className="md-box"><Md text={it.summary} /><div className="muted small">続きは {it.folder}/analysis.md</div></div>}
+              </>
+            )}
+          </li>
+        ))}
+      </ul>}
+    </section>
   );
 }
 
@@ -52,6 +97,8 @@ export default function Library({ notify }) {
           <button className="btn sm primary">探す</button>
         </form>
       </div>
+
+      <VideoRefs notify={notify} />
 
       {prefs.pending.length > 0 && (
         <section className="card lib-pends">

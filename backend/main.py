@@ -19,7 +19,7 @@ for line in (BASE / ".env").read_text().splitlines() if (BASE / ".env").exists()
 
 import httpx
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
@@ -782,6 +782,29 @@ def run_news_flash():
         return {"job": scheduler.run_routine_now("news_flash_am")}
     except ValueError as e:
         return err(e, 400)
+
+
+# ---------- 参考動画の分析(2026-11-13 社長「コマ送りでは分かりにくい。音とテロップの使い方を確認してほしい」) ----------
+@app.post("/api/video_refs")
+async def upload_video_ref(request: Request, name: str = "", note: str = ""):
+    """動画を本文そのままで受け取り(ヘッダー x-filename)、分けて材料を作り、映像制作部に分析を頼む"""
+    import video_ref
+    from urllib.parse import unquote
+    filename = unquote(request.headers.get("x-filename", "video.mp4"))
+    chunks = []
+    async for c in request.stream():
+        chunks.append(c)
+    try:
+        ref_id = await asyncio.to_thread(video_ref.save_upload, chunks, filename)
+    except ValueError as e:
+        return err(e, 400)
+    return video_ref.start(ref_id, name.strip() or Path(filename).stem, note.strip())
+
+
+@app.get("/api/video_refs")
+def list_video_refs():
+    import video_ref
+    return {"items": video_ref.listing()}
 
 
 @app.get("/api/notifications")
