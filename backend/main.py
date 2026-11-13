@@ -775,6 +775,15 @@ async def run_scheduler():
     return await scheduler.run_check()
 
 
+@app.post("/api/news/flash")
+def run_news_flash():
+    """AIの新機能の速報チェックを今すぐ頼む(公式の更新情報を集めてから部署に渡す)"""
+    try:
+        return {"job": scheduler.run_routine_now("news_flash_am")}
+    except ValueError as e:
+        return err(e, 400)
+
+
 @app.get("/api/notifications")
 def get_notifications():
     return {"notifications": scheduler.notifications()}
