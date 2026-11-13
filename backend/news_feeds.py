@@ -49,6 +49,32 @@ PAGES = [
     ("Canva のニュース(公式)", "https://www.canva.com/newsroom/news/"),
 ]
 OUT_DIR = Path("strategy") / "research" / "flash"
+SERVICES_CSV = Path("data") / "watch_services.csv"  # 見るサービスの一覧(会社のフォルダ。社長が足し引きできる。2026-11-13)
+
+
+def load_services() -> Tuple[List[Tuple[str, str, str, str]], List[Tuple[str, str]]]:
+    """会社のフォルダの data/watch_services.csv から (配信, 直接開くページ) を読む。無ければ上の既定の一覧"""
+    import csv
+    path = company.COMPANY_DIR / SERVICES_CSV
+    if not path.exists():
+        return FEEDS, PAGES
+    feeds, pages = [], []
+    try:
+        with path.open(encoding="utf-8", newline="") as f:
+            for r in csv.DictReader(f):
+                url, name = (r.get("url") or "").strip(), (r.get("service") or "").strip()
+                if not url.startswith("http") or not name:
+                    continue
+                field = "SNS" if (r.get("field") or "").strip().upper() == "SNS" else "AI"
+                kind = (r.get("source_kind") or "公式").strip() or "公式"
+                if (r.get("type") or "").strip() == "feed":
+                    feeds.append((name, url, kind, field))
+                else:
+                    memo = (r.get("memo") or "").strip()
+                    pages.append((f"{name}[{field}・{kind}]" + (f"({memo})" if memo else ""), url))
+    except Exception:
+        return FEEDS, PAGES
+    return (feeds or FEEDS), (pages or PAGES)
 
 
 def _fetch(url: str, timeout: int = 8) -> bytes:
@@ -102,7 +128,12 @@ def collect(since_hours: int = 36) -> Tuple[List[dict], List[str]]:
     """直近 since_hours 時間の項目と、取れなかった配信元"""
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=since_hours)
     found, failed = [], []
-    for name, url, kind, field in FEEDS:
+    feeds, _ = load_services()
+    seen = set()
+    for name, url, kind, field in feeds:
+        if url in seen:  # 同じ配信を2つのサービスで共有しているとき(Meta など)は1回だけ取る
+            continue
+        seen.add(url)
         try:
             for it in parse(_fetch(url)):
                 if it["date"] and it["date"] >= cutoff and it["url"]:
@@ -138,7 +169,8 @@ def write_digest(since_hours: int = 36) -> Optional[str]:
                 lines.append(f"| {jst:%m/%d %H:%M} | {it['source']} | {it['kind']} | {title} | {it['url']} |")
     else:
         lines.append("(直近の新しい項目は無し)")
-    lines += ["", "## RSS の無い公式ページ(部署が直接開く)"] + [f"- {n}: {u}" for n, u in PAGES]
+    _, pages = load_services()
+    lines += ["", "## 配信の無いページ(部署が直接開く。一覧は data/watch_services.csv)"] + [f"- {n}: {u}" for n, u in pages]
     if failed:
         lines += ["", "## 取れなかった配信元(部署は検索結果の題・要約と報道で確かめる)"] + [f"- {f}" for f in failed]
     path = company.COMPANY_DIR / rel
