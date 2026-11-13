@@ -279,6 +279,7 @@ def _run_job(job_id: str):
     try:
         if not shutil.which("claude"):
             raise RuntimeError("Claude Code CLI が見つかりません。ターミナルで `npm install -g @anthropic-ai/claude-code` → `claude` で一度ログインしてください。")
+        _wait_cooldown(job)
         _run_claude_streaming(job, prompt)
         # 一時的な通信のつまずき(Cloudflare の 403・混雑など)は、待ってから自動でやり直す(2026-11-13 社長「このエラー何?」)
         for wait in (60, 180):
@@ -287,11 +288,13 @@ def _run_job(job_id: str):
             started = datetime.datetime.fromisoformat(job["started"])
             if (datetime.datetime.now() - started).total_seconds() > 20 * 60:  # 長く進んだ作業は最初からやり直さない
                 break
+            _set_cooldown(wait)
             job["log"] = (job.get("log") or []) + [f"通信のエラー(一時的なもの)。{wait}秒待ってやり直します"]
             job.update(status="running", output="")
             _save_jobs()
             import time
             time.sleep(wait)
+            _wait_cooldown(job)
             _run_claude_streaming(job, prompt)
     except Exception as e:
         job.update(status="error", output=(job.get("output") or "") + f"\n{e}")
@@ -710,6 +713,22 @@ def _timeout_note(job: dict, limit_min: int) -> str:
 
 TRANSIENT = ("attention required", "cloudflare", "overloaded", "529", "api error: 500", "api error: 502", "api error: 503",
              "api error: 504", "connection error", "econnreset", "socket hang up", "fetch failed")
+
+
+_cooldown = {"until": 0.0}  # 通信が止められたら、全部の部署の次の作業をしばらく待たせる(一斉にやり直して、また止められるのを防ぐ)
+
+
+def _wait_cooldown(job: dict):
+    import time
+    left = _cooldown["until"] - time.time()
+    if left > 0:
+        job["log"] = (job.get("log") or []) + [f"通信が混み合っているので、{int(left)}秒待ってから始めます"]
+        time.sleep(left)
+
+
+def _set_cooldown(sec: int):
+    import time
+    _cooldown["until"] = max(_cooldown["until"], time.time() + sec)
 
 
 def _transient(text: str) -> bool:
