@@ -107,3 +107,7 @@ export async function uploadVideoRef(file, name, note) {
   if (!r.ok) throw new Error(data.error || `通信エラー(${r.status})`);
   return data;
 }
+
+// Muse の答え(社長が Instagram の Muse に聞いた答えを貼る)
+export const getMuse = () => call("GET", "/api/muse");
+export const saveMuse = (text, kind) => call("POST", "/api/muse", { text, kind });
