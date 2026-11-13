@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { chatStream } from "./api.js";
-import { getHealth, getSummary, sendChat, decideTask, getBriefing, approveWeek, setScheduler, runCheckNow,
+import { getHealth, getSummary, sendChat, decideTask, getBriefing, approveWeek, setScheduler, runCheckNow, runNewsFlash,
          readNotifications, decideRule } from "./api.js";
 import { useSpeechInput, useSpeechOutput, stripTone } from "./speech.js";
 import Live2DStage, { VIEWS } from "./Live2DStage.jsx";
@@ -295,6 +295,12 @@ export default function App() {
     setBusy(false);
   };
 
+  const newsFlashNow = async () => {
+    setSettingsOpen(false);
+    try { await runNewsFlash(); notify("速報チェックを頼みました。公式の更新情報を集めてから調べます", "info"); await refresh(); }
+    catch (e) { notify(e.message, "error"); }
+  };
+
   const approveContent = async () => {
     if (!contentApproval) return;
     setDeciding(true);
@@ -509,6 +515,7 @@ export default function App() {
               <label className="set-row"><span>定時チェック{summary?.scheduler ? `(${summary.scheduler.times.join("・")})` : ""}</span>
                 <input type="checkbox" checked={!!summary?.scheduler?.auto} onChange={toggleAuto} /></label>
               <button className="btn sm" onClick={checkNow}>今すぐ確認してもらう</button>
+              <button className="btn sm" onClick={newsFlashNow}>今すぐAIの新機能を調べてもらう(速報)</button>
               <label className="set-row"><span>ハンズフリー</span><input type="checkbox" checked={handsFree} onChange={toggleHandsFree} disabled={!supported} /></label>
               <label className="set-row"><span>呼びかけモード(「{name}、〜」のときだけ反応)</span>
                 <input type="checkbox" checked={wakeWord} onChange={(e) => { setWakeWord(e.target.checked); save("hub-wake", e.target.checked); }} /></label>

@@ -182,8 +182,9 @@ export function PostResults({ post, platform, postedOn, notify }) {
         <label><span>記録日</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
         {data.columns.map((c) => (
           <label key={c.key}><span>{c.label}</span>
-            <input inputMode="numeric" value={vals[c.key] ?? "0"} placeholder="0" onFocus={(e) => e.target.select()}
-                   onChange={(e) => setVals({ ...vals, [c.key]: e.target.value.replace(/[^0-9.]/g, "") })} /></label>
+            <input inputMode={/_(sec|hours)$/.test(c.key) ? "text" : "numeric"} value={vals[c.key] ?? "0"}
+                   placeholder={/_(sec|hours)$/.test(c.key) ? "例 4:04 / 0h:04m:04s" : "0"} onFocus={(e) => e.target.select()}
+                   onChange={(e) => setVals({ ...vals, [c.key]: /_(sec|hours)$/.test(c.key) ? e.target.value : e.target.value.replace(/[^0-9.]/g, "") })} /></label>
         ))}
         <button className="btn primary" disabled={busy} onClick={save}>結果を記録</button>
       </div>

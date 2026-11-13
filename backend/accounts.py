@@ -129,6 +129,38 @@ def post_results(platform: str, content_id: str, account: str = "main") -> dict:
             "results": rows[::-1]}
 
 
+TIME_RE = re.compile(r"^\s*(?:(\d+(?:\.\d+)?)\s*(?:h|時間))?\s*:?\s*(?:(\d+(?:\.\d+)?)\s*(?:m|分))?\s*:?\s*(?:(\d+(?:\.\d+)?)\s*(?:s|秒))?\s*$", re.I)
+
+
+def to_seconds(value: str) -> str:
+    """時間の書き方を秒の数に直す(2026-11-13 社長「0h:04m:04s はなんて打てばいい?」)。
+    「0h:04m:04s」「4m4s」「4分4秒」「4:04」(分:秒)「1:02:30」(時:分:秒)「244」(秒)に対応。直せないときはそのまま返す"""
+    v = (value or "").strip().replace("：", ":")
+    if not v or re.fullmatch(r"\d+(?:\.\d+)?", v):
+        return v
+    if re.fullmatch(r"\d+(?::\d+){1,2}", v):  # 4:04 / 1:02:30
+        parts = [int(x) for x in v.split(":")]
+        while len(parts) < 3:
+            parts.insert(0, 0)
+        return str(parts[0] * 3600 + parts[1] * 60 + parts[2])
+    m = TIME_RE.match(v)
+    if m and any(m.groups()):
+        h, mi, se = (float(x) if x else 0.0 for x in m.groups())
+        total = h * 3600 + mi * 60 + se
+        return str(int(total)) if total == int(total) else str(round(total, 1))
+    return v
+
+
+def _normalize(col: str, value: str) -> str:
+    """秒・時間の列は、時間の書き方で入れても数に直す"""
+    if col.endswith("_sec"):
+        return to_seconds(value)
+    if col.endswith("_hours") and value and not re.fullmatch(r"\s*\d+(?:\.\d+)?\s*", value):
+        sec = to_seconds(value)
+        return str(round(float(sec) / 3600, 2)) if re.fullmatch(r"\d+(?:\.\d+)?", sec) else value
+    return value
+
+
 def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = None, per_post: bool = False,
                    account: str = "main") -> dict:
     """投稿1本の数字を記録する(足りない列は空のまま)"""
@@ -137,7 +169,7 @@ def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = 
     row = {"date": date or datetime.date.today().isoformat()}
     for c in cols:
         v = values.get(c, "")
-        row[c] = str(v).strip() if v is not None else ""
+        row[c] = _normalize(c, str(v).strip()) if v is not None else ""
         if c not in TEXT_COLS and not row[c]:
             row[c] = "0"  # 2026-11-12 社長: 変わらなかった(入れなかった)数字は 0 で記録する
     if "metric" in cols and not row.get("metric"):
