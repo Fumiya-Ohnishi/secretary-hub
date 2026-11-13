@@ -280,6 +280,19 @@ def _run_job(job_id: str):
         if not shutil.which("claude"):
             raise RuntimeError("Claude Code CLI が見つかりません。ターミナルで `npm install -g @anthropic-ai/claude-code` → `claude` で一度ログインしてください。")
         _run_claude_streaming(job, prompt)
+        # 一時的な通信のつまずき(Cloudflare の 403・混雑など)は、待ってから自動でやり直す(2026-11-13 社長「このエラー何?」)
+        for wait in (60, 180):
+            if job["status"] == "done" or not _transient(job.get("output") or ""):
+                break
+            started = datetime.datetime.fromisoformat(job["started"])
+            if (datetime.datetime.now() - started).total_seconds() > 20 * 60:  # 長く進んだ作業は最初からやり直さない
+                break
+            job["log"] = (job.get("log") or []) + [f"通信のエラー(一時的なもの)。{wait}秒待ってやり直します"]
+            job.update(status="running", output="")
+            _save_jobs()
+            import time
+            time.sleep(wait)
+            _run_claude_streaming(job, prompt)
     except Exception as e:
         job.update(status="error", output=(job.get("output") or "") + f"\n{e}")
     if job["status"] == "done":
@@ -695,9 +708,27 @@ def _timeout_note(job: dict, limit_min: int) -> str:
             "(制限時間は .env の JOB_TIMEOUT_MIN で変えられます)。\n\n" + _progress_note(job))
 
 
+TRANSIENT = ("attention required", "cloudflare", "overloaded", "529", "api error: 500", "api error: 502", "api error: 503",
+             "api error: 504", "connection error", "econnreset", "socket hang up", "fetch failed")
+
+
+def _transient(text: str) -> bool:
+    """しばらく待てば直る通信のつまずきか(ログインや残高の問題は含めない)"""
+    t = (text or "").lower()
+    if "credit balance" in t or "invalid api key" in t or "not logged in" in t:
+        return False
+    return any(k in t for k in TRANSIENT)
+
+
 def _job_hint(text: str) -> str:
     """よくある止まり方に、社長が分かる言葉の説明を足す"""
     t = text.lower()
+    if "attention required" in t or "cloudflare" in t:
+        return ("\n\n【秘書より】Claude のサーバーの入口(Cloudflare)が、この Mac からの通信を一時的に止めました(403)。"
+                "社長のログインや設定の問題ではないことが多く、数分たつと通ります。秘書ハブが自動で2回やり直しても通らなかったときは、"
+                "VPN を使っていれば切る・Wi-Fi を変える・status.anthropic.com で障害が出ていないか見る、のあとで同じ作業をもう一度頼んでください")
+    if "overloaded" in t or "529" in t:
+        return "\n\n【秘書より】Claude のサーバーが混み合っていました。少し時間をおいて、もう一度頼んでください"
     if "credit balance" in t:
         return ("\n\n【秘書より】API の残高が足りません。部署の作業はプラン(Pro / Max)で動く設定ですが、.env に JOBS_USE_API_KEY=1 があると API の残高を使います。"
                 "その行を消すか、console.anthropic.com の Billing で残高を足してください")
