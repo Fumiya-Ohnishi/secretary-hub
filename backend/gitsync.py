@@ -56,11 +56,31 @@ def _commit_local() -> int:
     return len(staged) if r.returncode == 0 else 0
 
 
+def _manual_git_busy() -> str:
+    """ほかの git の操作が動いている・直後なら、その理由を返す"""
+    import time
+    git = company.COMPANY_DIR / ".git"
+    if (git / "index.lock").exists():
+        return "ほかの git の操作が動いています"
+    try:
+        last = (git / "logs" / "HEAD").stat().st_mtime  # コミット・取り込み・切り替えで動く(エディタの表示更新では動かない)
+    except OSError:
+        return ""
+    mine = state.get("_last_own", 0.0)
+    if time.time() - last < 180 and last - mine > 5:  # 3分以内に秘書ハブ以外が HEAD を動かした
+        return "3分以内に手で git が動かされました。次の回に保存します"
+    return ""
+
+
 def sync() -> dict:
     """1回分の自動保存。結果を state に残して返す"""
     state.update(last=datetime.datetime.now().isoformat(timespec="minutes"), conflicts=[], detail="")
     if not _is_repo():
         state.update(ok=False, detail="会社のフォルダが git の保存場所ではありません")
+        return dict(state)
+    busy = _manual_git_busy()
+    if busy:  # 社長が手で git を動かしている最中・直後は触らない(2026-11-13 手の git pull と同じ瞬間に古い状態で上書きした)
+        state.update(ok=True, detail=f"今回は見送り({busy})")
         return dict(state)
     if (company.COMPANY_DIR / ".git" / "MERGE_HEAD").exists():  # 前回の取り込みが途中なら、いったん戻す
         _git("merge", "--abort")
@@ -87,6 +107,8 @@ def sync() -> dict:
             if u.returncode != 0:
                 state.update(ok=False, detail=f"GitHub に上げられませんでした: {(u.stderr or '').strip()[:200]}")
                 return dict(state)
+        import time
+        state["_last_own"] = time.time()
         state.update(ok=True, detail=(f"保存 {n}ファイル" if n else "変更なし") + (f" ・ {state['detail']}" if "大きすぎ" in state.get("detail", "") else ""))
     except Exception as e:
         state.update(ok=False, detail=str(e)[:200])
