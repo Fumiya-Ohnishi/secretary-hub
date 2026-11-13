@@ -30,6 +30,8 @@ import scheduler
 API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 MODEL = os.getenv("ANTHROPIC_MODEL", "").strip() or "claude-opus-5-5"
 EFFORT = os.getenv("ANTHROPIC_EFFORT", "low").strip()  # 会話は速さ優先
+# 決まった短い仕事(定時チェックの通知文・確認事項の取り出し・差し戻しの繰り返し判定)は安いモデルで(2026-11-13 社長が案A)
+ROUTINE_MODEL = os.getenv("ANTHROPIC_ROUTINE_MODEL", "").strip() or "claude-haiku-5-5"
 SECRETARY_NAME = os.getenv("SECRETARY_NAME", "セナ")
 
 # 新しい世代のモデルだけが受け付ける設定(古いモデル名が .env に残っていても動くように分ける)
@@ -75,7 +77,8 @@ def add_usage(resp):
     cache_write = getattr(u, "cache_creation_input_tokens", 0) or 0
     inp = fresh + cache_read + cache_write
     out = getattr(u, "output_tokens", 0) or 0
-    pin, pout = PRICES.get(MODEL, PRICES["claude-opus-5-5"])
+    used = getattr(resp, "model", "") or MODEL
+    pin, pout = next((v for k, v in PRICES.items() if used.startswith(k)), PRICES.get(MODEL, PRICES["claude-opus-5-5"]))
     month = datetime.date.today().strftime("%Y-%m")
     data = _load_json(USAGE_FILE, {})
     m = data.setdefault(month, {"input": 0, "output": 0, "usd": 0.0, "calls": 0})
@@ -1241,11 +1244,12 @@ def _messages(history: List[dict], message: str) -> List[dict]:
     return msgs
 
 
-def _request_options() -> dict:
+def _request_options(model: Optional[str] = None) -> dict:
+    model = model or MODEL
     opts: dict = {"extra_body": {}, "extra_headers": {}}
-    if MODEL.startswith(EFFORT_MODELS):
+    if model.startswith(EFFORT_MODELS):
         opts["extra_body"]["output_config"] = {"effort": EFFORT}
-    if MODEL in FALLBACK_MODELS:
+    if model in FALLBACK_MODELS:
         # 安全判定で断られたときに、API 側で別モデルに切り替えて答えさせる
         opts["extra_headers"]["anthropic-beta"] = "server-side-fallback-2026-07-01"
         opts["extra_body"]["fallbacks"] = "default"
@@ -1268,9 +1272,11 @@ def context_text(data: dict) -> str:
     ])
 
 
-async def _one_shot(system: str, prompt: str, max_tokens: int = 4000) -> str:
-    resp = await client.messages.create(model=MODEL, max_tokens=max_tokens, system=system,
-                                        messages=[{"role": "user", "content": prompt}], **_request_options())
+async def _one_shot(system: str, prompt: str, max_tokens: int = 4000, model: Optional[str] = None) -> str:
+    """1回だけの問い合わせ。model を省くと会話と同じモデル、routine=True 相当の仕事は ROUTINE_MODEL を渡す"""
+    model = model or MODEL
+    resp = await client.messages.create(model=model, max_tokens=max_tokens, system=system,
+                                        messages=[{"role": "user", "content": prompt}], **_request_options(model))
     add_usage(resp)
     if resp.stop_reason == "refusal":
         raise RuntimeError("回答を断られました")
@@ -1292,7 +1298,7 @@ async def on_correction(target: str, comment: str) -> Optional[dict]:
             "あれば、今後の作業で守る1行のルール(〜する / 〜しない)を作る。無ければ NONE とだけ答える。",
             "## 修正ログ(古い順)\n" + "\n".join(f"- {r['date']} [{r['target']}] {r['comment']}({r['source']})" for r in past)
             + "\n\n## すでにあるルール\n" + ("\n".join(f"- {r}" for r in corrections.rules()) or "(なし)")
-            + "\n\n## 出力形式\nRULE: <ルール1行>\nREASON: <どの指摘が繰り返されたか1行>\nまたは NONE", 1000)
+            + "\n\n## 出力形式\nRULE: <ルール1行>\nREASON: <どの指摘が繰り返されたか1行>\nまたは NONE", 1000, model=ROUTINE_MODEL)
         m = re.search(r"RULE:\s*(.+)", raw)
         if not m or "NONE" in raw.split("RULE:")[0]:
             return None

@@ -149,7 +149,7 @@ async def extract_with_ai(job: dict) -> List[dict]:
               "各要素は title(何についての判断か、社長が件名だけで分かる1行。社内の略語・点数・記号は使わない)・"
               "background・options・recommend・if_no_answer・due(YYYY-MM-DD か空)・source(会社のフォルダ内のパスか空)。"
               "社長の判断が要らない報告なら [] を返す。JSON 以外は書かない。")
-    raw = await agent._one_shot(system, (job.get("output") or "")[-8000:], max_tokens=3000)
+    raw = await agent._one_shot(system, (job.get("output") or "")[-8000:], max_tokens=3000, model=agent.ROUTINE_MODEL)
     m = re.search(r"\[.*\]", raw, re.S)
     try:
         items = json.loads(m.group()) if m else []
