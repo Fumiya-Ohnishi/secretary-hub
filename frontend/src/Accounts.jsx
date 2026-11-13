@@ -216,7 +216,8 @@ function Numbers({ data, platform, account = "main", notify, onDone }) {
             <label key={c.key}><span>{c.label}</span>
               <input value={vals[c.key] ?? ""} onChange={(e) => setVals({ ...vals, [c.key]: e.target.value })}
                      onFocus={(e) => !TEXT_COLS.includes(c.key) && e.target.select()}
-                     inputMode={TEXT_COLS.includes(c.key) ? "text" : "numeric"} /></label>
+                     inputMode={TEXT_COLS.includes(c.key) || /_(sec|hours)$/.test(c.key) ? "text" : "numeric"}
+                     placeholder={/_(sec|hours)$/.test(c.key) ? "例 4:04 / 0h:04m:04s" : undefined} /></label>
           ))}
           <button className="btn primary" disabled={busy || !data.insight_columns.some((c) => TEXT_COLS.includes(c.key) && (vals[c.key] || "").trim())} onClick={saveInsight}>記録</button>
         </div>
