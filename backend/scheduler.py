@@ -105,7 +105,7 @@ NEWS_FLASH = ("AIの新機能の速報チェックと、その日のうちの投
               "資料にフォルダの場所を書く。社長がすぐ気づけるよう、報告の最初の行に「速報の承認待ちがあります」と書く。\n" + RESEARCH_RULES)
 ROUTINES += [
     {"id": "muse_reminder", "weekday": 0, "time": "07:45", "notify_only": True, "department": "秘書", "title": "Muse に聞く時間です",
-     "text": "週次リサーチ(8:30)の前に、Instagram の Muse に決まった4つの質問をして、答えを資料室の「📱 Muse の答え」に貼ってください(約5分)。"},
+     "text": "週次リサーチ(8:30)の前に、Instagram の Muse に決まった5つの質問(頭に @ai_hisho_sena で)をして、答えを資料室の「📱 Muse の答え」に貼ってください(約5分)。"},
     {"id": "news_flash_am", "daily": True, "time": "07:30", "department": "秘書", "title": "AIの新機能の速報チェック(朝)", "instruction": NEWS_FLASH},
     {"id": "news_flash_pm", "daily": True, "time": "13:00", "department": "秘書", "title": "AIの新機能の速報チェック(昼)", "instruction": NEWS_FLASH},
 ]
