@@ -100,12 +100,22 @@ export const startMeeting = (kind, topic = "", departments = null) => call("POST
 
 // 参考動画の分析(動画は本文そのままで送る)
 export const listVideoRefs = () => call("GET", "/api/video_refs");
-export async function uploadVideoRef(file, name, note) {
-  const q = new URLSearchParams({ name: name || "", note: note || "" });
-  const r = await fetch(`/api/video_refs?${q}`, { method: "POST", headers: { "x-filename": encodeURIComponent(file.name) }, body: file });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || `通信エラー(${r.status})`);
-  return data;
+export function uploadVideoRef(file, name, note, onProgress) {
+  // 送る進み具合を出したいので fetch ではなく XMLHttpRequest を使う
+  return new Promise((resolve, reject) => {
+    const q = new URLSearchParams({ name: name || "", note: note || "" });
+    const x = new XMLHttpRequest();
+    x.open("POST", `/api/video_refs?${q}`);
+    x.setRequestHeader("x-filename", encodeURIComponent(file.name));
+    x.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100)); };
+    x.onload = () => {
+      let data = {};
+      try { data = JSON.parse(x.responseText || "{}"); } catch { /* 中身なし */ }
+      x.status >= 200 && x.status < 300 ? resolve(data) : reject(new Error(data.error || `通信エラー(${x.status})`));
+    };
+    x.onerror = () => reject(new Error("秘書ハブにつながりませんでした"));
+    x.send(file);
+  });
 }
 
 // Muse の答え(社長が Instagram の Muse に聞いた答えを貼る)

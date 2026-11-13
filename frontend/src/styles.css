@@ -1129,3 +1129,38 @@ select.status-sel { color-scheme: dark; }
 .yta.ok { border-color: rgba(111, 214, 161, .5); }
 .yta .ng { color: var(--ng); }
 .yta .btn { margin-left: 6px; }
+
+/* 参考動画の分析(2026-11-13 見やすく直した) */
+.vr .vr-form { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.2fr); gap: 14px; margin-top: 10px; }
+@media (max-width: 760px) { .vr .vr-form { grid-template-columns: 1fr; } }
+.vr-drop { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 6px; min-height: 120px; padding: 16px 18px;
+  border: 1.5px dashed var(--line2); border-radius: 14px; background: var(--bg2); cursor: pointer; transition: border-color .15s, background .15s; }
+.vr-drop:hover, .vr-drop.over { border-color: var(--accent); background: var(--panel2); }
+.vr-drop.has { border-style: solid; border-color: var(--ok); }
+.vr-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.vr-drop b { color: var(--text); font-size: 15px; word-break: break-all; }
+.vr-drop span { color: var(--sub); font-size: 12px; }
+.vr-fields { display: flex; flex-direction: column; gap: 10px; }
+.vr-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--sub); }
+.vr-fields input { width: 100%; }
+.vr-send { align-self: flex-start; min-width: 180px; }
+.vr-bar { height: 8px; margin-top: 12px; border-radius: 99px; background: var(--bg2); overflow: hidden; border: 1px solid var(--line); }
+.vr-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--info)); transition: width .2s; }
+.vr-msg { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 13px; border: 1px solid var(--line); }
+.vr-msg.ok { border-color: var(--ok); color: var(--ok); background: rgba(111, 214, 161, .08); }
+.vr-msg.warn { border-color: var(--warn); color: var(--warn); background: rgba(243, 181, 98, .08); }
+.vr-msg.ng { border-color: var(--ng); color: var(--ng); background: rgba(255, 138, 154, .08); }
+.vr-list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.vr-item { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); }
+.vr-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.vr-name { flex: 1; min-width: 160px; }
+.vr-chip { font-size: 11px; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line2); white-space: nowrap; }
+.vr-chip.run { color: var(--info); border-color: var(--info); }
+.vr-chip.ok { color: var(--ok); border-color: var(--ok); }
+.vr-chip.ng { color: var(--ng); border-color: var(--ng); }
+.vr .card-head { flex-wrap: wrap; row-gap: 4px; }
+.vr .card-head h3 { white-space: nowrap; }
+.vr .card-head .muted { flex-basis: 100%; }
+.vr-fields input { background: var(--bg2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; outline: none; }
+.vr-fields input:focus { border-color: var(--accent); }
+.vr-name { word-break: break-all; }
