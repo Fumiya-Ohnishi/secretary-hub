@@ -268,7 +268,7 @@ async def run_check(slot: str = "") -> dict:
                 f"定時チェック({facts['time']})の結果です。\n{json.dumps(facts, ensure_ascii=False)}\n\n"
                 "社長への通知文を書いてください。「今日やること」を中心に、遅れていて間に合わないものは"
                 "「今日から動かないと間に合いません」のように先回りして伝え、自動で部署に依頼したものがあれば報告する。"
-                "社長にお願いすること(承認など)があれば最後に1つだけ。3文以内の話し言葉。", 1200)
+                "社長にお願いすること(承認など)があれば最後に1つだけ。3文以内の話し言葉。", 1200, model=agent.ROUTINE_MODEL)
             text = agent.split_mood(raw)[0]
         except Exception:
             text = None
