@@ -1461,14 +1461,18 @@ async def chat_stream(message: str, history: List[dict]):
     data = await company.summary()
     # 毎回同じ部分(秘書の人格・道具の一覧)は使い回す(料金が1割になる)。会社の状況は毎回変わるので後ろに置く
     system = [{"type": "text", "text": persona(), "cache_control": {"type": "ephemeral"}},
-              {"type": "text", "text": context_text(data)}]
+              # 会社の状況も、同じ会話の中(道具を使って何往復かする間)は変わらないので使い回す(2026-11-13 社長「クレジットを節約したい」)
+              {"type": "text", "text": context_text(data), "cache_control": {"type": "ephemeral"}}]
     messages = _messages(history, message)
     spoken, error = "", None
     mf = _MoodFilter()
     try:
         for _ in range(8):
+            opts = _request_options()
+            # これまでの会話(道具の結果を含む)も自動で使い回す。往復のたびに全部を払い直さない
+            opts.setdefault("extra_body", {})["cache_control"] = {"type": "ephemeral"}
             async with client.messages.stream(model=MODEL, max_tokens=16000, system=system, tools=TOOLS_STREAM,
-                                              messages=messages, **_request_options()) as stream:
+                                              messages=messages, **opts) as stream:
                 async for text in stream.text_stream:
                     out = mf.feed(text)
                     if out:
