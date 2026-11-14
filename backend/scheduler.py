@@ -62,13 +62,18 @@ ROUTINES = [
                     "税の判断は断定せず、出典か『税理士・税務署に確認』を添える。最後に社長への報告を3行で。"},
     {"id": "pr_weekly", "weekday": 0, "time": "09:00", "department": "広報", "title": "広報の週次(企画参加・交流の下書き)",
      "instruction": "お金をかけない広報の週次作業。企画参加担当が今週参加できる企画・コンテストを探して strategy/pr/contests.md を更新し、"
-                    "交流担当が社長が手で送る返信・引用の下書きを最大5件 strategy/pr/engagement_YYYY-MM-DD.md に書く。"
+                    "(交流の下書きは毎日の定例「交流の下書き」で作るので、ここでは書かない)"
                     "広報部長が今週やることを3つに絞り、企画会議で使えるよう strategy/pr/ の最新にまとめる(月初は広報計画も)。"
                     "費用のかかる施策は出さない。送信・応募は社長が行う。" + RESEARCH_RULES},
-    {"id": "pr_engagement", "weekday": 3, "time": "09:30", "department": "広報", "title": "交流の下書き(木曜)",
-     "instruction": "交流担当が、参考アカウントや同じジャンルの新しい投稿から交流する価値がある投稿を最大5件選び、"
-                    "社長が手で送る返信・引用の下書きを strategy/pr/engagement_YYYY-MM-DD.md に書く(URL・下書き・なぜ価値があるか)。"
-                    "宣伝・リンクの貼りつけ・フォローのお願いはしない。" + RESEARCH_RULES},
+    {"id": "pr_engagement", "daily": True, "time": "09:30", "department": "広報", "title": "交流の下書き(毎日・Threads が中心)",
+     # 2026-11-14 社長「A で再開して」: 11/12 に休止した交流の下書きを、Threads の返信を中心に毎日に(P-061)
+     "instruction": "交流担当(engagement-scout)が、社長が手で送る返信の下書きを2〜3件作る。"
+                    "相手は Notion「参考アカウント」の媒体=Threads・監視=オンのアカウント(同規模の4人を優先。大手は良い一言が書けるときだけ)と、"
+                    "セナの投稿にコメントをくれた人。直近24時間ほどの新しい投稿から、返信する価値があるものを選ぶ。"
+                    "下書きは、当社で実際に試した結果や数字に基づく一言だけ(定型文・おせじ・宣伝・リンク・フォローのお願いは書かない)。同じ相手に2日続けない。"
+                    "公開ページが読めないときは、strategy/research/muse/ の最新(社長が Muse に聞いた答え)を使う。"
+                    "strategy/pr/engagement_YYYY-MM-DD.md に、相手の投稿の URL・その投稿の要点1行・返信の下書き(セナの口調。140字以内)・なぜ価値があるか、を書く。"
+                    "送るのは社長(自動で送る仕組みは作らない)。" + RESEARCH_RULES},
     {"id": "hr_weekly", "weekday": 4, "time": "16:30", "department": "人事", "title": "社員の声のまとめ(人事部)",
      "instruction": "社員の声担当が data/employee_voice.md の今週の声をテーマごとに数えて hr/voice_YYYY-WW.md にまとめ、"
                     "育成担当が差し戻し(data/corrections.md)と声から指示書(.claude/agents/*.md)の直し案を差分で hr/coaching_YYYY-WW.md に書く(自分で書き換えない)。"
