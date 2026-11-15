@@ -272,14 +272,14 @@ async def run_check(slot: str = "") -> dict:
     # 進行管理(2026-11-15): 子が全部終わったのに親が開いたまま/1週間動いていない親を見つける
     week_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).isoformat()
     parents = [t for t in open_t if t.get("children")]
-    parents_ready = [t for t in parents if t.get("children_open") == 0]
-    parents_stalled = [t for t in parents if t not in parents_ready and (t.get("edited") or "") < week_ago]
-    for t in parents_ready:
-        if not (t.get("next") or "").startswith("秘書: 子のタスクが全部終わりました"):
-            try:
-                await company.update_task(t["key"], next_action="秘書: 子のタスクが全部終わりました。締めくくり(次の工程か完了)を判断する")
-            except Exception:
-                pass
+    # 子が全部終わった親は、進行表を見て秘書が締めくくり、仕上がったときだけ1回知らせる(progress.py)
+    try:
+        import progress
+        await progress.check_all(tasks)
+    except Exception:
+        pass
+    parents_ready = []  # 締めくくりは上で済ませた(定時チェックでは途中の報告をしない)
+    parents_stalled = [t for t in parents if (t.get("edited") or "") < week_ago]
 
     facts = {
         "time": slot or datetime.datetime.now().strftime("%H:%M"), "today": today,

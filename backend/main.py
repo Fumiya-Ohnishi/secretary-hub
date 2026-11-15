@@ -357,6 +357,12 @@ async def decide(key: str, body: Decision):
             job = agent.resume_after_answer({**before, **t, "prev_status": before.get("status", "")}, body.decision, body.comment or "")
             if job:
                 t = {**t, "resumed_job": job["id"]}
+        if not t.get("resumed_job"):  # 続きの作業が無ければ、親が締めくくれるかを見る(全部終わったときだけ報告)
+            try:
+                import progress
+                await progress.check(t.get("key") or key)
+            except Exception:
+                pass
         return t
     except Exception as e:
         return err(e)
