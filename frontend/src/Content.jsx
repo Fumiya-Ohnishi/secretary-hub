@@ -434,7 +434,7 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
   const waiting = posts.filter((p) => p.status === "承認待ち").length;
   const approveAll = async () => {
     setBusy(true);
-    try { const r = await approveWeek(week, account || undefined); notify(`${r.label || week} の ${r.approved}件を承認しました`, "ok"); changed(); }
+    try { const r = await approveWeek(week, account || undefined); notify(`${week} の ${r.approved}件を承認しました`, "ok"); changed(); }
     catch (e) { notify(e.message, "error"); }
     setBusy(false);
   };
@@ -444,18 +444,18 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
       <div className="seg">
         {shownWeeks.map((w) => (
           <button key={w.week} className={week === w.week ? "on" : ""} onClick={() => setWeek(w.week)}>
-            {w.label || w.week}{wcount(w) ? <span className="count warn">{wcount(w)}</span> : null}
+            {w.week}{wcount(w) ? <span className="count warn">{wcount(w)}</span> : null}
           </button>
         ))}
       </div>
       {sub && shownWeeks.length === 0 && <div className="empty">このアカウントの投稿はまだありません。投稿ファイルに account: {account} が付いたものがここに出ます。</div>}
       {data && (!sub || shownWeeks.some((w) => w.week === week)) && (
         <>
-          {sub ? (waiting > 0 && <div className="card week-head"><div className="muted small">{data.label || data.week} ・ このアカウントの投稿</div>
+          {sub ? (waiting > 0 && <div className="card week-head"><div className="muted small">{data.week} ・ このアカウントの投稿</div>
             {!platform && <button className="btn primary" disabled={busy} onClick={approveAll}>承認待ち {waiting}件を全部承認</button>}</div>) : (
           <div className="card week-head">
             <div>
-              <div className="muted small">{data.label || data.week} のテーマ{data.task ? ` ・ タスク ${data.task}` : ""}</div>
+              <div className="muted small">{data.week} のテーマ{data.task ? ` ・ タスク ${data.task}` : ""}</div>
               <h3 className="week-theme">{data.theme || "(未定)"}</h3>
               {data.summary && <WeekNote text={data.summary} />}
             </div>

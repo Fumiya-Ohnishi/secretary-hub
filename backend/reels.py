@@ -39,7 +39,7 @@ def pending() -> List[Path]:
         return []
     out = []
     waiting_scene.clear()
-    for spec in sorted(list(d.glob("*/*.reel.json")) + list(d.glob("flash/*/*.reel.json"))):
+    for spec in sorted(d.glob("*/*.reel.json")):
         try:
             sc = json.loads(spec.read_text()).get("scene")
             if not sc:
@@ -73,7 +73,7 @@ def _ready() -> Optional[str]:
 def _add_credit(mp4_rel: str) -> int:
     """そのリールを使う投稿のキャプション末尾にクレジットを足す(すでにあれば何もしない)"""
     n = 0
-    for post in list(content.drafts_dir().glob("*/[0-9]*.md")) + list(content.drafts_dir().glob("flash/*/[0-9]*.md")):
+    for post in content.drafts_dir().glob("*/[0-9]*.md"):
         text = post.read_text()
         meta, body = content.parse(text)
         if mp4_rel not in meta.get("assets", ""):
