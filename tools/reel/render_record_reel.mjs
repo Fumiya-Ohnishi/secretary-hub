@@ -19,6 +19,8 @@ import { pathToFileURL } from "url";
 import { spawnSync } from "child_process";
 
 const HUB = process.env.HUB_URL || "http://localhost:8000";
+// 表情(mood)から声の調子(tone)を決める。台本の lines[].tone があればそちらを優先(2026-11-15 社長「もっと抑揚を」)
+const MOOD_TONE = { normal: "", pleased: "joy", thinking: "soft", pouty: "serious", surprised: "excited" };
 const FPS = Number(process.env.REEL_FPS || 30);
 const INTRO = 0.1, GAP = 0.3, OUTRO = 1.2; // 2026-11-11: 冒頭の無音 0.4→0.1秒(3秒以内の離脱が50%以上だったため。0秒目から声)
 const [specPath, outPath] = process.argv.slice(2);
@@ -45,7 +47,7 @@ try {
   const vs = [];
   for (const line of spec.lines) {
     const r = await fetch(`${HUB}/api/tts`, { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: line.speech ?? line.text, speaker: spec.speaker ?? null }) });
+      body: JSON.stringify({ text: line.speech ?? line.text, speaker: spec.speaker ?? null, tone: line.tone ?? MOOD_TONE[line.mood] ?? "" }) });
     if (!r.ok || !(r.headers.get("content-type") || "").includes("audio")) throw new Error(await r.text());
     vs.push(parseWav(Buffer.from(await r.arrayBuffer())));
   }
