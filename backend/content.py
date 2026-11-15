@@ -14,6 +14,28 @@ import company
 POST_STATUSES = ["下書き", "承認待ち", "承認済み", "差し戻し", "投稿済み"]
 PLATFORM_JA = {"instagram": "Instagram", "x": "X", "threads": "Threads", "note": "note", "tiktok": "TikTok", "youtube": "YouTube"}
 WEEK_RE = re.compile(r"^\d{4}-\d{2}$")
+# 速報・続報の投稿セット(content/drafts/flash/YYYY-MM-DD_<名前>/)。秘書画面では週と並べて「flash-<フォルダ名>」で扱う(2026-11-15 社長)
+FLASH_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_[\w\-]+$")
+FLASH_PREFIX = "flash-"
+
+
+def is_post_dir(d: Path) -> bool:
+    """投稿ファイルを置くフォルダか(週のフォルダか、速報のフォルダ)"""
+    return bool(WEEK_RE.match(d.name)) or (d.parent.name == "flash" and bool(FLASH_RE.match(d.name)))
+
+
+def set_dir(key: str) -> Path:
+    """週(YYYY-WW)か速報(flash-YYYY-MM-DD_名前)の鍵からフォルダを出す"""
+    if WEEK_RE.match(key):
+        return drafts_dir() / key
+    if key.startswith(FLASH_PREFIX) and FLASH_RE.match(key[len(FLASH_PREFIX):]):
+        return drafts_dir() / "flash" / key[len(FLASH_PREFIX):]
+    raise ValueError("週は YYYY-WW、速報は flash-YYYY-MM-DD_名前 の形で指定してください")
+
+
+def _flash_label(name: str, theme: str) -> str:
+    d = name[:10]
+    return f"速報 {int(d[5:7])}/{int(d[8:10])}"
 
 
 def drafts_dir() -> Path:
@@ -211,7 +233,11 @@ def list_weeks() -> List[dict]:
     if not d.exists():
         return []
     weeks = []
-    for wd in sorted((p for p in d.iterdir() if p.is_dir() and WEEK_RE.match(p.name)), reverse=True):
+    dirs = [(p.name, p, "") for p in sorted((p for p in d.iterdir() if p.is_dir() and WEEK_RE.match(p.name)), reverse=True)]
+    fd = d / "flash"
+    if fd.exists():
+        dirs += [(FLASH_PREFIX + p.name, p, "flash") for p in sorted((p for p in fd.iterdir() if p.is_dir() and FLASH_RE.match(p.name)), reverse=True)]
+    for wkey, wd, kind in dirs:
         posts = [_post(p) for p in sorted(wd.glob("[0-9]*.md"))]
         meta, _ = parse((wd / "_week.md").read_text()) if (wd / "_week.md").exists() else ({}, "")
         counts: Dict[str, int] = {}
@@ -224,19 +250,21 @@ def list_weeks() -> List[dict]:
             for key in (p["platform"], "all"):
                 ba = by_account.setdefault(p["account"], {}).setdefault(key, {})
                 ba[p["status"]] = ba.get(p["status"], 0) + 1
-        weeks.append({"week": wd.name, "theme": meta.get("theme", ""), "task": meta.get("task", ""),
+        if kind and not posts:
+            continue
+        weeks.append({"week": wkey, "kind": kind or "week", "label": _flash_label(wd.name, meta.get("theme", "")) if kind else wkey,
+                      "theme": meta.get("theme", "") or (meta.get("title", "") if kind else ""), "task": meta.get("task", ""),
                       "count": len(posts), "counts": counts, "by_platform": by_platform, "by_account": by_account})
     return weeks
 
 
 def get_week(week: str) -> dict:
-    if not WEEK_RE.match(week):
-        raise ValueError("週は YYYY-WW の形で指定してください")
-    wd = drafts_dir() / week
+    wd = set_dir(week)
     if not wd.exists():
         raise KeyError(f"{week} の投稿セットはまだありません")
     meta, body = parse((wd / "_week.md").read_text()) if (wd / "_week.md").exists() else ({}, "")
-    return {"week": week, "theme": meta.get("theme", ""), "task": meta.get("task", ""), "summary": body.strip(),
+    label = _flash_label(wd.name, "") if week.startswith(FLASH_PREFIX) else week
+    return {"week": week, "label": label, "theme": meta.get("theme", "") or meta.get("title", ""), "task": meta.get("task", ""), "summary": body.strip(),
             "posts": [_post(p) for p in sorted(wd.glob("[0-9]*.md"))]}
 
 
@@ -342,7 +370,7 @@ def safe_path(rel: str) -> Path:
 # ---------- 社長の判断の書き込み ----------
 def _set_status(rel: str, status: str, comment: str = "") -> dict:
     path = safe_path(rel)
-    if path.suffix != ".md" or not WEEK_RE.match(path.parent.name):
+    if path.suffix != ".md" or not is_post_dir(path.parent):
         raise PermissionError("投稿ファイルではありません")
     meta, body = parse(path.read_text())
     meta["status"] = status
@@ -434,7 +462,7 @@ def set_scheduled(rel: str, date: str) -> dict:
     """投稿予定日を変える(時刻はそのまま)。社長がカレンダーで動かしたとき"""
     datetime.date.fromisoformat(date)
     path = safe_path(rel)
-    if path.suffix != ".md" or not WEEK_RE.match(path.parent.name):
+    if path.suffix != ".md" or not is_post_dir(path.parent):
         raise PermissionError("投稿ファイルではありません")
     meta, body = parse(path.read_text())
     old = meta.get("scheduled", "")
