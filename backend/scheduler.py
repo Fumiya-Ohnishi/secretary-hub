@@ -117,6 +117,15 @@ ROUTINES += [
      "text": "週次リサーチ(8:30)の前に、Instagram の Muse に決まった質問(頭に @ai_hisho_sena で)をして、答えを資料室の「📱 Muse の答え」に貼ってください(約5分)。"
              "ついでに1つ(2026-11-15〜。届くまで毎週): Claude のアプリのチャットで「+」→「コネクタ」を開き、Notion のあたりに『アプリとして開く』入口が増えていないか見てください。"
              "増えていたら秘書に一言(11/10 発表の「アプリが Claude の中で開く」が届いた合図。続報の投稿を作ります)。"},
+    # 2026-11-15 社長が A「Museはネタ集め、書くのは当社で」: 段取りおばけ(note 別アカウント)の記事を毎週作る(T-315 の続き)
+    {"id": "sub_note_weekly", "weekday": 1, "time": "09:30", "department": "収益化", "title": "段取りおばけの note 記事(週の分)",
+     "instruction": "段取りおばけ(note 別アカウント)の今週の記事を作る。書き方と守る線は playbooks/sub/note.md(P-035・P-036・P-044)。\n"
+                    "1. 最初に strategy/research/muse/ の名前に sub_ が付いた直近8日の答え(社長が月曜に Muse に聞いたネタ集め)を読む。"
+                    "無ければ、公開されている情報で伸びている話題を出典つきで調べる。Muse の文章は写さず、悩み・話題・型だけを材料にする(URL のある話だけ)\n"
+                    "2. ジャンルと題を決め、無料と有料の組で書く(本数は品質を落とさずに作れる数。先週の数字と承認の結果も見る)。"
+                    "投稿ファイルは今週の週フォルダ content/drafts/YYYY-WW/ に次の番号で置き、account: sub を付ける\n"
+                    "3. 見出し画像はデザイン部の型で(ChatGPT のプロンプトも添える)。品質管理部が点検し、合格したものだけ status を承認待ちにする\n"
+                    "社長への確認は、本当に判断が要るときだけ報告の「## 社長への確認」に A・B・C で書く。"},
     {"id": "news_flash_am", "daily": True, "time": "07:30", "department": "秘書", "title": "AIの新機能の速報チェック(朝)", "instruction": NEWS_FLASH},
     {"id": "news_flash_pm", "daily": True, "time": "13:00", "department": "秘書", "title": "AIの新機能の速報チェック(昼)", "instruction": NEWS_FLASH},
 ]
