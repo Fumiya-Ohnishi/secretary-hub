@@ -480,7 +480,7 @@ def _codex_after(job: dict):
         if path:
             job["output"] = (job.get("output") or "") + f"\n\n— 社外顧問(Codex)の反対検討: {path}"
             try:
-                scheduler.notify("社外顧問(Codex)の反対検討", f"{job['title']} について、別の会社のAIの反対意見を {path} に残しました", "info")
+                print("社外顧問(Codex)の反対検討:", path)  # 社長に知らせない(2026-11-15 社長「無駄に喋らないで」。知らせるのは判断が要る・期限切れ・止まった・仕上がったときだけ)
             except Exception:
                 pass
     except Exception as e:
