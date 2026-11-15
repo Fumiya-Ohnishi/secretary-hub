@@ -221,12 +221,21 @@ async def reels_loop():
         await asyncio.sleep(900)
 
 
+_clean_state: dict = {}
+
+
 async def media_loop():
     while True:
         try:
             n = await asyncio.to_thread(content.sync_media)
             if n:
                 print(f"  画像・動画 {n} 件を Google ドライブ({content.media_dir()})へ保存しました")
+            today = datetime.date.today().isoformat()
+            if _clean_state.get("day") != today and not scheduler.is_off_day():  # 平日に1日1回、いらない画像・動画を片づける
+                _clean_state["day"] = today
+                r = await asyncio.to_thread(content.cleanup_media)
+                if r["count"]:
+                    print(f"  使われていない作業用・テストの画像・動画 {r['count']} 件({r['mb']}MB)を片づけました(ドライブのゴミ箱で30日は戻せます)")
             gone = await asyncio.to_thread(content.prune_local_media)  # 写し終わった古いものを Mac から消す
             if gone:
                 print(f"  ドライブに写し終わった古い画像・動画 {gone} 件を Mac から消しました(ドライブには残っています)")

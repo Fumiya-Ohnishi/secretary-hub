@@ -1,3 +1,4 @@
+import json
 """週の投稿セット(ai-company/content/drafts/YYYY-WW/)の読み書き。形式は ai-company/playbooks/post_format.md。
 
 承認済み・差し戻し・投稿済みは、社長の操作(秘書ハブのボタンか声の返事)からだけ書き込む。
@@ -321,6 +322,77 @@ def prune_local_media() -> int:
         except OSError:
             pass
     return n
+
+
+# ---------- いらなくなった画像・動画の片づけ(2026-11-15 社長「ドライブにテスト画像が大量にたまる。いらないものは消していって」) ----------
+WORK_DIR_RE = re.compile(r"(^_|_check$|_frames?$|_compare$|_test$|_tmp$|^tmp|^test|_old$|^sub$|_work$)", re.I)
+TEST_NAME_RE = re.compile(r"(_old|_test|test_|_smoke|_check|_compare|_tmp|_base|_frame|_draft|_sample|_try|_wip|試し|テスト|比較)", re.I)
+CLEAN_KEEP_DAYS = 7      # 作業中かもしれないので、最後に変えてから7日は残す
+CLEAN_UNUSED_DAYS = 30   # どの投稿にも使われていない画像・動画は、30日たったら片づける
+CLEAN_LOG = Path(__file__).resolve().parent / "data" / "media_cleanup.json"
+
+
+def _referenced_names() -> set:
+    """投稿ファイル(content/ の .md・.json)に書かれている画像・動画のファイル名"""
+    names = set()
+    pat = re.compile(r"[\w.\-\u3000-\u9fff]+\.(?:" + "|".join(e.lstrip(".") for e in MEDIA_EXT) + r")", re.I)
+    for f in (company.COMPANY_DIR / "content").rglob("*"):
+        # 作業メモ(_check.md・_status.md など「_」で始まるもの)に書かれているだけの画像は、使われているとみなさない
+        if f.is_file() and f.suffix in (".md", ".json") and "output" not in f.parts and not f.name.startswith("_"):
+            try:
+                names.update(m.lower() for m in pat.findall(f.read_text(encoding="utf-8", errors="ignore")))
+            except OSError:
+                pass
+    return names
+
+
+def _unneeded(path: Path, root: Path, used: set, now: float) -> bool:
+    age = (now - path.stat().st_mtime) / 86400
+    if age < CLEAN_KEEP_DAYS:
+        return False
+    name = path.name.lower()
+    if name in used:
+        return False
+    base = re.sub(r"_cover(\.\w+)$", r".mp4", name)  # 使われている動画の表紙は残す
+    if base != name and base in used:
+        return False
+    rel_dirs = path.relative_to(root).parts[:-1]
+    if any(WORK_DIR_RE.search(d) for d in rel_dirs) or TEST_NAME_RE.search(path.stem):
+        return True                     # 作業用・点検用・テストのもの(どの投稿にも使われていない)
+    return age >= CLEAN_UNUSED_DAYS     # どの投稿にも使われないまま30日たったもの
+
+
+def cleanup_media(dry_run: bool = False) -> dict:
+    """どの投稿にも使われていない作業用・テストの画像・動画を、ドライブと Mac の両方から消す。
+    ドライブの同期フォルダで消したものは Google ドライブの「ゴミ箱」に入り、30日は戻せる。
+    ブランド資料(AI会社/ブランド資料)と、投稿ファイルに書かれているもの・7日以内に変えたものは消さない"""
+    used, now = _referenced_names(), datetime.datetime.now().timestamp()
+    roots = [r for r in (media_dir(), company.COMPANY_DIR / "content" / "output") if r and r.is_dir()]
+    gone, size = [], 0
+    for root in roots:
+        for f in sorted(root.rglob("*")):
+            if not f.is_file() or f.suffix.lower() not in MEDIA_EXT:
+                continue
+            try:
+                if _unneeded(f, root, used, now):
+                    size += f.stat().st_size
+                    gone.append(str(f.relative_to(root)))
+                    if not dry_run:
+                        f.unlink()
+            except OSError:
+                continue
+        if not dry_run:
+            for d in sorted((p for p in root.rglob("*") if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+                try:
+                    d.rmdir()  # 空になったフォルダだけ消える
+                except OSError:
+                    pass
+    result = {"at": datetime.datetime.now().isoformat(timespec="seconds"), "count": len(gone),
+              "mb": round(size / 1e6, 1), "files": gone[:500], "dry_run": dry_run}
+    if not dry_run:
+        CLEAN_LOG.parent.mkdir(parents=True, exist_ok=True)
+        CLEAN_LOG.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+    return result
 
 
 def safe_path(rel: str) -> Path:
