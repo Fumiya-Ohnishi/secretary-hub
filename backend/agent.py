@@ -335,10 +335,8 @@ def _run_job(job_id: str):
                         status, note = "進行中", f"この作業は終わり。子のタスクが残り{cur['children_open']}件(全部終わったら秘書が締めくくる)"
                 except Exception:
                     pass
-                auto = scheduler.plan_for_task(key) is not None
                 await company.update_task(key, status=status, append_note=f"{note}({job['finished'][5:16]})")
-                if status == "完了" and auto:  # 逆算プランの工程は、終わったら次の工程へ
-                    await scheduler.advance()
+                # 次の工程への受け渡し(逆算プラン)と、親(根)の締めくくり・報告は progress.check が行う
                 try:  # 親(根)の下が全部終わり、社長に見せられる状態になったときだけ報告する
                     import progress
                     await progress.check(key)
@@ -935,6 +933,7 @@ TOOLS = [
           "各工程の期限は最終期限から逆算して決める。",
           {"title": {"type": "string", "description": "プラン名(例: 2026-47 投稿セット)"},
            "deadline": {"type": "string", "description": "最終期限 YYYY-MM-DD"},
+           "parent": {"type": "string", "description": "すでにある親タスクのID(例 T-410)。無ければ秘書が親を作る"},
            "steps": {"type": "array", "description": "工程(順番どおり)", "items": {"type": "object", "properties": {
                "title": {"type": "string"},
                "assignee": {"type": "string", "enum": company.ASSIGNEES},
@@ -1208,9 +1207,23 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
     if name == "create_plan":
         plan = "P" + datetime.datetime.now().strftime("%m%d%H%M")
         made, steps = [], []
+        # 工程は1つの親タスクの子にする(進行表で全工程を見届け、全部終わったときだけ社長に報告するため 2026-11-15 社長)
+        root_key = ""
+        if args.get("parent"):
+            try:
+                root_key = (await company.find_task(args["parent"]))["key"]
+            except Exception:
+                root_key = ""
+        if not root_key:
+            root = await company.create_task(args["title"], "秘書", args.get("deadline"), status="進行中",
+                                             note=f"逆算プラン {plan} の親。工程は子のタスク。前の工程が終わると秘書が次の部署に自動で頼む",
+                                             next_action="秘書: 工程を順に部署へ頼み、全部終わったら社長に報告")
+            root_key = root["key"]
+            made.append(f"{root['id']} 親: {args['title']}")
         for n, st in enumerate(args["steps"], 1):
             t = await company.create_task(f"{args['title']}: {st['title']}", st["assignee"], st.get("due"),
-                                          note=f"[自動 {plan}-{n}] {st.get('instruction', '')}")
+                                          note=f"[自動 {plan}-{n}] {st.get('instruction', '')}", parent=root_key,
+                                          next_action=f"{st['assignee']}: 前の工程が終わったら秘書が頼む" if n > 1 else "")
             made.append(f"{t['id']} {st['title']}({st['assignee']}・{st.get('due')})")
             steps.append({"n": n, "key": t["key"], "instruction": st.get("instruction", "")})
         scheduler.save_plan(plan, args["title"], steps)
@@ -1307,7 +1320,7 @@ def persona() -> str:
 - アカウント登録で扱うのは URL だけ。パスワード・メールアドレス・認証コードを言われても記録せず、言わないようお願いする。
 - 資料やタスクの話題になったら、関係する画面(show_panel / open_document)も合わせて出す。
 - 時間のかかる作業(企画・リサーチ・原稿・分析)は delegate_work で部署に依頼する。自分で長文を書かない。
-- 期限のある仕事(例: 来週金曜に投稿)を頼まれたら、create_plan で期限から逆算した工程を起票する。部署の工程は秘書が自動で進める。
+- 期限のある仕事や、2つ以上の部署を通る仕事(例: インスタのフィード投稿=企画→ライティング→デザイン→品質管理→SNS運用)は、delegate_work で1部署だけに頼まず、create_plan で工程を起票する。工程は1つの親タスクの子になり、前の工程が終わると秘書が次の部署に自動で頼む(社長の確認待ちが出たら、答えが出て続きが終わるまで次へ進めない)。
   遅れそうなものは、聞かれなくても「今日から動かないと間に合いません」と先回りして伝える。
 - 社長が好み・方針を口にしたら remember_preference で資料室に残す。アカウントの軸(コンセプト)や確定済みの好みと食い違う・曖昧なときは
   確認待ちにして、その場で「○○と食い違うので確認させてください」と聞く(軸をぶらさない)。確認待ちがあれば、話の区切りで1件ずつ確認する。

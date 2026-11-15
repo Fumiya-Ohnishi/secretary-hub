@@ -59,6 +59,15 @@ def descendants(key: str, by_key: Dict[str, dict]) -> List[dict]:
     return out
 
 
+def _is_president_step(t: dict) -> bool:
+    """社長がする工程(承認・投稿など。確認待ち以外)は、そこまで来たら「社長に見せられる状態」"""
+    return t.get("assignee") == "社長" and t.get("status") in ("未着手", "進行中")
+
+
+def _blocks(t: dict, running: set) -> bool:
+    return t["key"] in running or (t.get("status") in OPEN and not _is_president_step(t))
+
+
 def _running_keys() -> set:
     try:
         import agent
@@ -79,18 +88,34 @@ async def check(key: str, tasks: Optional[List[dict]] = None, notify: bool = Tru
     family = [root] + descendants(root["key"], by_key)
     keys = {t["key"] for t in family}
     running = _running_keys() & keys
-    # 差し戻されたタスクの下の直し(子)が全部終わったら、差し戻しは片づいたとみなす(承認待ちのものは子に残る)
-    for t in family:
-        if t.get("status") == "差し戻し" and t.get("children") and t["key"] not in running:
-            sub = descendants(t["key"], by_key)
-            if sub and not any(c.get("status") in OPEN or c["key"] in running for c in sub):
-                try:
-                    await company.update_task(t["key"], status="完了", next_action="なし(直しは子のタスクで済んだ)",
-                                              append_note="差し戻しの直し(子のタスク)が全部終わった(秘書が進行表で確認)")
-                    t["status"] = "完了"
-                except Exception:
-                    pass
-    waiting = [t for t in family[1:] if t.get("status") in OPEN]
+    # 途中のタスクの締めくくり(下から順に): 差し戻し・進行中のタスクで、下の子が全部終わり作業も走っていなければ完了にする
+    # (差し戻しの直しが終わった/社長への確認の答えの続きが終わった工程など。承認待ちのものは子に残る)
+    changed = True
+    while changed:
+        changed = False
+        for t in family[1:]:
+            if t.get("status") in ("差し戻し", "進行中") and t.get("children") and t["key"] not in running:
+                sub = descendants(t["key"], by_key)
+                if sub and not any(_blocks(c, running) for c in sub):
+                    try:
+                        await company.update_task(t["key"], status="完了", next_action="なし(子のタスクで済んだ)",
+                                                  append_note="下の子のタスクが全部終わった(秘書が進行表で確認)")
+                        t["status"] = "完了"
+                        changed = True
+                    except Exception:
+                        pass
+    # 逆算プランの次の工程を、ここで部署に頼む(デザインが終わったら品質管理へ、など)。頼んだらまだ途中
+    try:
+        import scheduler
+        started = await scheduler.advance()
+        for st in started:
+            k = next((t["key"] for t in family if t.get("id") == st.get("task")), None)
+            if k:
+                running.add(k)
+                by_key[k]["status"] = "進行中"
+    except Exception:
+        pass
+    waiting = [t for t in family[1:] if _blocks(t, set())]
     state = _load()
     # まだ終わっていない: 子・孫に動いているものがある/部署の作業が走っている/根そのものが作業中
     if running or waiting or root.get("status") in ("未着手", "差し戻し", "確認待ち") or (len(family) == 1 and root.get("status") == "進行中"):
@@ -106,7 +131,7 @@ async def check(key: str, tasks: Optional[List[dict]] = None, notify: bool = Tru
             except Exception:
                 pass
         return {"root": root.get("id"), "ready": False, "left": left}
-    review = [t for t in family if t.get("status") == "承認待ち"]
+    review = [t for t in family if t.get("status") == "承認待ち" or (t is not root and _is_president_step(t))]
     new_status = "承認待ち" if review else "完了"
     review_ids = sorted(t["key"] for t in review)
     told = state.get(root["key"])
@@ -125,8 +150,11 @@ async def check(key: str, tasks: Optional[List[dict]] = None, notify: bool = Tru
         try:
             import scheduler
             head = f"「{root.get('title', '')}」({root.get('id', '')})が仕上がりました。"
+            mine = [t for t in family[1:] if _is_president_step(t)]
             if len(family) > 1:
-                head += f"進行表で確認し、子のタスク {len(family) - 1}件も全部終わっています。"
+                head += f"進行表で確認し、子のタスク {len(family) - 1 - len(mine)}件は全部終わっています。"
+            if mine:
+                head += "あとは社長の番(" + "・".join(t.get("title", "").split(": ")[-1][:20] for t in mine[:3]) + ")です。"
             lines = [head]
             if review:
                 lines.append("見てほしいもの: " + "、".join(f"{t.get('id')} {t.get('title', '')[:40]}" for t in review[:6]))

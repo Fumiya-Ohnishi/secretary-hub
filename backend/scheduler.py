@@ -120,7 +120,7 @@ ROUTINES += [
     {"id": "news_flash_pm", "daily": True, "time": "13:00", "department": "秘書", "title": "AIの新機能の速報チェック(昼)", "instruction": NEWS_FLASH},
 ]
 PLAN_RE = re.compile(r"\[自動 (P[0-9a-f]+)-(\d+)\]")
-DONE = ("完了", "承認済み", "承認待ち", "確認待ち")
+DONE = ("完了", "承認済み", "承認待ち")  # 確認待ち(社長の答え待ち)の工程があれば次へ進めない(2026-11-15)
 LOOKAHEAD_DAYS = 3  # 最初の工程は、期限の3日前から動き始める
 
 
@@ -238,6 +238,9 @@ async def advance() -> List[dict]:
             prev_done = all(pt["status"] in DONE for pn, pt in steps if pn < n)
             due = t.get("due", "")[:10]
             near = not due or datetime.date.fromisoformat(due) <= today + datetime.timedelta(days=LOOKAHEAD_DAYS)
+            stopped = (t.get("note") or "").count("作業が途中で止まりました")  # エラーで止まった回数
+            if stopped >= 2:  # 自動のやり直しは1回まで(同じエラーで何度も頼み続けない)。止まった親として朝のチェックに出る
+                break
             if (t["status"] == "未着手" and prev_done and t["assignee"] in agent.DEPT_FULL
                     and t["key"] not in running_keys and (n > 1 or near)):
                 instruction = t.get("instruction") or t["title"]
@@ -280,6 +283,8 @@ async def run_check(slot: str = "") -> dict:
         pass
     parents_ready = []  # 締めくくりは上で済ませた(定時チェックでは途中の報告をしない)
     parents_stalled = [t for t in parents if (t.get("edited") or "") < week_ago]
+    # 工程がエラーで2回止まった(自動のやり直しも失敗した)ものは、止まっているとして知らせる
+    parents_stalled += [t for t in open_t if (t.get("note") or "").count("作業が途中で止まりました") >= 2 and t not in parents_stalled]
 
     facts = {
         "time": slot or datetime.datetime.now().strftime("%H:%M"), "today": today,
