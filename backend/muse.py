@@ -78,3 +78,49 @@ def recent(days: int = 7) -> List[dict]:
         if when >= cutoff:
             out.append({"file": str(p.relative_to(company.COMPANY_DIR)), "at": when.isoformat(timespec="minutes")})
     return out
+
+
+# ---------- 月曜の「Muse に聞く」を社長の確認タスクにする(2026-11-15 社長「お知らせはいらない。何を聞けばいいかをコピーできる形でタスクにして」) ----------
+TASK_PREFIX = "【Muse】"
+WEEKLY_IDS = ("weekly_top", "weekly_trend", "weekly_saved", "weekly_self", "weekly_insights", "reel_metrics", "peer_compare",
+              "trend_reels", "trend_audio")
+EXTRA_CHECK = ("Claude のアプリのチャットで「+」→「コネクタ」を開き、Notion のあたりに『アプリとして開く』入口が増えていないか見る。"
+               "増えていたら、このタスクの「社長の答え」で「その他(備考に書く)」を選び、備考に「増えていた」と書く")
+
+
+def _rt(text: str) -> list:
+    return [{"type": "text", "text": {"content": text[:1900]}}]
+
+
+def weekly_task_blocks() -> list:
+    qs = [q for q in QUESTIONS if q["id"] in WEEKLY_IDS]
+    b = [{"object": "block", "type": "callout", "callout": {"icon": {"type": "emoji", "emoji": "👆"}, "rich_text": _rt(
+            "やること(約5分): Instagram の Muse に、下の質問を1つずつコピーして聞く → 答えを秘書ハブの「資料室 > 📱 Muse の答え」に貼る。"
+            "貼ると、このタスクは自動で完了になります(秘書が週次リサーチで読みます)")}},
+         {"object": "block", "type": "heading_2", "heading_2": {"rich_text": _rt("聞くこと(右上のコピーで1つずつ)")}}]
+    for i, q in enumerate(qs, 1):
+        b.append({"object": "block", "type": "paragraph", "paragraph": {"rich_text": _rt(f"{i}.")}})
+        b.append({"object": "block", "type": "code", "code": {"language": "plain text", "rich_text": _rt(q["text"])}})
+    b += [{"object": "block", "type": "heading_2", "heading_2": {"rich_text": _rt("ついでに確かめること")}},
+          {"object": "block", "type": "paragraph", "paragraph": {"rich_text": _rt(EXTRA_CHECK)}}]
+    return b
+
+
+async def create_weekly_task() -> dict:
+    """月曜の朝に、社長の確認タスク(確認待ち・期限=今日)を1件作る。同じ日に2件作らない"""
+    today = datetime.date.today().isoformat()
+    for t in await company.list_tasks():
+        if (t.get("title") or "").startswith(TASK_PREFIX) and t.get("status") not in ("完了", "承認済み"):
+            if (t.get("due") or "")[:10] == today:
+                return t
+    return await company.create_task(f"{TASK_PREFIX}今週の質問を Muse に聞いて、答えを秘書ハブに貼る(約5分)", "社長", today,
+                                     note="質問はページの本文にあります(コピーして使う)。答えを貼ると自動で完了", status="確認待ち",
+                                     next_action="社長: 本文の質問を Muse に聞いて、答えを資料室に貼る", blocks=weekly_task_blocks())
+
+
+async def close_weekly_task():
+    """答えが貼られたら、開いている【Muse】のタスクを完了にする"""
+    for t in await company.list_tasks():
+        if (t.get("title") or "").startswith(TASK_PREFIX) and t.get("status") not in ("完了", "承認済み"):
+            await company.update_task(t["key"], status="完了", next_action="なし(秘書が週次リサーチで読む)",
+                                      append_note=f"{datetime.date.today():%m/%d} 答えが資料室に貼られた(秘書ハブ)")

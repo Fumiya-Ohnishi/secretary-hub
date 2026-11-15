@@ -112,7 +112,8 @@ NEWS_FLASH = ("AIの新機能の速報チェックと、その日のうちの投
               "4. 合格したら、秘書が Notion のタスク(状態=承認待ち・担当=社長・件名「【速報】◯◯(発表 MM/DD)の投稿セットを今日出すか」・期限=今日)を作り、"
               "資料にフォルダの場所を書く。社長がすぐ気づけるよう、報告の最初の行に「速報の承認待ちがあります」と書く。\n" + RESEARCH_RULES)
 ROUTINES += [
-    {"id": "muse_reminder", "weekday": 0, "time": "07:45", "notify_only": True, "department": "秘書", "title": "Muse に聞く時間です",
+    # 2026-11-15 社長「お知らせはいらない。何を聞けばいいかをコピーできる形で確認タスクにして」: お知らせをやめ、社長の確認タスクを1件作る
+    {"id": "muse_reminder", "weekday": 0, "time": "07:45", "task_only": True, "department": "秘書", "title": "Muse に聞く(確認タスク)",
      "text": "週次リサーチ(8:30)の前に、Instagram の Muse に決まった質問(頭に @ai_hisho_sena で)をして、答えを資料室の「📱 Muse の答え」に貼ってください(約5分)。"
              "ついでに1つ(2026-11-15〜。届くまで毎週): Claude のアプリのチャットで「+」→「コネクタ」を開き、Notion のあたりに『アプリとして開く』入口が増えていないか見てください。"
              "増えていたら秘書に一言(11/10 発表の「アプリが Claude の中で開く」が届いた合図。続報の投稿を作ります)。"},
@@ -423,6 +424,14 @@ def run_routine_now(routine_id: str) -> dict:
 
 def _start_routine(r: dict) -> dict:
     import agent
+    if r.get("task_only"):  # 社長の確認タスクを作るだけ(お知らせも部署への依頼もしない)
+        try:
+            import muse
+            t = agent._run_sync(muse.create_weekly_task()) or {}
+        except Exception as e:
+            print("Muse の確認タスクを作れませんでした:", e)
+            t = {}
+        return {"id": "", "title": r["title"], "task": t.get("id", ""), "task_only": True}
     if r.get("notify_only"):  # 社長へのお知らせだけ(部署には頼まない)
         notify(r["title"], r.get("text", ""), "info")
         return {"id": "", "title": r["title"], "notify_only": True}
