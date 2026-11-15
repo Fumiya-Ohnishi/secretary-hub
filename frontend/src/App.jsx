@@ -195,11 +195,9 @@ export default function App() {
       const prev = jobsRef.current;
       for (const j of s.jobs || []) {
         const before = prev.find((p) => p.id === j.id);
-        if (before && before.status === "running" && j.status !== "running") {
-          const ok = j.status === "done";
-          notify(`${j.department_full || j.department + "部"}「${j.title}」${ok ? "完了" : "エラー"}`, ok ? "ok" : "error");
-          say(ok ? `社長、${j.department_full || j.department + "部"}から「${j.title}」の作業が終わったと報告がありました。作業タブで結果を確認できます。`
-                 : `${j.department_full || j.department + "部"}の「${j.title}」でエラーが出ました。作業タブに内容を出しています。`, ok ? "pleased" : "thinking");
+        // 途中の作業の「終わりました」は知らせない(2026-11-15 社長)。親タスクが全部終わったときだけ、秘書のお知らせ(仕上がりました)で伝える
+        if (before && before.status === "running" && j.status === "error") {
+          notify(`${j.department_full || j.department + "部"}「${j.title}」エラー(秘書がやり直しを判断します)`, "error");
         }
       }
       jobsRef.current = s.jobs || [];

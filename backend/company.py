@@ -137,7 +137,7 @@ async def find_task(ref: str) -> dict:
 
 async def update_task(key: str, status: Optional[str] = None, note: Optional[str] = None,
                       append_note: Optional[str] = None, due: Optional[str] = None, link: Optional[str] = None,
-                      next_action: Optional[str] = None) -> dict:
+                      next_action: Optional[str] = None, answer: Optional[str] = None, parent: Optional[str] = None) -> dict:
     """due: None=変更しない / "" =期限を消す / "YYYY-MM-DD"=その日に変える。link=資料(Notion の作業ログなど)。next_action=次の一手"""
     if status and status not in STATUSES:
         raise ValueError(f"ステータスは {' / '.join(STATUSES)} のどれかです")
@@ -148,16 +148,17 @@ async def update_task(key: str, status: Optional[str] = None, note: Optional[str
             raise ValueError("期限は YYYY-MM-DD の形で指定してください")
     if notion.configured():
         return await notion.update_task(key, status=status, note=note, append_note=append_note, due=due, link=link,
-                                        next_action=next_action)
+                                        next_action=next_action, answer=answer, parent=parent)
     return _file_update(key, status, append_note or note, due)
 
 
 async def create_task(title: str, assignee: str = "秘書", due: Optional[str] = None,
                       note: str = "", link: str = "", status: str = "未着手",
-                      parent: str = "", next_action: str = "") -> dict:
+                      parent: str = "", next_action: str = "", report: str = "", blocks=None) -> dict:
     assignee = assignee if assignee in ASSIGNEES else "秘書"
     if notion.configured():
-        return await notion.create_task(title, assignee, due, note, link, status, parent=parent, next_action=next_action)
+        return await notion.create_task(title, assignee, due, note, link, status, parent=parent, next_action=next_action,
+                                        report=report, blocks=blocks)
     full = title + (f"({note[:160]})" if note else "")
     return _file_create(full.replace("|", "/").replace("\n", " "), assignee, due, status)  # 表が崩れないように
 

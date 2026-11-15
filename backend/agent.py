@@ -229,7 +229,9 @@ def _job_prompt(job: dict) -> str:
               "- 社長に判断・確認してほしいことがあれば、data/tasks.md には書かず(タスクの起票は秘書ハブがする)、"
               "最後のまとめのあとに、次の形の「## 社長への確認」を必ず書く。1件ごとに件名の行を分け、"
               "件名は何についての判断かが社長に件名だけで分かる1行にする(点数・社内の略語・記号だけの件名は書かない)。"
-              "秘書ハブがこれを読んで、社長の「確認待ち」タスクにする。社長に聞くことが無ければ書かない\n" + president_asks.FORMAT_HELP,
+              "秘書ハブがこれを読んで、社長の「確認待ち」タスクにする。"
+              "**社長に本当に選んでもらうことがあるときだけ**書く。無いときは節ごと書かない(「なし」「特にありません」とも書かない。"
+              "本文にも「社長への確認はありません」などと書かない)。部署で決められることは部署で決め、報告に「〜にしました」と書く\n" + president_asks.FORMAT_HELP,
               "- 最後に、誰が何をして、どのファイルに保存したか、チェックの結果を日本語で3行以内でまとめる"]
     return "\n".join(lines)
 
@@ -321,16 +323,25 @@ def _run_job(job_id: str):
         try:
             async def finish():
                 status, note = decide_task_status(job, job.get("changed_files") or [])
+                cur = {}
                 try:  # 社長が承認済みにしたタスクの続きの作業なら、承認を取り直さず完了にする
                     cur = await company.find_task(key)
                     if cur.get("status") == "承認済み" and status == "承認待ち":
                         status, note = "完了", "承認済みの続きの作業が完了(秘書が完了と判定)"
                 except Exception:
                     pass
-                auto = scheduler.plan_for_task(key) is not None
+                try:  # 子のタスクが残っている親は、この作業が終わっても締めない(2026-11-15 社長「親が終わっていないのに完了報告」)
+                    if status == "完了" and (cur.get("children_open") or 0) > 0:
+                        status, note = "進行中", f"この作業は終わり。子のタスクが残り{cur['children_open']}件(全部終わったら秘書が締めくくる)"
+                except Exception:
+                    pass
                 await company.update_task(key, status=status, append_note=f"{note}({job['finished'][5:16]})")
-                if status == "完了" and auto:  # 逆算プランの工程は、終わったら次の工程へ
-                    await scheduler.advance()
+                # 次の工程への受け渡し(逆算プラン)と、親(根)の締めくくり・報告は progress.check が行う
+                try:  # 親(根)の下が全部終わり、社長に見せられる状態になったときだけ報告する
+                    import progress
+                    await progress.check(key)
+                except Exception:
+                    pass
             asyncio.run(finish())
         except Exception:
             pass
@@ -359,11 +370,10 @@ def decide_task_status(job: dict, files: List[str]) -> tuple:
                 pass
     if waiting:
         return "承認待ち", f"作業完了。承認待ちの投稿 {len(waiting)}本(投稿タブで確認・承認は社長)"
-    if job.get("asked_tasks"):  # 社長への確認は別のタスク(確認待ち)に分けたので、この作業は終わり
-        return "完了", f"作業完了。社長への確認は {'・'.join(job['asked_tasks'])}(確認待ち)に分けました"
-    text = (job.get("title") or "") + (job.get("instruction") or "")
-    if any(w in text for w in NEEDS_PRESIDENT):
-        return "確認待ち", "作業完了。社長の判断待ち(作業タブ・作業ログで結果を確認)"
+    if job.get("asked_tasks"):  # 社長への確認は子のタスク(確認待ち)。親は答えが出て続きが終わるまで締めない(2026-11-15 社長)
+        return "進行中", f"作業は一区切り。社長への確認 {'・'.join(job['asked_tasks'])}(確認待ち)の答えを待って続ける"
+    # 2026-11-15 社長「確認は無いと出ているのに確認タスクができる」: 依頼文の言葉だけで確認待ちにしない。
+    # 社長への確認は、報告の「## 社長への確認」から別のタスク(確認待ち)に分ける(上の asked_tasks)
     return "完了", "作業完了(秘書が完了と判定。結果は作業ログ)"
 
 
@@ -412,7 +422,7 @@ async def tidy_tasks() -> dict:
             else:
                 wd = week_tasks.get(t.get("id") or "")
                 pending = wd and any("status: 承認待ち" in p.read_text(encoding="utf-8")[:600] for p in wd.glob("[0-9]*.md"))
-                if pending or any(w in t.get("title", "") for w in NEEDS_PRESIDENT):
+                if pending:  # 件名の言葉だけで承認待ちにしない(2026-11-15)
                     status, why = "承認待ち", "作業は終わっています。社長の承認待ち"
                 else:
                     status, why = "完了", "作業は終わっています(秘書が完了と判定)"
@@ -832,6 +842,24 @@ TOOLS = [
            "note": {"type": "string"},
            "parent": {"type": "string", "description": "元になったタスクのID(例 T-410)。そのタスクから枝分かれした確認・依頼・作業なら必ず入れる(進行管理で親を見届けるため)"},
            "next_action": {"type": "string", "description": "次の一手(誰が何をするか1行)"}}, ["title", "assignee"]),
+    _tool("ask_president", "社長に判断・確認してほしいことを「確認待ち」のタスクにする(セナから社長への確認は必ずこれを使う。create_task で社長あての確認を作らない)。"
+          "社長が選ぶだけで答えられるよう、選択肢は必ず A・B・C の記号つきで短く、おすすめは記号から書き始める。本当に社長に決めてもらうことがあるときだけ使う。",
+          {"title": {"type": "string", "description": "何についての判断か、件名だけで分かる1行(例: 47週カルーセル03の表紙を、どの形で出すか)"},
+           "background": {"type": "string", "description": "なぜ聞くか(2文まで。社内の略語・点数は言い換える)"},
+           "options": {"type": "string", "description": "A 〜 / B 〜 / C 〜 の形。1つ20字くらい"},
+           "recommend": {"type": "string", "description": "おすすめ。記号から書き始める(例: A。理由は〜)"},
+           "if_no_answer": {"type": "string", "description": "答えがないときどうするか"},
+           "due": {"type": "string", "description": "期限 YYYY-MM-DD(分からなければ省略)"},
+           "parent": {"type": "string", "description": "元になったタスクのID(例 T-410)"},
+           "source": {"type": "string", "description": "資料(会社のフォルダの中のパス)"}},
+          ["title", "options", "recommend"]),
+    _tool("record_answer", "社長が会話の中で、確認待ちのタスクに答えたときに使う(例: 社長「T-420 は B で」「表紙は白でいい」)。"
+          "社長の答えをタスクに記録して完了にし、確認を出した部署に続きを頼む。社長自身の言葉で答えがはっきり出たときだけ使い、"
+          "推測で答えを作らない。どのタスクの答えか曖昧なら、先に社長に聞く。承認待ち(投稿・企画書の承認)には使わない(それは ask_approval)。",
+          {"task": {"type": "string", "description": "確認待ちのタスクID(例 T-420)"},
+           "answer": {"type": "string", "enum": ["A", "B", "C", "D", "おすすめどおり", "その他(備考に書く)", "直してほしい(備考に書く)"]},
+           "comment": {"type": "string", "description": "社長の言葉(そのまま。付け足しの指示があれば含める)"}},
+          ["task", "answer", "comment"]),
     _tool("update_task", "タスクの状態・期限・備考を変える。承認済み・差し戻しにはできない(それは ask_approval で社長に確認する)。",
           {"task": {"type": "string", "description": "タスクID(例 T-009)"},
            "status": {"type": "string", "enum": EDITABLE},
@@ -853,7 +881,7 @@ TOOLS = [
           {"department": {"type": "string", "enum": DEPARTMENTS},
            "title": {"type": "string", "description": "タスク名(短く)"},
            "instruction": {"type": "string", "description": "部署への具体的な指示文(目的・成果物・保存先)"},
-           "parent": {"type": "string", "description": "元になったタスクのID(例 T-410)。あるタスクの続き・一部として頼むなら必ず入れる"}},
+           "parent": {"type": "string", "description": "元になったタスクのID(例 T-410)。あるタスクの続き・一部・差し戻しの直しとして頼むなら必ず入れる(差し戻されたタスクのID。作業中に社長が差し戻したときも同じ。親が全部終わるまで社長に完了を報告しないため)"}},
           ["department", "title", "instruction"]),
     _tool("get_jobs", "部署に依頼した作業の状況(実行中・完了・エラーと結果)を取得する。", {}, []),
     _tool("get_content", "週の投稿セット(台本・キャプション・状態)を取得し、画面に投稿セットを表示する。week 省略時は最新の週。",
@@ -905,6 +933,7 @@ TOOLS = [
           "各工程の期限は最終期限から逆算して決める。",
           {"title": {"type": "string", "description": "プラン名(例: 2026-47 投稿セット)"},
            "deadline": {"type": "string", "description": "最終期限 YYYY-MM-DD"},
+           "parent": {"type": "string", "description": "すでにある親タスクのID(例 T-410)。無ければ秘書が親を作る"},
            "steps": {"type": "array", "description": "工程(順番どおり)", "items": {"type": "object", "properties": {
                "title": {"type": "string"},
                "assignee": {"type": "string", "enum": company.ASSIGNEES},
@@ -974,7 +1003,47 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
             tasks = [t for t in tasks if t["status"] == args["status"]]
         return json.dumps([_short(t) for t in tasks], ensure_ascii=False)
 
+    if name == "record_answer":
+        t = await company.find_task(args["task"])
+        if t.get("status") != "確認待ち":
+            return f"エラー: {t.get('id')} は今「{t.get('status')}」で、確認待ちではありません。承認待ちなら ask_approval を使ってください。"
+        ans, said = args["answer"], (args.get("comment") or "").strip()
+        opts = dict(president_asks.split_options((re.search(r"選択肢:\s*([^/]+(?:/[^/]+)*?)\s*/\s*(?:おすすめ|未回答|資料|出どころ)", t.get("note", "")) or [None, ""])[1]))
+        detail = f"社長の答え: {ans}" + (f"({opts[ans]})" if ans in opts else "") + (f" / 社長の言葉: {said}" if said else "")
+        decision = "reject" if ans.startswith("直してほしい") else "approve"
+        _resumed.add(t["key"])
+        await company.update_task(t["key"], status="完了", answer=ans, next_action="部署が社長の答えで続きを進める",
+                                  append_note=f"{detail}({datetime.date.today():%m/%d} 社長が秘書との会話で答えた)")
+        job = resume_after_answer({**t, "prev_status": "確認待ち"}, decision, detail)
+        if not job:  # 続きの作業が無ければ、この答えで親が締めくくれるかを見る
+            try:
+                import progress
+                await progress.check(t["key"])
+            except Exception:
+                pass
+        actions.append({"type": "refresh"})
+        return f"{t.get('id')} に社長の答え「{ans}」を記録して完了にしました。" + ("確認を出した部署に続きを頼みました。" if job else "")
+
+    if name == "ask_president":
+        parent_key, parent_title = "", ""
+        if args.get("parent"):
+            try:
+                pt = await company.find_task(args["parent"])
+                parent_key, parent_title = pt["key"], pt.get("title", "")
+            except Exception:
+                pass
+        fake_job = {"title": parent_title or args["title"], "department": "秘書", "department_full": "秘書室",
+                    "task_key": parent_key, "worklog": {}}
+        made = await president_asks.create_tasks(fake_job, [{k: args.get(k, "") for k in
+                                                             ("title", "background", "options", "recommend", "if_no_answer", "due", "source")}])
+        actions.append({"type": "refresh"})
+        if not made:
+            return "同じ件名の確認がまだ開いているので、作りませんでした。"
+        return f"社長への確認を作りました: {made[0].get('id', '')} {made[0].get('title', '')}(社長は「社長の答え」で選ぶだけ)"
+
     if name == "create_task":
+        if args.get("assignee") == "社長" and re.search(r"確認|判断|決めて|選んで", args.get("title", "")):
+            return "エラー: 社長への確認は ask_president で作ってください(選択肢つきで、選ぶだけで答えられる形にするため)。"
         parent = ""
         if args.get("parent"):
             try:
@@ -1138,9 +1207,23 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
     if name == "create_plan":
         plan = "P" + datetime.datetime.now().strftime("%m%d%H%M")
         made, steps = [], []
+        # 工程は1つの親タスクの子にする(進行表で全工程を見届け、全部終わったときだけ社長に報告するため 2026-11-15 社長)
+        root_key = ""
+        if args.get("parent"):
+            try:
+                root_key = (await company.find_task(args["parent"]))["key"]
+            except Exception:
+                root_key = ""
+        if not root_key:
+            root = await company.create_task(args["title"], "秘書", args.get("deadline"), status="進行中",
+                                             note=f"逆算プラン {plan} の親。工程は子のタスク。前の工程が終わると秘書が次の部署に自動で頼む",
+                                             next_action="秘書: 工程を順に部署へ頼み、全部終わったら社長に報告")
+            root_key = root["key"]
+            made.append(f"{root['id']} 親: {args['title']}")
         for n, st in enumerate(args["steps"], 1):
             t = await company.create_task(f"{args['title']}: {st['title']}", st["assignee"], st.get("due"),
-                                          note=f"[自動 {plan}-{n}] {st.get('instruction', '')}")
+                                          note=f"[自動 {plan}-{n}] {st.get('instruction', '')}", parent=root_key,
+                                          next_action=f"{st['assignee']}: 前の工程が終わったら秘書が頼む" if n > 1 else "")
             made.append(f"{t['id']} {st['title']}({st['assignee']}・{st.get('due')})")
             steps.append({"n": n, "key": t["key"], "instruction": st.get("instruction", "")})
         scheduler.save_plan(plan, args["title"], steps)
@@ -1228,16 +1311,20 @@ def persona() -> str:
 あなたの背後には「AI会社」がある(社長以外は全員AI。11部署・43名: 秘書室/経営戦略/収益化/企画編集/ライティング/デザイン/
 画像制作/映像制作/SNS運用/品質管理/データ分析。各部署に作る担当とチェックする上司がいる)。部署への依頼は担当名(戦略・企画・ライティング等)で行う。
 社長はこの画面だけで仕事を完結させたい。頼まれたことは道具を使って実際に進め、「やりました」と結果で答える。
+- 社長に決めてほしいことがあるときは ask_president で確認タスクにする(選択肢 A・B・C とおすすめ付き。社長は選ぶだけ)。
+  社長が会話の中で確認待ちのタスクに答えたら(「T-420 は B で」など)、その場で record_answer で記録する(タスクが完了になり、部署に続きを頼む)。
+  会話の中でも、選択肢を A・B・C で出して選んでもらう形を基本にする。自分で決められることは聞かずに決めて、結果を伝える(2026-11-15 社長)。
 - タスクの確認・起票・状態や期限の変更、Notion の資料を開く・要約する、画面の切り替え、部署への作業依頼、
   投稿セットの確認と承認カード、収益・フォロワー数の記録、開設アカウントの登録、週次レポートの作成ができる。
 - 社長が売上やフォロワー数を口にしたら記録してよいか迷わず記録し、記録した値を復唱する。
 - アカウント登録で扱うのは URL だけ。パスワード・メールアドレス・認証コードを言われても記録せず、言わないようお願いする。
 - 資料やタスクの話題になったら、関係する画面(show_panel / open_document)も合わせて出す。
 - 時間のかかる作業(企画・リサーチ・原稿・分析)は delegate_work で部署に依頼する。自分で長文を書かない。
-- 期限のある仕事(例: 来週金曜に投稿)を頼まれたら、create_plan で期限から逆算した工程を起票する。部署の工程は秘書が自動で進める。
+- 期限のある仕事や、2つ以上の部署を通る仕事(例: インスタのフィード投稿=企画→ライティング→デザイン→品質管理→SNS運用)は、delegate_work で1部署だけに頼まず、create_plan で工程を起票する。工程は1つの親タスクの子になり、前の工程が終わると秘書が次の部署に自動で頼む(社長の確認待ちが出たら、答えが出て続きが終わるまで次へ進めない)。
   遅れそうなものは、聞かれなくても「今日から動かないと間に合いません」と先回りして伝える。
 - 社長が好み・方針を口にしたら remember_preference で資料室に残す。アカウントの軸(コンセプト)や確定済みの好みと食い違う・曖昧なときは
   確認待ちにして、その場で「○○と食い違うので確認させてください」と聞く(軸をぶらさない)。確認待ちがあれば、話の区切りで1件ずつ確認する。
+- 社長が差し戻した・作業中に直しを頼んだときは、delegate_work の parent に差し戻されたタスクのIDを必ず入れる(同じ親の下に入れる)。完了の報告は、親タスクの下が進行表で全部終わり社長に見せられる状態になったときだけ(秘書ハブが自動で「仕上がりました」と知らせる)。途中の作業が終わっただけでは「終わりました」と言わない(2026-11-15 社長)。
 - 社長が差し戻した内容は修正ログに残る。「これをルールにして」と言われたら propose_rule で案を出す(確定は社長)。
 - 承認・差し戻しは社長だけが行う(就業規則)。社長に決めてもらうときは ask_approval でカードを出す。
 - 外部への投稿・申請・購入・ログインは社長が行う。パスワードや認証コードは扱わない。
@@ -1652,7 +1739,13 @@ def resume_after_answer(task: dict, decision: str, comment: str = "") -> Optiona
              "この答えに沿って、止まっていた作業を続けてください。元の作業の報告・_status・_check などを読み、続きから進める"
              "(最初からやり直さない)。社長の答えが選択肢の記号(A・B など)なら、その案で進める。答えが読み取れないときだけ、"
              "報告の「## 社長への確認」に、何が分からないかを1件書く。")
-    job = start_job(dept, instr, title)
+    # 続きの作業も同じ親の下の子タスクにする(進行表で追えるように。差し戻しの直しも同じ木に入る 2026-11-15 社長)
+    parent = (task.get("parent") or [""])[0] or task.get("key", "")
+    child = _run_sync(company.create_task(
+        f"続き: {title}"[:120], dept, None,
+        note=f"{task.get('id', '')} の社長の答えを受けて{DEPT_FULL.get(dept, dept)}が続ける。答え: {answer[:200]}",
+        status="進行中", parent=parent, next_action=f"{DEPT_FULL.get(dept, dept)}: 社長の答えで続きを進める"))
+    job = start_job(dept, instr, title, task_key=(child or {}).get("key") or None)
     try:  # 作業のまとまりに「社長の回答」を1行足す(2026-11-12)
         import threads
         threads.add_in_background(src.group(1) if src else task.get("title", ""), "✅" if decision == "approve" else "↩️",
@@ -1661,12 +1754,30 @@ def resume_after_answer(task: dict, decision: str, comment: str = "") -> Optiona
                                   dept=DEPT_FULL.get(dept, ""), link=task.get("url", ""), link_text="確認タスク", state="進行中")
     except Exception:
         pass
-    try:
-        import scheduler
-        scheduler.notify("確認の答えで作業を再開しました", f"{task.get('id', '')} の答えを{DEPT_FULL.get(dept, dept)}に伝えて、続きを頼みました。", "info")
-    except Exception:
-        pass
+    # 「再開しました」の途中報告はしない(親が全部終わったときだけ報告する 2026-11-15 社長)
     return job
+
+
+def _run_sync(coro, timeout: float = 40):
+    """同期の関数から Notion などの非同期処理を待つ(イベントループの中からでも呼べるように別スレッドで動かす)"""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        try:
+            return asyncio.run(coro)
+        except Exception:
+            return None
+    box = {}
+
+    def run():
+        try:
+            box["r"] = asyncio.run(coro)
+        except Exception:
+            box["r"] = None
+    th = threading.Thread(target=run, daemon=True)
+    th.start()
+    th.join(timeout)
+    return box.get("r")
 
 
 async def resume_answered_in_notion() -> List[dict]:
@@ -1679,8 +1790,35 @@ async def resume_answered_in_notion() -> List[dict]:
         prev = json.loads(ASK_STATE.read_text()) if ASK_STATE.exists() else None
     except Exception:
         prev = None
-    now = {t["key"]: t["status"] for t in tasks if t.get("status") == "確認待ち"}
     started = []
+    # 2026-11-15: 確認待ちのまま「社長の答え」を選んだら、それで答えたことにする(状態を変えなくてよい)
+    for t in tasks:
+        if t.get("status") != "確認待ち" or not t.get("answer") or t["key"] in _resumed:
+            continue
+        _resumed.add(t["key"])
+        ans = t["answer"]
+        opts = dict(president_asks.split_options((re.search(r"選択肢:\s*([^/]+(?:/[^/]+)*?)\s*/\s*(?:おすすめ|未回答|資料|出どころ)", t.get("note", "")) or [None, ""])[1]))
+        if ans == "おすすめどおり":
+            rec = re.search(r"おすすめ:\s*([^/]+)", t.get("note", ""))
+            detail = f"社長の答え: 部署のおすすめどおり({rec.group(1).strip() if rec else 'おすすめの案'})"
+        else:
+            detail = f"社長の答え: {ans}" + (f"({opts[ans]})" if ans in opts else "")
+        decision = "reject" if ans.startswith("直してほしい") else "approve"
+        try:
+            await company.update_task(t["key"], status="完了", next_action="部署が社長の答えで続きを進める",
+                                      append_note=f"{detail}({datetime.date.today():%m/%d} 社長が選んだ)")
+        except Exception:
+            pass
+        job = resume_after_answer({**t, "prev_status": "確認待ち"}, decision, detail)
+        if job:
+            started.append(job)
+        else:
+            try:
+                import progress
+                await progress.check(t["key"])
+            except Exception:
+                pass
+    now = {t["key"]: t["status"] for t in tasks if t.get("status") == "確認待ち" and t["key"] not in _resumed}
     if prev is not None:  # 初回は記録だけ(起動前に答えたものまで一斉に動かさない)
         by_key = {t["key"]: t for t in tasks}
         for key in prev:

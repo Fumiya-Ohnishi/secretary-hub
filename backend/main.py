@@ -33,6 +33,7 @@ import sys
 
 from fastapi.responses import StreamingResponse
 
+import adopt
 import agent
 import company
 import accounts
@@ -56,6 +57,7 @@ app = FastAPI(title="AI-Secretary Hub")
 @app.on_event("startup")
 async def start_scheduler():
     asyncio.create_task(scheduler.loop())  # 決まった時間に動く係
+    asyncio.create_task(adopt.run_once())   # 一度だけ: 親につながっていないタスクの棚卸しを秘書室に頼む(平日)
     asyncio.create_task(media_loop())       # 完成した画像・動画を Google ドライブへ写す
     asyncio.create_task(reels_loop())       # 声なしのリールを声入りに書き出し直す
     asyncio.create_task(watch_loop())       # 参考アカウントの評価・確認の結果を台帳と Notion に反映
@@ -357,6 +359,12 @@ async def decide(key: str, body: Decision):
             job = agent.resume_after_answer({**before, **t, "prev_status": before.get("status", "")}, body.decision, body.comment or "")
             if job:
                 t = {**t, "resumed_job": job["id"]}
+        if not t.get("resumed_job"):  # 続きの作業が無ければ、親が締めくくれるかを見る(全部終わったときだけ報告)
+            try:
+                import progress
+                await progress.check(t.get("key") or key)
+            except Exception:
+                pass
         return t
     except Exception as e:
         return err(e)
