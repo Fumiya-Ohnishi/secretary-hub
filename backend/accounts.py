@@ -337,8 +337,8 @@ def crosspost_candidates(platform: str) -> List[dict]:
     root = content.drafts_dir()
     if not root.exists():
         return out
-    for path in sorted(list(root.glob("*/*.md")) + list(root.glob("flash/*/*.md")), reverse=True):
-        if path.name.startswith("_") or not content.is_post_dir(path.parent):
+    for path in sorted(root.glob("*/*.md"), reverse=True):
+        if path.name.startswith("_") or not content.WEEK_RE.match(path.parent.name):
             continue
         meta, _ = content.parse(path.read_text())
         cp = _list_field(meta.get("crosspost", ""))
@@ -369,7 +369,7 @@ def mark_crossposted(platform: str, rel: str, date: Optional[str] = None, undo: 
     if platform not in CROSSPOST:
         raise ValueError("TikTok か YouTube だけです")
     path = content.safe_path(rel)
-    if path.suffix != ".md" or not content.is_post_dir(path.parent):
+    if path.suffix != ".md" or not content.WEEK_RE.match(path.parent.name):
         raise ValueError("投稿ファイルではありません")
     meta, body = content.parse(path.read_text())
     if meta.get("status") not in READY:
