@@ -78,8 +78,7 @@ async def git_sync_loop():
             if gitsync.enabled() and not busy:
                 r = await asyncio.to_thread(gitsync.sync)
                 if r.get("conflicts"):
-                    scheduler.notify("会社のフォルダを自動保存しました", "GitHub 側と同じ所が変わっていたので、Mac 側を優先しました: "
-                                     + "、".join(r["conflicts"][:5]), "info")
+                    print("  会社のフォルダを自動保存(Mac 側を優先):", "、".join(r["conflicts"][:5]))  # 社長に知らせない(2026-11-15 社長「無駄に喋らないで」。知らせるのは判断が要る・期限切れ・止まった・仕上がったときだけ)
                 if not r.get("ok") and last_ok:
                     scheduler.notify("会社のフォルダの自動保存が止まっています", r.get("detail", ""), "warn")
                 last_ok = bool(r.get("ok"))
@@ -96,7 +95,7 @@ async def task_tidy_loop():
             n = sum(r.values())
             if n:
                 parts = [f"{k}{v}件" for k, v in r.items() if v]
-                scheduler.notify("タスクの状態を整えました", "進行中のまま止まっていたタスク: " + "・".join(parts), "info")
+                print("  タスクの状態を整えました:", "・".join(parts))  # 社長に知らせない(2026-11-15 社長「無駄に喋らないで」。知らせるのは判断が要る・期限切れ・止まった・仕上がったときだけ)
         except Exception as e:
             print("タスクの整理でエラー:", e)
         await asyncio.sleep(1800)
@@ -213,7 +212,7 @@ async def reels_loop():
             done = await asyncio.to_thread(reels.render_pending, f"http://127.0.0.1:{os.getenv('HUB_PORT', '8000')}", ok)
             if done:
                 await asyncio.to_thread(content.sync_media)
-                scheduler.notify("リールに声を入れました", "、".join(done) + " を声入りにしました(Google ドライブも更新済み)。", "info")
+                print("  リールを声入りにしました:", "、".join(done))  # 社長に知らせない(2026-11-15 社長「無駄に喋らないで」。知らせるのは判断が要る・期限切れ・止まった・仕上がったときだけ)
             elif reels.last_error:
                 print("  ⚠ リールの声入れ:", reels.last_error)
         except Exception as e:

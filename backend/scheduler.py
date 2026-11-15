@@ -455,7 +455,7 @@ async def loop():
             if time.time() - last_meeting_check > 120:
                 last_meeting_check = time.time()
                 for tid in await agent.start_scheduled_meetings():
-                    notify("予定の会議を始めました", f"{tid} の会議を、予定の時刻に開きました。終わったら議事録と決まったことを報告します。", "info")
+                    print("予定の会議を始めました:", tid)  # 社長に知らせない(2026-11-15 社長「無駄に喋らないで」。知らせるのは判断が要る・期限切れ・止まった・仕上がったときだけ)
         except Exception as e:
             print("予定の会議でエラー:", e)
         try:

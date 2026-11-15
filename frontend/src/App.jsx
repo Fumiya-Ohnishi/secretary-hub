@@ -85,6 +85,8 @@ function RuleCard({ proposal, busy, onDecide, onClose }) {
   );
 }
 
+const NO_IDLE_NUDGE = true;
+
 export default function App() {
   const [ruleCard, setRuleCard] = useState(null);
   const [streamText, setStreamText] = useState(null);
@@ -445,6 +447,8 @@ export default function App() {
     window.addEventListener("pointerdown", touch);
     window.addEventListener("keydown", touch);
     const id = setInterval(() => {
+      // 2026-11-15 社長「無駄に喋らないで」: 手が空いたときの「判断待ちが○件」の声かけはしない(判断が要るものは朝のチェックと確認カードで伝える)
+      if (NO_IDLE_NUDGE) return;
       if (document.hidden || busy || tts.speaking || nudges.current >= 3) return;
       if (Date.now() - lastActivity.current < 15 * 60 * 1000) return;
       const s = summary;

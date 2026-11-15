@@ -166,7 +166,7 @@ async def sync() -> List[dict]:
         lines = [f"・{x}" for x in d["decisions"][:3]]
         if d["ask"]:
             lines.append(f"・社長に確認: {d['ask'][0]}")
-        scheduler.notify(f"{d['meta'].get('kind', '会議')}の議事録", "\n".join(lines) + (f"\n(タスク {len(made)}件を起票)" if made else "") +
-                         (f"\n{url}" if url else ""), "meeting")
+        if d["ask"]:  # 会議の報告は、社長に確認が要るときだけ(2026-11-15 社長「無駄に喋らないで」。決まったことは議事録とタスクで見られる)
+            scheduler.notify(f"{d['meta'].get('kind', '会議')}で社長に確認があります", "\n".join(lines) + (f"\n{url}" if url else ""), "meeting")
         done.append({"file": p.name, "notion": url, "tasks": len(made)})
     return done
