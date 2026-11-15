@@ -225,7 +225,7 @@ async def advance() -> List[dict]:
     """前の工程が終わったプランの、次の工程を部署に依頼する。依頼した工程を返す"""
     import agent  # 循環 import を避ける
     started = []
-    if not settings()["auto"]:
+    if not settings()["auto"] or is_off_day():  # 自動で頼むのは平日だけ(2026-11-15 社長)
         return started
     tasks = await company.list_tasks()
     today = datetime.date.today()
@@ -249,6 +249,48 @@ async def advance() -> List[dict]:
                 job = agent.start_job(t["assignee"], f"{t['title']}。{instruction}(期限 {due or 'なし'})", t["title"], t["key"])
                 started.append({"task": t["id"], "title": t["title"], "department": t["assignee"], "job": job["id"]})
             break  # 1つのプランは先頭の未完了工程だけを見る
+    started += await _advance_trees(tasks, running_keys | {st.get("key") for st in started}, today)
+    return started
+
+
+TREE_MAX_RUNNING = 3  # 親タスクの木から自動で頼む作業は、同時に3つまで(クレジットの使いすぎを防ぐ)
+
+
+async def _advance_trees(tasks: List[dict], running_keys: set, today: datetime.date) -> List[dict]:
+    """逆算プランの無い親タスクも、子を期限の早い順に1つずつ部署へ頼む(2026-11-15 社長「秘書が次の部署に自動で回して」)。
+    - 社長がする子(承認・投稿・数字の報告など)は飛ばす。社長への確認(確認待ち)が残っていれば、その親は待つ
+    - 期限が3日より先の子はまだ頼まない。エラーで2回止まった子は頼み直さない"""
+    import agent
+    in_plan = {st["key"] for p in _load(PLANS_FILE, {}).values() for st in p["steps"]}
+    by_key = {t["key"]: t for t in tasks}
+    started, busy = [], len([k for k in running_keys if k])
+    for parent in tasks:
+        if busy >= TREE_MAX_RUNNING:
+            break
+        if not parent.get("children") or parent.get("status") in ("完了", "承認済み") or parent["key"] in in_plan:
+            continue
+        kids = [by_key[k] for k in parent["children"] if k in by_key and k not in in_plan]
+        kids.sort(key=lambda t: ((t.get("due") or "9999")[:10], t.get("id") or ""))
+        for t in kids:
+            if t["status"] in DONE:
+                continue
+            if t.get("assignee") == "社長" and t["status"] in ("未着手", "進行中"):
+                continue  # 社長の番の子は飛ばす
+            if t["key"] in running_keys or t["status"] != "未着手" or t.get("children"):
+                break  # 作業中・確認待ち・差し戻し・孫を持つ子があれば、その親は待つ
+            if (t.get("note") or "").count("作業が途中で止まりました") >= 2 or t.get("assignee") not in agent.DEPARTMENTS:
+                break
+            due = (t.get("due") or "")[:10]
+            if due and datetime.date.fromisoformat(due) > today + datetime.timedelta(days=LOOKAHEAD_DAYS):
+                break
+            await company.update_task(t["key"], status="進行中", next_action=f"{t['assignee']}部が作業中",
+                                      append_note=f"{today:%m/%d} 秘書が親 {parent.get('id', '')} の順番で{t['assignee']}部に自動で依頼")
+            instr = (f"{t['title']}(期限 {due or 'なし'})。親タスク {parent.get('id', '')}「{parent.get('title', '')}」の一部。"
+                     f"備考: {(t.get('note') or '')[:600]}")
+            job = agent.start_job(t["assignee"], instr, t["title"], t["key"])
+            started.append({"task": t["id"], "key": t["key"], "title": t["title"], "department": t["assignee"], "job": job["id"]})
+            busy += 1
+            break
     return started
 
 

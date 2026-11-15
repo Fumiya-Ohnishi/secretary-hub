@@ -157,9 +157,11 @@ def valid_date(value: str) -> str:
 
 async def update_task(key: str, status: Optional[str] = None, note: Optional[str] = None,
                       append_note: Optional[str] = None, due: Optional[str] = None, link: Optional[str] = None,
-                      next_action: Optional[str] = None, answer: Optional[str] = None) -> dict:
-    """due: None=変更しない / "" =期限を消す / "YYYY-MM-DD"=その日に変える。next_action=次の一手(1行)。answer=社長の答え"""
+                      next_action: Optional[str] = None, answer: Optional[str] = None, parent: Optional[str] = None) -> dict:
+    """due: None=変更しない / "" =期限を消す / "YYYY-MM-DD"=その日に変える。next_action=次の一手(1行)。answer=社長の答え。parent=親タスクのページID"""
     props: Dict[str, dict] = {}
+    if parent:
+        props["親タスク"] = {"relation": [{"id": parent}]}
     if answer:
         props["社長の答え"] = {"select": {"name": answer}}
     if next_action is not None:

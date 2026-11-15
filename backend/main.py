@@ -33,6 +33,7 @@ import sys
 
 from fastapi.responses import StreamingResponse
 
+import adopt
 import agent
 import company
 import accounts
@@ -56,6 +57,7 @@ app = FastAPI(title="AI-Secretary Hub")
 @app.on_event("startup")
 async def start_scheduler():
     asyncio.create_task(scheduler.loop())  # 決まった時間に動く係
+    asyncio.create_task(adopt.run_once())   # 一度だけ: 親につながっていないタスクの棚卸しを秘書室に頼む(平日)
     asyncio.create_task(media_loop())       # 完成した画像・動画を Google ドライブへ写す
     asyncio.create_task(reels_loop())       # 声なしのリールを声入りに書き出し直す
     asyncio.create_task(watch_loop())       # 参考アカウントの評価・確認の結果を台帳と Notion に反映

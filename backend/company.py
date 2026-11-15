@@ -137,7 +137,7 @@ async def find_task(ref: str) -> dict:
 
 async def update_task(key: str, status: Optional[str] = None, note: Optional[str] = None,
                       append_note: Optional[str] = None, due: Optional[str] = None, link: Optional[str] = None,
-                      next_action: Optional[str] = None, answer: Optional[str] = None) -> dict:
+                      next_action: Optional[str] = None, answer: Optional[str] = None, parent: Optional[str] = None) -> dict:
     """due: None=変更しない / "" =期限を消す / "YYYY-MM-DD"=その日に変える。link=資料(Notion の作業ログなど)。next_action=次の一手"""
     if status and status not in STATUSES:
         raise ValueError(f"ステータスは {' / '.join(STATUSES)} のどれかです")
@@ -148,7 +148,7 @@ async def update_task(key: str, status: Optional[str] = None, note: Optional[str
             raise ValueError("期限は YYYY-MM-DD の形で指定してください")
     if notion.configured():
         return await notion.update_task(key, status=status, note=note, append_note=append_note, due=due, link=link,
-                                        next_action=next_action, answer=answer)
+                                        next_action=next_action, answer=answer, parent=parent)
     return _file_update(key, status, append_note or note, due)
 
 

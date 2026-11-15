@@ -137,14 +137,31 @@ async def sync() -> List[dict]:
                 print("議事録を Notion に載せられませんでした:", e)
                 continue  # 次回また試す
         made = []
+        # やることは1つの親タスク(この会議のやること)の子にする。子は期限の早い順に秘書が部署へ自動で頼み、
+        # 全部終わったら「仕上がりました」と1回知らせる(2026-11-15 社長。前は起票しただけで誰も動かしていなかった)
+        root_key = ""
+        if d["todos"]:
+            try:
+                root = await company.create_task(f"{d['meta'].get('kind', '会議')}({d['meta'].get('date', '')})で決まったこと", "秘書", None,
+                                                 note=f"議事録: {p.name}", link=url, status="進行中",
+                                                 next_action="秘書: やることを期限の早い順に部署へ頼み、全部終わったら社長に報告")
+                root_key = root["key"]
+            except Exception as e:
+                print("会議の親タスクを作れませんでした:", e)
         for t in d["todos"]:
             m = TODO_RE.match(t)
             dept, title, due = (m.group(1), m.group(2).strip(), m.group(3)) if m else ("秘書", t, None)
             try:
-                await company.create_task(f"{title}({d['meta'].get('kind', '会議')}で決定)", dept, due, note=f"議事録: {p.name}", link=url)
+                await company.create_task(f"{title}({d['meta'].get('kind', '会議')}で決定)", dept, due, note=f"議事録: {p.name}", link=url,
+                                          parent=root_key, next_action=f"{dept}: 順番が来たら秘書が頼む")
                 made.append(title)
             except Exception as e:
                 print("会議のやることを起票できませんでした:", e)
+        if made:
+            try:
+                await scheduler.advance()
+            except Exception:
+                pass
         _set_meta(p, synced=datetime.datetime.now().isoformat(timespec="minutes"), **({"notion": url} if url else {}))
         lines = [f"・{x}" for x in d["decisions"][:3]]
         if d["ask"]:
