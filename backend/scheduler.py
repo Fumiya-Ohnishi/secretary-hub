@@ -25,7 +25,10 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 NOTES_FILE = DATA_DIR / "notifications.json"
 PLANS_FILE = DATA_DIR / "plans.json"
 _lock = threading.Lock()
-DEFAULT_SETTINGS = {"auto": True, "times": ["09:00", "12:00", "17:00"], "last_slot": "", "routines": True, "routine_last": {}}
+# 2026-11-15 社長「秘書が動くのは平日だけでいい。こんなに報告しなくていい(クレジットの節約にも)」:
+# 土日は定例の仕事と定時チェックを止める(weekdays_only)。定時チェックは朝の1回だけにし、伝えることが無い日は通知しない
+DEFAULT_SETTINGS = {"auto": True, "times": ["09:00"], "last_slot": "", "routines": True, "routine_last": {}, "weekdays_only": True}
+OLD_DEFAULT_TIMES = ["09:00", "12:00", "17:00"]
 
 # 決まった曜日に、秘書が部署へ自動で頼む定例の仕事(weekday: 0=月 … 6=日)
 RESEARCH_RULES = ("見てよいのは、ログインせずに読める公開ページだけ(Web検索・ニュース・公式発表・note の公開記事など)。"
@@ -136,7 +139,16 @@ def _save(path: Path, data):
 
 
 def settings() -> dict:
-    return {**DEFAULT_SETTINGS, **_load(SETTINGS_FILE, {})}
+    s = {**DEFAULT_SETTINGS, **_load(SETTINGS_FILE, {})}
+    if s.get("times") == OLD_DEFAULT_TIMES and not s.get("times_custom"):
+        s["times"] = DEFAULT_SETTINGS["times"]  # 前の決まり(1日3回)のままなら、朝の1回に(社長が自分で決めた時刻は変えない)
+    return s
+
+
+def is_off_day(now: Optional[datetime.datetime] = None) -> bool:
+    """土日は休み(定例の仕事・定時チェックを動かさない)"""
+    now = now or datetime.datetime.now()
+    return bool(settings().get("weekdays_only", True)) and now.weekday() >= 5
 
 
 def update_settings(auto: Optional[bool] = None, times: Optional[List[str]] = None) -> dict:
@@ -148,6 +160,7 @@ def update_settings(auto: Optional[bool] = None, times: Optional[List[str]] = No
         if not clean:
             raise ValueError("時刻は HH:MM の形で1つ以上指定してください")
         s["times"] = clean
+        s["times_custom"] = True
     _save(SETTINGS_FILE, s)
     return s
 
@@ -267,6 +280,8 @@ async def run_check(slot: str = "") -> dict:
         "auto_started": [f"{s['department']}部: {s['title']}" for s in started],
         "running_jobs": [f"{j['department']}部: {j['title']}" for j in agent.job_list() if j["status"] == "running"],
     }
+    if not (facts["overdue"] or facts["due_today"] or facts["president_waiting"] or facts["auto_started"]):
+        return {"notification": None, "facts": facts, "skipped": "伝えることが無いので通知しない"}
     text = None
     if agent.API_KEY:
         try:
@@ -362,7 +377,7 @@ def _start_routine(r: dict) -> dict:
         except Exception as e:
             print("公式の更新情報を集められませんでした:", e)
     job = agent.start_job(r["department"], instr, r["title"], f"meeting:{r['meeting']}" if r.get("meeting") else f"routine:{r['id']}")
-    notify("定例の仕事を頼みました", f"{r['title']}を{agent.DEPT_FULL.get(r['department'], r['department'] + '部')}に頼みました。", "info")
+    # 「頼みました」の通知は出さない(2026-11-15 社長「こんなに反応しなくていい」)。結果は作業の報告と作業ログで見る
     return job
 
 
@@ -380,7 +395,7 @@ async def loop():
         except Exception as e:
             print("予定の会議でエラー:", e)
         try:
-            if settings()["auto"]:
+            if settings()["auto"] and not is_off_day():
                 start_routines()
         except Exception as e:
             print("定例の仕事でエラー:", e)
@@ -395,7 +410,7 @@ async def loop():
         try:
             s = settings()
             slot = _slot_due(datetime.datetime.now(), s["times"], s.get("last_slot", ""))
-            if s["auto"] and slot:
+            if s["auto"] and slot and not is_off_day():
                 s["last_slot"] = slot
                 _save(SETTINGS_FILE, s)
                 await run_check(slot[-5:])
@@ -410,4 +425,5 @@ def summary() -> dict:
     nxt = next((t for t in s["times"] if t > now), s["times"][0] if s["times"] else "")
     wd = "月火水木金土日"
     return {"auto": s["auto"], "times": s["times"], "next": nxt, "unread": notifications(unread_only=True),
-            "routines": [{"title": r["title"], "when": f"毎日 {r['time']}" if r.get("daily") else f"{'毎月第1' if r.get('first_week') else '毎週'}{wd[r['weekday']]}曜 {r['time']}", "on": s.get("routines", True)} for r in ROUTINES]}
+            "weekdays_only": s.get("weekdays_only", True), "off_today": is_off_day(),
+            "routines": [{"title": r["title"], "when": f"平日 毎日 {r['time']}" if r.get("daily") else f"{'毎月第1' if r.get('first_week') else '毎週'}{wd[r['weekday']]}曜 {r['time']}", "on": s.get("routines", True)} for r in ROUTINES]}
