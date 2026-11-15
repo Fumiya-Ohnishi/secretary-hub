@@ -226,7 +226,9 @@ export default function Today({ summary, jobs, onApprove, onSay, onTab, onOpenTa
   useEffect(() => { loadPosts(); const t = setInterval(() => setNow(mkNow()), 30000); return () => clearInterval(t); }, []);
   useEffect(() => { loadPosts(); }, [summary]);
   const today = ymd(now);
-  const todays = useMemo(() => (posts || []).filter((p) => (p.scheduled || "").startsWith(today)
+  // 速報・続報(week が flash-…)の下書きは、まだ点検も承認も通っていないので「今日の投稿」に出さない(2026-11-15 社長が見て紛らわしかった)
+  const todays = useMemo(() => (posts || []).filter((p) => !((p.week || "").startsWith("flash-") && ["下書き", "差し戻し"].includes(p.status)))
+    .filter((p) => (p.scheduled || "").startsWith(today)
       || (p.status === "承認済み" && p.scheduled && p.scheduled.slice(0, 10) < today))  // 遅れている投稿も今日に入れる
     .sort((a, b) => (a.scheduled || "").localeCompare(b.scheduled || "")), [posts, today]);
   const shown = todays.filter((p) => filter === "all" || p.platform === filter);
