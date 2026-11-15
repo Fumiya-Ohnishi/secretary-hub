@@ -1164,3 +1164,11 @@ select.status-sel { color-scheme: dark; }
 .vr-fields input { background: var(--bg2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; outline: none; }
 .vr-fields input:focus { border-color: var(--accent); }
 .vr-name { word-break: break-all; }
+
+/* 確認カード: 選ぶだけで答える(2026-11-15) */
+.ac-ask { display: flex; flex-direction: column; gap: 10px; margin: 8px 0; }
+.ac-why { margin: 0; line-height: 1.6; }
+.ac-opts { display: flex; flex-direction: column; gap: 8px; }
+.ac-opt { text-align: left; white-space: normal; line-height: 1.5; padding: 10px 12px; }
+.ac-opt b { margin-right: 6px; }
+.ac-opt-row { display: flex; gap: 8px; flex-wrap: wrap; }

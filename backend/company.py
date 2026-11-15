@@ -154,10 +154,11 @@ async def update_task(key: str, status: Optional[str] = None, note: Optional[str
 
 async def create_task(title: str, assignee: str = "秘書", due: Optional[str] = None,
                       note: str = "", link: str = "", status: str = "未着手",
-                      parent: str = "", next_action: str = "") -> dict:
+                      parent: str = "", next_action: str = "", report: str = "", blocks=None) -> dict:
     assignee = assignee if assignee in ASSIGNEES else "秘書"
     if notion.configured():
-        return await notion.create_task(title, assignee, due, note, link, status, parent=parent, next_action=next_action)
+        return await notion.create_task(title, assignee, due, note, link, status, parent=parent, next_action=next_action,
+                                        report=report, blocks=blocks)
     full = title + (f"({note[:160]})" if note else "")
     return _file_create(full.replace("|", "/").replace("\n", " "), assignee, due, status)  # 表が崩れないように
 

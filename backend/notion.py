@@ -121,6 +121,8 @@ def _task_from_page(p: dict) -> dict:
         "children": [r["id"].replace("-", "") for r in (pr.get("子タスク") or {}).get("relation", [])],
         "next": plain((pr.get("次の一手") or {}).get("rich_text", [])),
         "children_open": ((pr.get("子の残り") or {}).get("formula") or {}).get("number"),
+        "answer": sel("社長の答え"),  # 確認待ちで社長が選んだ答え(2026-11-15)
+        "report": (pr.get("作業報告") or {}).get("url") or "",
         "url": p.get("url", ""),
         "edited": p.get("last_edited_time", ""),
     }
@@ -181,7 +183,8 @@ async def update_task(key: str, status: Optional[str] = None, note: Optional[str
 
 async def create_task(title: str, assignee: str = "秘書", due: Optional[str] = None,
                       note: str = "", link: str = "", status: str = "未着手",
-                      parent: str = "", next_action: str = "") -> dict:
+                      parent: str = "", next_action: str = "", report: str = "",
+                      blocks: Optional[List[dict]] = None) -> dict:
     existing = await list_tasks()
     nums = [int(m.group()) for t in existing for m in [re.search(r"\d+", t["id"] or "")] if m]
     new_id = f"T-{(max(nums) + 1) if nums else 1:03d}"
@@ -202,7 +205,12 @@ async def create_task(title: str, assignee: str = "秘書", due: Optional[str] =
         props["親タスク"] = {"relation": [{"id": parent}]}
     if next_action:
         props["次の一手"] = {"rich_text": _text(next_action[:200])}
-    page = await _req("POST", "/pages", json={"parent": {"database_id": TASK_DB}, "properties": props})
+    if report:
+        props["作業報告"] = {"url": report}
+    body = {"parent": {"database_id": TASK_DB}, "properties": props}
+    if blocks:  # ページの本文(確認の中身を、開いてすぐ読める形で)
+        body["children"] = blocks[:90]
+    page = await _req("POST", "/pages", json=body)
     return _task_from_page(page)
 
 

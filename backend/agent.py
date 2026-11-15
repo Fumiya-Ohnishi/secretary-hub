@@ -1679,8 +1679,29 @@ async def resume_answered_in_notion() -> List[dict]:
         prev = json.loads(ASK_STATE.read_text()) if ASK_STATE.exists() else None
     except Exception:
         prev = None
-    now = {t["key"]: t["status"] for t in tasks if t.get("status") == "確認待ち"}
     started = []
+    # 2026-11-15: 確認待ちのまま「社長の答え」を選んだら、それで答えたことにする(状態を変えなくてよい)
+    for t in tasks:
+        if t.get("status") != "確認待ち" or not t.get("answer") or t["key"] in _resumed:
+            continue
+        _resumed.add(t["key"])
+        ans = t["answer"]
+        opts = dict(president_asks.split_options((re.search(r"選択肢:\s*([^/]+(?:/[^/]+)*?)\s*/\s*(?:おすすめ|未回答|資料|出どころ)", t.get("note", "")) or [None, ""])[1]))
+        if ans == "おすすめどおり":
+            rec = re.search(r"おすすめ:\s*([^/]+)", t.get("note", ""))
+            detail = f"社長の答え: 部署のおすすめどおり({rec.group(1).strip() if rec else 'おすすめの案'})"
+        else:
+            detail = f"社長の答え: {ans}" + (f"({opts[ans]})" if ans in opts else "")
+        decision = "reject" if ans.startswith("直してほしい") else "approve"
+        try:
+            await company.update_task(t["key"], status="完了", next_action="部署が社長の答えで続きを進める",
+                                      append_note=f"{detail}({datetime.date.today():%m/%d} 社長が選んだ)")
+        except Exception:
+            pass
+        job = resume_after_answer({**t, "prev_status": "確認待ち"}, decision, detail)
+        if job:
+            started.append(job)
+    now = {t["key"]: t["status"] for t in tasks if t.get("status") == "確認待ち" and t["key"] not in _resumed}
     if prev is not None:  # 初回は記録だけ(起動前に答えたものまで一斉に動かさない)
         by_key = {t["key"]: t for t in tasks}
         for key in prev:

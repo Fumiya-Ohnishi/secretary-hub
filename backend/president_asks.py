@@ -98,6 +98,75 @@ def _link(source: str) -> str:
     return f"{base}/blob/main/{m.group(1)}" if base else ""
 
 
+OPTION_RE = re.compile(r"(?:^|[/／\s、,])\s*([A-DＡ-Ｄ])\s*[)\):：.\s]\s*")
+
+
+def split_options(text: str) -> List[tuple]:
+    """「A 〜 / B 〜 / C 〜」を [(A, 〜), (B, 〜)] に分ける。記号が無ければ [("", 全文)]"""
+    text = (text or "").strip()
+    marks = list(OPTION_RE.finditer(text))
+    if not marks:
+        return [("", text)] if text else []
+    out = []
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+        label = m.group(1).translate(str.maketrans("ＡＢＣＤ", "ABCD"))
+        body = text[m.end():end].strip(" /／、,")
+        if body:
+            out.append((label, body))
+    return out
+
+
+def _rt(text: str, url: str = "", bold: bool = False) -> List[dict]:
+    t = {"type": "text", "text": {"content": text[:1900]}}
+    if url:
+        t["text"]["link"] = {"url": url}
+    if bold:
+        t["annotations"] = {"bold": True}
+    return [t]
+
+
+def blocks(a: dict, report_url: str = "", source_url: str = "") -> List[dict]:
+    """確認タスクのページの本文: これだけ読めば選べる形(2026-11-15 社長「何が聞きたいのか分からない・あっち行ったりこっち行ったりが面倒」)"""
+    def h(text):
+        return {"object": "block", "type": "heading_3", "heading_3": {"rich_text": _rt(text)}}
+
+    def para(text, url="", bold=False):
+        return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": _rt(text, url, bold)}}
+
+    def bullet(text, bold=False):
+        return {"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {"rich_text": _rt(text, bold=bold)}}
+
+    rec = (a.get("recommend") or "").strip()
+    rec_label = (re.match(r"\s*([A-DＡ-Ｄ])\b", rec) or re.search(r"([A-D])(?:案|が|に|で|を|。|$)", rec))
+    rec_label = rec_label.group(1) if rec_label else ""
+    out = [{"object": "block", "type": "callout", "callout": {
+        "rich_text": _rt("答え方: 上の「社長の答え」で A・B…を選ぶだけ。選ぶと秘書ハブが部署に続きを頼みます(状態はそのままで大丈夫)。"
+                         "選択肢に無い答えや直してほしいときは「その他」「直してほしい」を選び、備考に一言。"),
+        "icon": {"type": "emoji", "emoji": "👆"}}}]
+    out += [h("決めてほしいこと"), para(a.get("title", ""), bold=True)]
+    if a.get("background"):
+        out += [h("なぜ聞くか"), para(a["background"])]
+    opts = split_options(a.get("options", ""))
+    if opts:
+        out.append(h("選択肢"))
+        for label, body in opts:
+            star = " ⭐おすすめ" if label and label == rec_label else ""
+            out.append(bullet(f"{label}: {body}{star}" if label else body, bold=bool(star)))
+    if rec:
+        out += [h("部署のおすすめ"), para(rec)]
+    if a.get("if_no_answer"):
+        out += [h("答えがないとき"), para(a["if_no_answer"])]
+    links = []
+    if report_url:
+        links.append(para("📄 この確認を出した作業の報告(作業ログ)", report_url))
+    if source_url:
+        links.append(para("📁 資料(会社のフォルダ)", source_url))
+    if links:
+        out += [h("くわしく見るとき")] + links
+    return out
+
+
 def _note(a: dict, job: dict) -> str:
     parts = []
     for label, key in (("背景", "background"), ("選択肢", "options"), ("おすすめ", "recommend"),
@@ -105,7 +174,7 @@ def _note(a: dict, job: dict) -> str:
         if a.get(key):
             parts.append(f"{label}: {a[key]}")
     parts.append(f"出どころ: {job.get('department', '')}の作業「{base_title(job.get('title') or '')[:60]}」の報告")
-    parts.append("決め方: 備考に選んだ案を書いて「承認済み」に(直してほしいときは「差し戻し」)")
+    parts.append("決め方: 「社長の答え」で選ぶだけ(中身はページの本文)")
     return " / ".join(parts)
 
 
@@ -128,8 +197,11 @@ async def create_tasks(job: dict, asks: List[dict]) -> List[dict]:
         if not name or any(o == name or o.startswith(name + "(") for o in open_titles):
             continue
         # 元の仕事のタスクを親としてつなぐ(2026-11-15 進行管理。子が終わっても親を見届けるため)
-        t = await company.create_task(f"【確認】{name}", "社長", _due(a), _note(a, job), _link(a.get("source", "")), status="確認待ち",
-                                      parent=job.get("task_key") or "", next_action="社長: 備考に答えを書いて「承認済み」に")
+        report_url = ((job.get("worklog") or {}).get("url") or "") if isinstance(job.get("worklog"), dict) else ""
+        source_url = _link(a.get("source", ""))
+        t = await company.create_task(f"【確認】{name}", "社長", _due(a), _note(a, job), source_url, status="確認待ち",
+                                      parent=job.get("task_key") or "", next_action="社長: 「社長の答え」で選ぶだけ",
+                                      report=report_url, blocks=blocks(a, report_url, source_url))
         if job.get("task_key"):
             try:
                 await company.update_task(job["task_key"], next_action=f"社長の答え待ち({t.get('id', '')}「{name[:30]}」)")
