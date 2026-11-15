@@ -14,6 +14,8 @@ import { tmpdir } from "os";
 import { spawnSync } from "child_process";
 
 const HUB = process.env.HUB_URL || "http://localhost:8000";
+// 表情(mood)から声の調子(tone)を決める。台本の lines[].tone があればそちらを優先(2026-11-15 社長「もっと抑揚を」)
+const MOOD_TONE = { normal: "", pleased: "joy", thinking: "soft", pouty: "serious", surprised: "excited" };
 const FPS = Number(process.env.REEL_FPS || 30);
 const INTRO = 0.1, GAP = 0.25, OUTRO = 1.0; // 秒(2026-11-11: 冒頭の無音 0.6→0.1。0秒目から声)
 
@@ -46,7 +48,7 @@ console.log(`台本: ${spec.lines.length}行 / テーマ ${spec.theme || "B"}`);
 const voices = [];
 for (const [i, line] of spec.lines.entries()) {
   const r = await fetch(`${HUB}/api/tts`, { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text: line.speech ?? line.text, speaker: spec.speaker ?? null }) });
+    body: JSON.stringify({ text: line.speech ?? line.text, speaker: spec.speaker ?? null, tone: line.tone ?? MOOD_TONE[line.mood] ?? "" }) });
   if (!r.ok) throw new Error(`声を作れませんでした(${i + 1}行目): ${await r.text()}  ※VOICEVOX と秘書ハブが起動しているか確認`);
   voices.push(parseWav(Buffer.from(await r.arrayBuffer())));
   process.stdout.write(`  声 ${i + 1}/${spec.lines.length}\r`);

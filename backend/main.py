@@ -926,9 +926,28 @@ TONES = {
 }
 
 
+# 抑揚の強さ(2026-11-15 社長「もっと言葉に抑揚が欲しい」)。.env の VOICE_INTONATION で調整(1.0=前のまま。既定 1.3)
+VOICE_INTONATION = float(os.environ.get("VOICE_INTONATION", "1.3") or 1.3)
+
+
 def apply_tone(query: dict, tone: str, text: str) -> dict:
     query.update(TONES.get(tone or "", TONES[""]))
+    query["intonationScale"] = min(2.0, query["intonationScale"] * VOICE_INTONATION)
     t = text.strip()
+    phrases = query.get("accent_phrases") or []
+    # 文の頭を少し持ち上げ、言い切りの文末は少し下げて落ち着かせる(山と谷を作る)
+    if phrases:
+        for m in phrases[0].get("moras") or []:
+            if m.get("pitch", 0) > 0:
+                m["pitch"] += 0.08
+        if not t.endswith(("?", "？", "!", "！", "…", "...")):
+            for m in (phrases[-1].get("moras") or [])[-2:]:
+                if m.get("pitch", 0) > 0:
+                    m["pitch"] -= 0.06
+    # 「!」は勢いをつける
+    if t.endswith(("!", "！")):
+        query["intonationScale"] = min(2.0, query["intonationScale"] + 0.15)
+        query["volumeScale"] = query.get("volumeScale", 1.0) * 1.05
     # 問いかけは語尾を上げる
     if t.endswith(("?", "？")) and query.get("accent_phrases"):
         moras = query["accent_phrases"][-1].get("moras") or []
