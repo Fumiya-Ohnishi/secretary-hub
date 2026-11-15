@@ -844,6 +844,13 @@ TOOLS = [
            "parent": {"type": "string", "description": "元になったタスクのID(例 T-410)"},
            "source": {"type": "string", "description": "資料(会社のフォルダの中のパス)"}},
           ["title", "options", "recommend"]),
+    _tool("record_answer", "社長が会話の中で、確認待ちのタスクに答えたときに使う(例: 社長「T-420 は B で」「表紙は白でいい」)。"
+          "社長の答えをタスクに記録して完了にし、確認を出した部署に続きを頼む。社長自身の言葉で答えがはっきり出たときだけ使い、"
+          "推測で答えを作らない。どのタスクの答えか曖昧なら、先に社長に聞く。承認待ち(投稿・企画書の承認)には使わない(それは ask_approval)。",
+          {"task": {"type": "string", "description": "確認待ちのタスクID(例 T-420)"},
+           "answer": {"type": "string", "enum": ["A", "B", "C", "D", "おすすめどおり", "その他(備考に書く)", "直してほしい(備考に書く)"]},
+           "comment": {"type": "string", "description": "社長の言葉(そのまま。付け足しの指示があれば含める)"}},
+          ["task", "answer", "comment"]),
     _tool("update_task", "タスクの状態・期限・備考を変える。承認済み・差し戻しにはできない(それは ask_approval で社長に確認する)。",
           {"task": {"type": "string", "description": "タスクID(例 T-009)"},
            "status": {"type": "string", "enum": EDITABLE},
@@ -985,6 +992,21 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         if args.get("status"):
             tasks = [t for t in tasks if t["status"] == args["status"]]
         return json.dumps([_short(t) for t in tasks], ensure_ascii=False)
+
+    if name == "record_answer":
+        t = await company.find_task(args["task"])
+        if t.get("status") != "確認待ち":
+            return f"エラー: {t.get('id')} は今「{t.get('status')}」で、確認待ちではありません。承認待ちなら ask_approval を使ってください。"
+        ans, said = args["answer"], (args.get("comment") or "").strip()
+        opts = dict(president_asks.split_options((re.search(r"選択肢:\s*([^/]+(?:/[^/]+)*?)\s*/\s*(?:おすすめ|未回答|資料|出どころ)", t.get("note", "")) or [None, ""])[1]))
+        detail = f"社長の答え: {ans}" + (f"({opts[ans]})" if ans in opts else "") + (f" / 社長の言葉: {said}" if said else "")
+        decision = "reject" if ans.startswith("直してほしい") else "approve"
+        _resumed.add(t["key"])
+        await company.update_task(t["key"], status="完了", answer=ans, next_action="部署が社長の答えで続きを進める",
+                                  append_note=f"{detail}({datetime.date.today():%m/%d} 社長が秘書との会話で答えた)")
+        job = resume_after_answer({**t, "prev_status": "確認待ち"}, decision, detail)
+        actions.append({"type": "refresh"})
+        return f"{t.get('id')} に社長の答え「{ans}」を記録して完了にしました。" + ("確認を出した部署に続きを頼みました。" if job else "")
 
     if name == "ask_president":
         parent_key, parent_title = "", ""
@@ -1260,6 +1282,7 @@ def persona() -> str:
 画像制作/映像制作/SNS運用/品質管理/データ分析。各部署に作る担当とチェックする上司がいる)。部署への依頼は担当名(戦略・企画・ライティング等)で行う。
 社長はこの画面だけで仕事を完結させたい。頼まれたことは道具を使って実際に進め、「やりました」と結果で答える。
 - 社長に決めてほしいことがあるときは ask_president で確認タスクにする(選択肢 A・B・C とおすすめ付き。社長は選ぶだけ)。
+  社長が会話の中で確認待ちのタスクに答えたら(「T-420 は B で」など)、その場で record_answer で記録する(タスクが完了になり、部署に続きを頼む)。
   会話の中でも、選択肢を A・B・C で出して選んでもらう形を基本にする。自分で決められることは聞かずに決めて、結果を伝える(2026-11-15 社長)。
 - タスクの確認・起票・状態や期限の変更、Notion の資料を開く・要約する、画面の切り替え、部署への作業依頼、
   投稿セットの確認と承認カード、収益・フォロワー数の記録、開設アカウントの登録、週次レポートの作成ができる。
