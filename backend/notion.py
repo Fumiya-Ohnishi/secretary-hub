@@ -116,6 +116,11 @@ def _task_from_page(p: dict) -> dict:
         "week": (pr.get("週") or {}).get("number"),
         "note": plain((pr.get("備考") or {}).get("rich_text", [])),
         "link": (pr.get("資料") or {}).get("url") or "",
+        # 2026-11-15 進行管理: 親子のつながり・次の一手・終わっていない子の数
+        "parent": [r["id"].replace("-", "") for r in (pr.get("親タスク") or {}).get("relation", [])],
+        "children": [r["id"].replace("-", "") for r in (pr.get("子タスク") or {}).get("relation", [])],
+        "next": plain((pr.get("次の一手") or {}).get("rich_text", [])),
+        "children_open": ((pr.get("子の残り") or {}).get("formula") or {}).get("number"),
         "url": p.get("url", ""),
         "edited": p.get("last_edited_time", ""),
     }
@@ -149,9 +154,12 @@ def valid_date(value: str) -> str:
 
 
 async def update_task(key: str, status: Optional[str] = None, note: Optional[str] = None,
-                      append_note: Optional[str] = None, due: Optional[str] = None, link: Optional[str] = None) -> dict:
-    """due: None=変更しない / "" =期限を消す / "YYYY-MM-DD"=その日に変える"""
+                      append_note: Optional[str] = None, due: Optional[str] = None, link: Optional[str] = None,
+                      next_action: Optional[str] = None) -> dict:
+    """due: None=変更しない / "" =期限を消す / "YYYY-MM-DD"=その日に変える。next_action=次の一手(1行)"""
     props: Dict[str, dict] = {}
+    if next_action is not None:
+        props["次の一手"] = {"rich_text": _text(next_action[:200])}
     if link:
         props["資料"] = {"url": link}
     if due is not None:
@@ -172,7 +180,8 @@ async def update_task(key: str, status: Optional[str] = None, note: Optional[str
 
 
 async def create_task(title: str, assignee: str = "秘書", due: Optional[str] = None,
-                      note: str = "", link: str = "", status: str = "未着手") -> dict:
+                      note: str = "", link: str = "", status: str = "未着手",
+                      parent: str = "", next_action: str = "") -> dict:
     existing = await list_tasks()
     nums = [int(m.group()) for t in existing for m in [re.search(r"\d+", t["id"] or "")] if m]
     new_id = f"T-{(max(nums) + 1) if nums else 1:03d}"
@@ -189,6 +198,10 @@ async def create_task(title: str, assignee: str = "秘書", due: Optional[str] =
         props["備考"] = {"rich_text": _text(note)}
     if link:
         props["資料"] = {"url": link}
+    if parent:  # 元のタスク(この確認・依頼を生んだタスク)とつなぐ
+        props["親タスク"] = {"relation": [{"id": parent}]}
+    if next_action:
+        props["次の一手"] = {"rich_text": _text(next_action[:200])}
     page = await _req("POST", "/pages", json={"parent": {"database_id": TASK_DB}, "properties": props})
     return _task_from_page(page)
 

@@ -127,7 +127,14 @@ async def create_tasks(job: dict, asks: List[dict]) -> List[dict]:
         name = re.sub(r"^【[^】]*】", "", a["title"]).strip()[:90]
         if not name or any(o == name or o.startswith(name + "(") for o in open_titles):
             continue
-        t = await company.create_task(f"【確認】{name}", "社長", _due(a), _note(a, job), _link(a.get("source", "")), status="確認待ち")
+        # 元の仕事のタスクを親としてつなぐ(2026-11-15 進行管理。子が終わっても親を見届けるため)
+        t = await company.create_task(f"【確認】{name}", "社長", _due(a), _note(a, job), _link(a.get("source", "")), status="確認待ち",
+                                      parent=job.get("task_key") or "", next_action="社長: 備考に答えを書いて「承認済み」に")
+        if job.get("task_key"):
+            try:
+                await company.update_task(job["task_key"], next_action=f"社長の答え待ち({t.get('id', '')}「{name[:30]}」)")
+            except Exception:
+                pass
         open_titles.append(name)
         made.append(t)
         try:  # 作業のまとまりに「社長への確認」を1行足す(2026-11-12)
