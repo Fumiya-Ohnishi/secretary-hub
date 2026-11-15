@@ -229,7 +229,9 @@ def _job_prompt(job: dict) -> str:
               "- 社長に判断・確認してほしいことがあれば、data/tasks.md には書かず(タスクの起票は秘書ハブがする)、"
               "最後のまとめのあとに、次の形の「## 社長への確認」を必ず書く。1件ごとに件名の行を分け、"
               "件名は何についての判断かが社長に件名だけで分かる1行にする(点数・社内の略語・記号だけの件名は書かない)。"
-              "秘書ハブがこれを読んで、社長の「確認待ち」タスクにする。社長に聞くことが無ければ書かない\n" + president_asks.FORMAT_HELP,
+              "秘書ハブがこれを読んで、社長の「確認待ち」タスクにする。"
+              "**社長に本当に選んでもらうことがあるときだけ**書く。無いときは節ごと書かない(「なし」「特にありません」とも書かない。"
+              "本文にも「社長への確認はありません」などと書かない)。部署で決められることは部署で決め、報告に「〜にしました」と書く\n" + president_asks.FORMAT_HELP,
               "- 最後に、誰が何をして、どのファイルに保存したか、チェックの結果を日本語で3行以内でまとめる"]
     return "\n".join(lines)
 
@@ -361,9 +363,8 @@ def decide_task_status(job: dict, files: List[str]) -> tuple:
         return "承認待ち", f"作業完了。承認待ちの投稿 {len(waiting)}本(投稿タブで確認・承認は社長)"
     if job.get("asked_tasks"):  # 社長への確認は別のタスク(確認待ち)に分けたので、この作業は終わり
         return "完了", f"作業完了。社長への確認は {'・'.join(job['asked_tasks'])}(確認待ち)に分けました"
-    text = (job.get("title") or "") + (job.get("instruction") or "")
-    if any(w in text for w in NEEDS_PRESIDENT):
-        return "確認待ち", "作業完了。社長の判断待ち(作業タブ・作業ログで結果を確認)"
+    # 2026-11-15 社長「確認は無いと出ているのに確認タスクができる」: 依頼文の言葉だけで確認待ちにしない。
+    # 社長への確認は、報告の「## 社長への確認」から別のタスク(確認待ち)に分ける(上の asked_tasks)
     return "完了", "作業完了(秘書が完了と判定。結果は作業ログ)"
 
 
@@ -412,7 +413,7 @@ async def tidy_tasks() -> dict:
             else:
                 wd = week_tasks.get(t.get("id") or "")
                 pending = wd and any("status: 承認待ち" in p.read_text(encoding="utf-8")[:600] for p in wd.glob("[0-9]*.md"))
-                if pending or any(w in t.get("title", "") for w in NEEDS_PRESIDENT):
+                if pending:  # 件名の言葉だけで承認待ちにしない(2026-11-15)
                     status, why = "承認待ち", "作業は終わっています。社長の承認待ち"
                 else:
                     status, why = "完了", "作業は終わっています(秘書が完了と判定)"
@@ -832,6 +833,17 @@ TOOLS = [
            "note": {"type": "string"},
            "parent": {"type": "string", "description": "元になったタスクのID(例 T-410)。そのタスクから枝分かれした確認・依頼・作業なら必ず入れる(進行管理で親を見届けるため)"},
            "next_action": {"type": "string", "description": "次の一手(誰が何をするか1行)"}}, ["title", "assignee"]),
+    _tool("ask_president", "社長に判断・確認してほしいことを「確認待ち」のタスクにする(セナから社長への確認は必ずこれを使う。create_task で社長あての確認を作らない)。"
+          "社長が選ぶだけで答えられるよう、選択肢は必ず A・B・C の記号つきで短く、おすすめは記号から書き始める。本当に社長に決めてもらうことがあるときだけ使う。",
+          {"title": {"type": "string", "description": "何についての判断か、件名だけで分かる1行(例: 47週カルーセル03の表紙を、どの形で出すか)"},
+           "background": {"type": "string", "description": "なぜ聞くか(2文まで。社内の略語・点数は言い換える)"},
+           "options": {"type": "string", "description": "A 〜 / B 〜 / C 〜 の形。1つ20字くらい"},
+           "recommend": {"type": "string", "description": "おすすめ。記号から書き始める(例: A。理由は〜)"},
+           "if_no_answer": {"type": "string", "description": "答えがないときどうするか"},
+           "due": {"type": "string", "description": "期限 YYYY-MM-DD(分からなければ省略)"},
+           "parent": {"type": "string", "description": "元になったタスクのID(例 T-410)"},
+           "source": {"type": "string", "description": "資料(会社のフォルダの中のパス)"}},
+          ["title", "options", "recommend"]),
     _tool("update_task", "タスクの状態・期限・備考を変える。承認済み・差し戻しにはできない(それは ask_approval で社長に確認する)。",
           {"task": {"type": "string", "description": "タスクID(例 T-009)"},
            "status": {"type": "string", "enum": EDITABLE},
@@ -974,7 +986,26 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
             tasks = [t for t in tasks if t["status"] == args["status"]]
         return json.dumps([_short(t) for t in tasks], ensure_ascii=False)
 
+    if name == "ask_president":
+        parent_key, parent_title = "", ""
+        if args.get("parent"):
+            try:
+                pt = await company.find_task(args["parent"])
+                parent_key, parent_title = pt["key"], pt.get("title", "")
+            except Exception:
+                pass
+        fake_job = {"title": parent_title or args["title"], "department": "秘書", "department_full": "秘書室",
+                    "task_key": parent_key, "worklog": {}}
+        made = await president_asks.create_tasks(fake_job, [{k: args.get(k, "") for k in
+                                                             ("title", "background", "options", "recommend", "if_no_answer", "due", "source")}])
+        actions.append({"type": "refresh"})
+        if not made:
+            return "同じ件名の確認がまだ開いているので、作りませんでした。"
+        return f"社長への確認を作りました: {made[0].get('id', '')} {made[0].get('title', '')}(社長は「社長の答え」で選ぶだけ)"
+
     if name == "create_task":
+        if args.get("assignee") == "社長" and re.search(r"確認|判断|決めて|選んで", args.get("title", "")):
+            return "エラー: 社長への確認は ask_president で作ってください(選択肢つきで、選ぶだけで答えられる形にするため)。"
         parent = ""
         if args.get("parent"):
             try:

@@ -18,6 +18,11 @@ import company
 SECTION = re.compile(r"^#{2,3}\s*社長への確認\s*$", re.M)
 SIGNALS = ("社長の判断", "社長に確認", "社長への確認", "社長判断", "社長に決めて", "社長が決め", "社長の承認が要", "社長にお願いしたい")
 OPEN = ("未着手", "進行中", "確認待ち", "承認待ち")
+# 「社長への確認はありません」のような打ち消し(2026-11-15 社長「確認は無いと出ているのにタスクができる」)
+NO_ASK = re.compile(r"(?:社長(?:へ|に|の)?[^\n。]{0,12}(?:確認|判断|お願い|決めて)[^\n。]{0,12}(?:は|が|も)?\s*"
+                    r"(?:ありません|ない|なし|無し|不要|特に(?:なし|ありません|ない))"
+                    r"|社長への確認\s*[::]?\s*(?:\n\s*)?[-・]?\s*(?:なし|無し|特になし|ありません|該当なし))")
+EMPTY_TITLE = re.compile(r"^\s*[((]?\s*(?:なし|無し|特になし|特にありません|ありません|該当なし|不要|ない)\s*[))]?\s*[。.]?\s*$")
 FIELDS = {"背景": "background", "何について": "background", "選択肢": "options", "おすすめ": "recommend",
           "部署のおすすめ": "recommend", "未回答のとき": "if_no_answer", "期限": "due", "資料": "source"}
 
@@ -72,11 +77,16 @@ def parse(text: str) -> List[dict]:
         if f and cur is not None and f.group(1).strip() in FIELDS:
             key = FIELDS[f.group(1).strip()]
             cur[key] = (cur.get(key, "") + " " + f.group(2).strip()).strip()
-    return [a for a in asks if a.get("title")]
+    return [a for a in asks if a.get("title") and not EMPTY_TITLE.match(a["title"]) and "ありません" not in a["title"]]
+
+
+def says_no_ask(text: str) -> bool:
+    """報告が「社長への確認はない」と言っているか"""
+    return bool(NO_ASK.search(text or ""))
 
 
 def needs_extraction(text: str) -> bool:
-    return not SECTION.search(text or "") and any(w in (text or "") for w in SIGNALS)
+    return not SECTION.search(text or "") and any(w in (text or "") for w in SIGNALS) and not says_no_ask(text)
 
 
 def _repo_url() -> str:
@@ -227,7 +237,9 @@ async def extract_with_ai(job: dict) -> List[dict]:
     system = ("あなたは秘書。部署の作業報告から「社長に判断・確認してほしいこと」だけを取り出し、JSON の配列で返す。"
               "各要素は title(何についての判断か、社長が件名だけで分かる1行。社内の略語・点数・記号は使わない)・"
               "background・options・recommend・if_no_answer・due(YYYY-MM-DD か空)・source(会社のフォルダ内のパスか空)。"
-              "社長の判断が要らない報告なら [] を返す。JSON 以外は書かない。")
+              "社長の判断が要らない報告、または「社長への確認はありません」と書いてある報告なら必ず [] を返す"
+              "(「社長に確認」などの言葉が出ても、実際に社長に選んでもらうことが無ければ [])。"
+              "options は必ず「A 〜 / B 〜」の形、recommend は記号から書き始める。JSON 以外は書かない。")
     raw = await agent._one_shot(system, (job.get("output") or "")[-8000:], max_tokens=3000, model=agent.ROUTINE_MODEL)
     m = re.search(r"\[.*\]", raw, re.S)
     try:
@@ -242,11 +254,13 @@ async def from_job(job: dict) -> List[dict]:
     text = job.get("output") or ""
     asks = parse(text)
     if not asks and needs_extraction(text):
+        failed = False
         try:
             asks = await extract_with_ai(job)
         except Exception:
-            asks = []
-        if not asks:  # 取り出せなくても、確認があることだけは必ず残す
+            asks, failed = [], True
+        import agent
+        if not asks and (failed or not agent.API_KEY):  # AI で確かめられなかったときだけ、念のため残す(AI が「無い」と答えたら作らない)
             asks = [{"title": f"「{base_title(job.get('title') or '')[:50] or '部署の作業'}」で、社長に決めてほしいことがあります(中身は作業ログ)",
                      "background": "作業報告に社長の判断・確認を求める文があります。作業タブか作業ログで報告を読んでください",
                      "source": ""}]
