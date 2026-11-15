@@ -829,12 +829,15 @@ TOOLS = [
           {"title": {"type": "string", "description": "具体的なタスク名"},
            "assignee": {"type": "string", "enum": company.ASSIGNEES},
            "due": {"type": "string", "description": "期限 YYYY-MM-DD。分からなければ省略"},
-           "note": {"type": "string"}}, ["title", "assignee"]),
+           "note": {"type": "string"},
+           "parent": {"type": "string", "description": "元になったタスクのID(例 T-410)。そのタスクから枝分かれした確認・依頼・作業なら必ず入れる(進行管理で親を見届けるため)"},
+           "next_action": {"type": "string", "description": "次の一手(誰が何をするか1行)"}}, ["title", "assignee"]),
     _tool("update_task", "タスクの状態・期限・備考を変える。承認済み・差し戻しにはできない(それは ask_approval で社長に確認する)。",
           {"task": {"type": "string", "description": "タスクID(例 T-009)"},
            "status": {"type": "string", "enum": EDITABLE},
            "due": {"type": "string", "description": "新しい期限 YYYY-MM-DD(「来週金曜」などは今日の日付から計算する)。期限を消すときは空文字"},
-           "note": {"type": "string", "description": "備考に追記する内容"}}, ["task"]),
+           "note": {"type": "string", "description": "備考に追記する内容"},
+           "next_action": {"type": "string", "description": "次の一手(誰が何をするか1行)。状態が変わったら必ず書き換える"}}, ["task"]),
     _tool("ask_approval", "承認待ちのタスクについて、社長に承認か差し戻しを決めてもらう。画面に承認カードを出す。"
           "社長が「承認して」「差し戻して」と言ったときもこれを使う(確定は社長がカードのボタンか「はい」で行う)。",
           {"task": {"type": "string", "description": "タスクID"}}, ["task"]),
@@ -849,7 +852,8 @@ TOOLS = [
           "依頼と同時にタスクを起票(進行中)し、完了すると画面に通知される。",
           {"department": {"type": "string", "enum": DEPARTMENTS},
            "title": {"type": "string", "description": "タスク名(短く)"},
-           "instruction": {"type": "string", "description": "部署への具体的な指示文(目的・成果物・保存先)"}},
+           "instruction": {"type": "string", "description": "部署への具体的な指示文(目的・成果物・保存先)"},
+           "parent": {"type": "string", "description": "元になったタスクのID(例 T-410)。あるタスクの続き・一部として頼むなら必ず入れる"}},
           ["department", "title", "instruction"]),
     _tool("get_jobs", "部署に依頼した作業の状況(実行中・完了・エラーと結果)を取得する。", {}, []),
     _tool("get_content", "週の投稿セット(台本・キャプション・状態)を取得し、画面に投稿セットを表示する。week 省略時は最新の週。",
@@ -940,7 +944,13 @@ TOOLS = [
 
 
 def _short(t: dict) -> dict:
-    return {k: t.get(k) for k in ("id", "title", "assignee", "status", "due", "note") if t.get(k)}
+    out = {k: t.get(k) for k in ("id", "title", "assignee", "status", "due", "note", "next") if t.get(k)}
+    if t.get("children"):  # 進行管理: 子の数と、終わっていない子の数
+        out["children"] = len(t["children"])
+        out["children_open"] = t.get("children_open")
+    if t.get("parent"):
+        out["has_parent"] = True
+    return out
 
 
 async def _find_doc(query: str) -> Optional[dict]:
@@ -965,7 +975,14 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         return json.dumps([_short(t) for t in tasks], ensure_ascii=False)
 
     if name == "create_task":
-        t = await company.create_task(args["title"], args.get("assignee", "秘書"), args.get("due"), args.get("note", ""))
+        parent = ""
+        if args.get("parent"):
+            try:
+                parent = (await company.find_task(args["parent"]))["key"]
+            except Exception:
+                parent = ""
+        t = await company.create_task(args["title"], args.get("assignee", "秘書"), args.get("due"), args.get("note", ""),
+                                      parent=parent, next_action=args.get("next_action", ""))
         actions.append({"type": "refresh"})
         return f"起票しました: {t['id']} {t['title']}"
 
@@ -974,7 +991,7 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
         if status in ("承認済み", "差し戻し"):
             return "エラー: 承認・差し戻しは社長が行います。ask_approval でカードを出してください。"
         t = await company.find_task(args["task"])
-        t = await company.update_task(t["key"], status=status, due=args.get("due"),
+        t = await company.update_task(t["key"], status=status, due=args.get("due"), next_action=args.get("next_action"),
                                       append_note=args.get("note") and f"{args['note']}({datetime.date.today():%m/%d})")
         actions.append({"type": "refresh"})
         return f"更新しました: {t['id']} 状態={t['status']} 期限={t['due'] or 'なし'}"
@@ -1010,7 +1027,14 @@ async def run_tool(name: str, args: dict, actions: List[dict]) -> str:
     if name == "delegate_work":
         task_key = None
         try:
-            t = await company.create_task(args["title"], args["department"], note="秘書ハブから部署へ依頼")
+            parent = ""
+            if args.get("parent"):
+                try:
+                    parent = (await company.find_task(args["parent"]))["key"]
+                except Exception:
+                    parent = ""
+            t = await company.create_task(args["title"], args["department"], note="秘書ハブから部署へ依頼", parent=parent,
+                                          next_action=f"{args['department']}部が作業中")
             t = await company.update_task(t["key"], status="進行中")
             task_key = t["key"]
         except Exception:

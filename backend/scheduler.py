@@ -269,6 +269,17 @@ async def run_check(slot: str = "") -> dict:
     content_waiting = [w for w in content.list_weeks() if w["counts"].get("承認待ち")]
     rule_props = corrections.proposals()
     started = await advance()
+    # 進行管理(2026-11-15): 子が全部終わったのに親が開いたまま/1週間動いていない親を見つける
+    week_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).isoformat()
+    parents = [t for t in open_t if t.get("children")]
+    parents_ready = [t for t in parents if t.get("children_open") == 0]
+    parents_stalled = [t for t in parents if t not in parents_ready and (t.get("edited") or "") < week_ago]
+    for t in parents_ready:
+        if not (t.get("next") or "").startswith("秘書: 子のタスクが全部終わりました"):
+            try:
+                await company.update_task(t["key"], next_action="秘書: 子のタスクが全部終わりました。締めくくり(次の工程か完了)を判断する")
+            except Exception:
+                pass
 
     facts = {
         "time": slot or datetime.datetime.now().strftime("%H:%M"), "today": today,
@@ -279,8 +290,11 @@ async def run_check(slot: str = "") -> dict:
         + [f"ルール追加の提案「{p['rule']}」" for p in rule_props],
         "auto_started": [f"{s['department']}部: {s['title']}" for s in started],
         "running_jobs": [f"{j['department']}部: {j['title']}" for j in agent.job_list() if j["status"] == "running"],
+        "parents_ready": [f"{t['id']} {t['title']}" for t in parents_ready],
+        "parents_stalled": [f"{t['id']} {t['title']}(次の一手: {t.get('next') or '未記入'})" for t in parents_stalled],
     }
-    if not (facts["overdue"] or facts["due_today"] or facts["president_waiting"] or facts["auto_started"]):
+    # 知らせるのは「社長の判断が要るとき」「締め切りを過ぎたとき」「親タスクが止まっている・締めくくれるとき」だけ(2026-11-15 社長・参考動画)
+    if not (facts["overdue"] or facts["president_waiting"] or facts["parents_ready"] or facts["parents_stalled"]):
         return {"notification": None, "facts": facts, "skipped": "伝えることが無いので通知しない"}
     text = None
     if agent.API_KEY:
@@ -288,8 +302,9 @@ async def run_check(slot: str = "") -> dict:
             raw = await agent._one_shot(
                 agent.persona(),
                 f"定時チェック({facts['time']})の結果です。\n{json.dumps(facts, ensure_ascii=False)}\n\n"
-                "社長への通知文を書いてください。「今日やること」を中心に、遅れていて間に合わないものは"
-                "「今日から動かないと間に合いません」のように先回りして伝え、自動で部署に依頼したものがあれば報告する。"
+                "社長への通知文を書いてください。伝えるのは、社長の判断が要るもの・締め切りを過ぎたもの・"
+                "子のタスクは終わったのに親が締めくくれていないもの(parents_ready)・1週間動いていない親タスク(parents_stalled)だけ。"
+                "遅れていて間に合わないものは「今日から動かないと間に合いません」のように先回りして伝える。"
                 "社長にお願いすること(承認など)があれば最後に1つだけ。3文以内の話し言葉。", 1200, model=agent.ROUTINE_MODEL)
             text = agent.split_mood(raw)[0]
         except Exception:
@@ -302,6 +317,8 @@ async def run_check(slot: str = "") -> dict:
             parts.append("、".join(facts["auto_started"]) + "に自動で依頼しました。")
         if facts["president_waiting"]:
             parts.append(f"社長の判断待ちが{len(facts['president_waiting'])}件あります。")
+        if facts["parents_ready"] or facts["parents_stalled"]:
+            parts.append(f"締めくくり待ちの親タスクが{len(facts['parents_ready'])}件、1週間止まっている親タスクが{len(facts['parents_stalled'])}件あります。")
         text = "".join(parts)
     n = notify(f"{SECRETARY_NAME()}の定時チェック({facts['time']})", text, "check")
     return {"notification": n, "facts": facts}
