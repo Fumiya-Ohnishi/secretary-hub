@@ -38,6 +38,16 @@ QUESTIONS = [
              "1本ずつ: アカウント名・URL・再生数(分かれば)・最初の3秒で何をしているか・テロップの出し方・使っている音(曲名か音源名)・長さ"},
     {"id": "trend_audio", "when": "週1回(リールを作る前に)",
      "text": f"{ACCOUNT} で、今リールでよく使われている音源・曲を10個教えて。音源名・使っている投稿の数(分かれば)・どんな雰囲気か・代表的なリールの URL"},
+    # 2026-11-15 社長が A「Museはネタ集め、書くのは当社で」: note 別アカウント(段取りおばけ)の記事のネタ集め。書くのは当社
+    {"id": "sub_top", "when": "毎週月曜の朝(段取りおばけの note 用)",
+     "text": "この1週間、Instagram と Threads で、暮らし・家事・料理・時短・占い・節約のジャンルで反応が多い投稿を、ジャンルごとに3つずつ教えて。"
+             "アカウント名・最初の一言・どんな悩みの人向けか・保存やコメントの多さ(分かれば)・URL を1行ずつ"},
+    {"id": "sub_worries", "when": "毎週月曜の朝(段取りおばけの note 用)",
+     "text": "この1週間、Instagram と Threads の投稿やコメントで多い悩み・質問を、暮らし・家事・料理・時短・占い・節約のジャンルごとに5つずつ教えて。"
+             "悩みはなるべくそのままの言い方で、代表的な投稿の URL を添えて"},
+    {"id": "sub_rising", "when": "毎週月曜の朝(段取りおばけの note 用)",
+     "text": "今 Instagram と Threads で話題になり始めた、暮らし・家事・料理・時短・占い・節約の新しいテーマ(季節の行事・新商品・流行の言葉など)を10個。"
+             "それぞれ代表的な投稿の URL つきで"},
     {"id": "flash", "when": "気になったとき(1日1回まで。昼休みなど)",
      "text": f"{ACCOUNT} で、今日 Instagram で多くの人が投稿している AI の新機能の話題は? まだ話題になり始めたばかりのものを優先して。URL つきで"},
 ]
@@ -99,6 +109,12 @@ def weekly_task_blocks() -> list:
             "貼ると、このタスクは自動で完了になります(秘書が週次リサーチで読みます)")}},
          {"object": "block", "type": "heading_2", "heading_2": {"rich_text": _rt("聞くこと(右上のコピーで1つずつ)")}}]
     for i, q in enumerate(qs, 1):
+        b.append({"object": "block", "type": "paragraph", "paragraph": {"rich_text": _rt(f"{i}.")}})
+        b.append({"object": "block", "type": "code", "code": {"language": "plain text", "rich_text": _rt(q["text"])}})
+    b += [{"object": "block", "type": "heading_2", "heading_2": {"rich_text": _rt("段取りおばけ(note 別アカウント)のネタ集め")}},
+          {"object": "block", "type": "paragraph", "paragraph": {"rich_text": _rt(
+              "答えは同じく資料室に貼る(種類で「sub_」の質問を選ぶ)。記事にするのは当社(収益化部)。Muse の答えは材料にだけ使い、文章は写さない")}}]
+    for i, q in enumerate([q for q in QUESTIONS if q["id"].startswith("sub_")], len(qs) + 1):
         b.append({"object": "block", "type": "paragraph", "paragraph": {"rich_text": _rt(f"{i}.")}})
         b.append({"object": "block", "type": "code", "code": {"language": "plain text", "rich_text": _rt(q["text"])}})
     b += [{"object": "block", "type": "heading_2", "heading_2": {"rich_text": _rt("ついでに確かめること")}},
