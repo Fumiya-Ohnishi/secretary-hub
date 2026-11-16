@@ -71,8 +71,40 @@ def extra_questions() -> List[dict]:
             q, why, dept, until = m.groups()
             if not q.startswith("@"):
                 q = f"{ACCOUNT} で、{q}" if "段取りおばけ" not in q and "sub" not in dept.lower() else q
-            out.append({"id": f"extra_{len(out) + 1}", "when": f"今週だけ({dept or '部署'}・{until[5:]}まで)", "text": q, "why": why, "extra": True})
+            import hashlib
+            out.append({"id": "extra_" + hashlib.md5(q.encode("utf-8")).hexdigest()[:6], "when": f"今週だけ({dept or '部署'}・{until[5:]}まで)", "text": q, "why": why, "extra": True})
     return out
+
+
+def _week_start() -> datetime.datetime:
+    d = datetime.date.today()
+    return datetime.datetime.combine(d - datetime.timedelta(days=d.weekday()), datetime.time())
+
+
+def answered_ids() -> dict:
+    """聞き終わった質問(2026-11-16 社長「聞いた質問は消えていくようにできない?」)。
+    決まった質問は今週(月曜から)答えを貼ったもの、今週だけの質問は一度でも答えを貼ったもの。{id: 貼った日時}"""
+    root = company.COMPANY_DIR / OUT_REL
+    out = {}
+    if not root.exists():
+        return out
+    start = _week_start()
+    for p in root.glob("20*_*.md"):
+        try:
+            when = datetime.datetime.strptime(p.name[:15], "%Y-%m-%d_%H%M")
+        except ValueError:
+            continue
+        kind = p.stem[16:]
+        if kind.startswith("extra_") or when >= start:
+            out[kind] = max(out.get(kind, ""), when.isoformat(timespec="minutes"))
+    return out
+
+
+def remaining_this_week() -> List[dict]:
+    """今週まだ聞いていない質問(月曜の決まった質問・段取りおばけ・部署からの今週だけの質問)"""
+    done = answered_ids()
+    want = [q for q in all_questions() if q["id"] in WEEKLY_IDS or q["id"].startswith("sub_") or q.get("extra")]
+    return [q for q in want if q["id"] not in done]
 
 
 def all_questions() -> List[dict]:
@@ -134,7 +166,7 @@ def weekly_task_blocks() -> list:
     qs = [q for q in QUESTIONS if q["id"] in WEEKLY_IDS]
     b = [{"object": "block", "type": "callout", "callout": {"icon": {"type": "emoji", "emoji": "👆"}, "rich_text": _rt(
             "やること(約5分): Instagram の Muse に、下の質問を1つずつコピーして聞く → 答えを秘書ハブの「資料室 > 📱 Muse の答え」に貼る。"
-            "貼ると、このタスクは自動で完了になります(秘書が週次リサーチで読みます)")}},
+            "聞き終わった質問は資料室の選択欄から消えます。全部貼ると、このタスクは自動で完了になります")}},
          {"object": "block", "type": "heading_2", "heading_2": {"rich_text": _rt("聞くこと(右上のコピーで1つずつ)")}}]
     for i, q in enumerate(qs, 1):
         b.append({"object": "block", "type": "paragraph", "paragraph": {"rich_text": _rt(f"{i}.")}})
@@ -170,8 +202,10 @@ async def create_weekly_task() -> dict:
 
 
 async def close_weekly_task():
-    """答えが貼られたら、開いている【Muse】のタスクを完了にする"""
+    """今週の質問を全部聞き終わったら、開いている【Muse】のタスクを完了にする(1つ貼っただけでは閉じない)"""
+    if remaining_this_week():
+        return
     for t in await company.list_tasks():
         if (t.get("title") or "").startswith(TASK_PREFIX) and t.get("status") not in ("完了", "承認済み"):
             await company.update_task(t["key"], status="完了", next_action="なし(秘書が週次リサーチで読む)",
-                                      append_note=f"{datetime.date.today():%m/%d} 答えが資料室に貼られた(秘書ハブ)")
+                                      append_note=f"{datetime.date.today():%m/%d} 今週の質問の答えが全部資料室に貼られた(秘書ハブ)")

@@ -113,6 +113,11 @@ function MuseBox({ notify }) {
   const load = () => getMuse().then(setD).catch(() => {});
   useEffect(() => { load(); }, []);
   if (!d) return null;
+  // 聞き終わった質問は消える(2026-11-16 社長)。選んでいた質問が消えたら、残りの先頭に移る
+  if (kind !== "custom" && !d.questions.some((x) => x.id === kind)) {
+    const first = d.questions.find((x) => x.extra) || d.questions.find((x) => /月曜/.test(x.when)) || d.questions[0];
+    setTimeout(() => setKind(first ? first.id : "custom"), 0);
+  }
   const custom = kind === "custom";
   const q = d.questions.find((x) => x.id === kind);
   const groups = [
@@ -131,7 +136,9 @@ function MuseBox({ notify }) {
   return (
     <section className="card muse-box">
       <div className="card-head"><h3>📱 Muse の答え</h3></div>
-      <div className="muted small" style={{ marginBottom: 12 }}>Instagram の Muse に聞いた答えを貼ります。週次リサーチと速報チェックで部署が読みます。</div>
+      <div className="muted small" style={{ marginBottom: 12 }}>Instagram の Muse に聞いた答えを貼ります。週次リサーチと速報チェックで部署が読みます。
+        {d.remaining > 0 ? <b style={{ color: "var(--warn)" }}> 今週あと {d.remaining} 個</b> : <b style={{ color: "var(--ok)" }}> 今週の質問は全部聞きました</b>}
+        {d.answered?.length > 0 && <span>(聞き終わった質問は一覧から消えています: {d.answered.length}個)</span>}</div>
       <div className="muse-step"><b>1. 何を聞いたか</b>
         <select value={kind} onChange={(e) => setKind(e.target.value)} style={{ width: "100%" }}>
           <option value="custom">✏️ 自分で考えた質問(下に書く)</option>
