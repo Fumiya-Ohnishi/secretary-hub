@@ -116,9 +116,10 @@ function MuseBox({ notify }) {
   const custom = kind === "custom";
   const q = d.questions.find((x) => x.id === kind);
   const groups = [
-    ["本アカウント(毎週月曜の朝)", d.questions.filter((x) => !x.id.startsWith("sub_") && /月曜/.test(x.when))],
+    ["今週の追加の質問(部署から)", d.questions.filter((x) => x.extra)],
+    ["本アカウント(毎週月曜の朝)", d.questions.filter((x) => !x.extra && !x.id.startsWith("sub_") && /月曜/.test(x.when))],
     ["段取りおばけの note 用(毎週月曜の朝)", d.questions.filter((x) => x.id.startsWith("sub_"))],
-    ["ときどき", d.questions.filter((x) => !x.id.startsWith("sub_") && !/月曜/.test(x.when))],
+    ["ときどき", d.questions.filter((x) => !x.extra && !x.id.startsWith("sub_") && !/月曜/.test(x.when))],
   ];
   const copy = async (t) => { try { await navigator.clipboard.writeText(t); notify("質問をコピーしました。Muse に貼ってください", "ok"); } catch { notify("コピーできませんでした。長押しで選んでください", "error"); } };
   const save = async () => {
@@ -141,7 +142,7 @@ function MuseBox({ notify }) {
         {custom
           ? <textarea rows={3} value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Muse に聞いた文をそのまま書く(例: note で今売れているジャンルを、公式の資料を元に3つ教えて)" style={{ width: "100%", marginTop: 8 }} />
           : q && <div className="muse-q" style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 8, padding: "10px 12px", border: "1px solid var(--line, #2a3a4a)", borderRadius: 8 }}>
-              <span style={{ flex: 1, lineHeight: 1.6 }}>{q.text}</span>
+              <span style={{ flex: 1, lineHeight: 1.6 }}>{q.text}{q.why && <span className="muted small" style={{ display: "block" }}>なぜ聞くか: {q.why}</span>}</span>
               <button className="btn sm" onClick={() => copy(q.text)}>コピー</button></div>}
       </div>
       <div className="muse-step" style={{ marginTop: 14 }}><b>2. Muse の答え</b>

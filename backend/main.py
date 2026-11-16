@@ -837,7 +837,7 @@ def list_video_refs():
 @app.get("/api/muse")
 def get_muse():
     import muse
-    return {"questions": muse.QUESTIONS, "recent": muse.recent(14)}
+    return {"questions": muse.all_questions(), "recent": muse.recent(14)}
 
 
 @app.post("/api/muse")
