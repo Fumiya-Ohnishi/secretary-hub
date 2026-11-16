@@ -1183,3 +1183,15 @@ select.status-sel { color-scheme: dark; }
 .muse-box select:focus, .muse-box textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .muse-box textarea::placeholder { color: var(--mute); }
 .muse-box .muse-q { background: var(--panel2); border-color: var(--line) !important; }
+
+/* note のマガジン(2026-11-16) */
+.mag-line{margin:0 0 10px;font-size:13px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mag-chip{display:inline-block;font-size:12px;border:1px solid var(--line2);border-radius:999px;padding:1px 10px;color:var(--text)}
+.mag-chip.ok{border-color:var(--ok);color:var(--ok)}
+.mag-chip.todo{border-color:var(--warn);color:var(--warn)}
+.mag-chip.new{border-color:var(--ng);color:var(--ng)}
+.mag-todo{background:var(--panel2);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:13px;color:var(--warn)}
+.mag-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.mag-row:first-child{border-top:none}
+.mag-main{flex:1;display:flex;flex-wrap:wrap;gap:8px;align-items:center;cursor:pointer;min-width:240px}
+.mag-posts{width:100%;padding:4px 0 4px 12px}

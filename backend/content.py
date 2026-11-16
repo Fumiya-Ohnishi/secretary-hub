@@ -119,7 +119,15 @@ def _post(path: Path) -> dict:
         "caption": next((s["text"] for s in secs if "キャプション" in s["title"]), ""),
         "article": _article(meta, secs) if meta.get("platform") == "note" or meta.get("format") == "article" else None,
         "week": path.parent.name,
+        "price": meta.get("price", ""),
+        "magazine": meta.get("magazine", ""),  # 2026-11-16: 入れる note のマガジン(なし=入れない)
     }
+    if d["platform"] == "note":
+        try:
+            import magazines
+            d["magazine_info"] = magazines.info_for(d["magazine"], d["account"])
+        except Exception:
+            d["magazine_info"] = []
     d["drive_folder"] = f"投稿素材/{path.parent.name}/{POST_DIR_NAME}/{post_folder_name(d)}"  # 投稿ごとのフォルダ(承認待ち・承認済みのとき作る)
     return d
 

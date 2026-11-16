@@ -79,6 +79,24 @@ export function NotePreview({ post, onClose }) {
     </div>, document.body);
 }
 
+/** この記事を入れる note のマガジン(2026-11-16 社長「どのマガジンに入れるか・入れないか・新しく作るかが分かった方がいい」) */
+export function MagazineLine({ post }) {
+  if (post.platform !== "note") return null;
+  const info = post.magazine_info || [];
+  const none = /^(なし|入れない)$/.test((post.magazine || "").trim());
+  return (
+    <div className="mag-line">
+      <b>📚 入れるマガジン:</b>{" "}
+      {info.length > 0 ? info.map((m) => (
+        <span key={m.name} className={`mag-chip ${m.created ? "ok" : m.known ? "todo" : "new"}`}>
+          {m.name}{m.created ? "" : m.known ? "(まだ作っていない→作ってから入れる)" : "(新しいマガジン→名前・説明・バナーを作ってから)"}
+        </span>
+      )) : none ? <span className="mag-chip">どのマガジンにも入れない</span>
+        : <span className="mag-chip new">未定(部署が決める)</span>}
+    </div>
+  );
+}
+
 export function NoteArticle({ post, notify }) {
   const a = post.article;
   const [view, setView] = useState("split");  // split = 分けて見る / md = Markdown(コードブロック)
@@ -91,6 +109,7 @@ export function NoteArticle({ post, notify }) {
   const tags = (a.tags || []).map((t) => "#" + t).join(" ");
   return (
     <div className="note-art">
+      <MagazineLine post={post} />
       {preview && <NotePreview post={post} onClose={() => setPreview(false)} />}
       <div className="na-bar">
         <div className="seg">

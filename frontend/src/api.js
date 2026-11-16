@@ -123,3 +123,5 @@ export const getMuse = () => call("GET", "/api/muse");
 export const saveMuse = (text, kind, question = "") => call("POST", "/api/muse", { text, kind, question });
 export const connectToken = (platform, account, token) => call("POST", "/api/connect_token", { platform, account, token });
 export const resumeVideoRef = (folder) => call("POST", "/api/video_refs/resume", { folder });
+export const getMagazines = (account = "") => call("GET", `/api/magazines?account=${encodeURIComponent(account)}`);
+export const markMagazineCreated = (id, created = true) => call("POST", `/api/magazines/${encodeURIComponent(id)}/created`, { created });
