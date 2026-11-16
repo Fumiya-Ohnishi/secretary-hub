@@ -295,6 +295,9 @@ function MediaPanel({ post }) {
           <div className="sec-title">投稿する素材<span className="muted small">({media.length}点・この順で選ぶ)</span>
             {missing > 0 && <span className="badge s-ng">未保存 {missing}</span>}
             {media.some((m) => m.exists) && <button className="btn sm primary pv-open-btn" onClick={() => setPreview({ start: 0 })}>投稿の見え方で見る</button>}</div>
+          {post.drive_folder && ["承認待ち", "承認済み", "投稿予定"].includes(post.status) && (
+            <div className="muted small">📁 Google ドライブ: {post.drive_folder}(この投稿の画像・動画とキャプションだけが、上げる順の名前で入っています)</div>
+          )}
           <div className="m-grid">
             {media.map((m) => (
               <div key={m.path} className="m-item">

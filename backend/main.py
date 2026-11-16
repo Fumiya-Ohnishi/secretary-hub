@@ -235,6 +235,7 @@ async def media_loop():
                 r = await asyncio.to_thread(content.cleanup_media)
                 if r["count"]:
                     print(f"  使われていない作業用・テストの画像・動画 {r['count']} 件({r['mb']}MB)を片づけました(ドライブのゴミ箱で30日は戻せます)")
+            await asyncio.to_thread(content.organize_posts)  # 投稿ごとのフォルダ(媒体別)に、使う画像・動画とキャプションを写す
             gone = await asyncio.to_thread(content.prune_local_media)  # 写し終わった古いものを Mac から消す
             if gone:
                 print(f"  ドライブに写し終わった古い画像・動画 {gone} 件を Mac から消しました(ドライブには残っています)")
