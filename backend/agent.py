@@ -219,6 +219,7 @@ def _job_prompt(job: dict) -> str:
               "(キャラクターをそろえるときは `--ref <今の絵>` を付ける)。キーは秘書ハブが渡すので、**会社のフォルダで API キーを探さない・置かない**。"
               "作った画像は data/asset_rights.md に「AI生成(OpenAI)・プロンプトの要約・日付」を記録する",
               "- 社長の画面でしか見えない Instagram の流行や数字を Muse に聞いてほしいときは、strategy/research/muse/_extra.md に1行「- 質問 | なぜ聞くか | 部署名 | 期限 YYYY-MM-DD」を足す(月曜の社長の Muse の確認タスクと資料室の選択欄に出る。1回に2つまで・期限は1週間以内)。\n"
+              "- note の投稿ファイルには front matter に `magazine:`(入れるマガジンの名前。data/magazines.json の名前どおり。入れないときは「なし」)を必ず書く(playbooks/note.md「マガジン」)。\n"
               "- 試しの画像・点検用のコマ・比べるための案は、週フォルダの _work/ か、名前に _test・_check・_compare を付けて作る(どの投稿にも使われないものは秘書ハブが7日後に自動で片づける)。\n"
               "- 完成した画像・動画は git に入れない。既存の動画・画像は環境変数 MEDIA_DIR の Google ドライブ(週ごとのフォルダ)にある。"
               "比べるときはそこから読み、新しく書き出したものは content/output/YYYY-WW/ に置く(秘書ハブがドライブへ写す)",

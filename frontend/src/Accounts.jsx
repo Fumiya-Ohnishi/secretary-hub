@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { connectToken, getContentWeeks, getAccount, getAccounts, addInsight, addImprovement, recordFollowers, markCrossposted, recordRevenue,
+import { connectToken, getMagazines, markMagazineCreated, getContentWeeks, getAccount, getAccounts, addInsight, addImprovement, recordFollowers, markCrossposted, recordRevenue,
          getProposals, addProposal, patchProposal, proposalRevenue, syncStats, registerAccount, addAccountSet, startMeeting, getStamps, decideStamp } from "./api.js";
 import Content, { PostPreview, PostResults } from "./Content.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
@@ -190,6 +190,7 @@ function Numbers({ data, platform, account = "main", notify, onDone }) {
   return (
     <>
       <AutoStats data={data} platform={platform} account={account} notify={notify} onDone={onDone} />
+      {platform === "note" && <MagazinesCard account={account} notify={notify} />}
       <div className="card">
         <div className="card-head"><h3>フォロワー数の推移</h3></div>
         {data.followers.length ? <LineChart series={series} unit="人" />
@@ -437,6 +438,40 @@ function Proposals({ notify, onChanged }) {
 }
 
 /** 公式の仕組み(API)で自動で取った数字(2026-11-12 社長: つないだアカウントは自動で数字を取りたい) */
+/** note のマガジンの一覧(2026-11-16 社長「どのマガジンに入れるか・作るか・溜まったら分けるかを管理したい」) */
+function MagazinesCard({ account, notify }) {
+  const [d, setD] = useState(null);
+  const [open, setOpen] = useState(null);
+  const load = () => getMagazines(account).then(setD).catch(() => {});
+  useEffect(() => { load(); }, [account]);
+  if (!d) return null;
+  const made = async (m, v) => { try { await markMagazineCreated(m.id, v); notify(v ? `「${m.name}」を作った、と記録しました` : "取り消しました", "ok"); load(); } catch (e) { notify(e.message, "error"); } };
+  return (
+    <div className="card mag-card">
+      <div className="card-head"><h3>📚 マガジン</h3><span className="muted small">記事ごとの「入れるマガジン」は、投稿タブの note の記事の上に出ます</span></div>
+      {d.todo.length > 0 && <div className="mag-todo">{d.todo.map((t, i) => <div key={i}>☐ {t.text}</div>)}</div>}
+      <div className="mag-list">
+        {d.magazines.map((m) => (
+          <div key={m.id} className="mag-row">
+            <div className="mag-main" onClick={() => setOpen(open === m.id ? null : m.id)}>
+              <b>{m.name}</b>
+              <span className={`mag-chip ${m.created ? "ok" : "todo"}`}>{m.created ? `作成済み(${m.created.slice(5)})` : "まだ作っていない"}</span>
+              <span className="muted small">公開 {m.public}本・これから {m.coming}本{m.paid ? `(うち有料 ${m.paid}本)` : ""}</span>
+            </div>
+            {!m.created ? <button className="btn sm" onClick={() => made(m, true)}>note で作った</button>
+              : <button className="btn sm ghost" onClick={() => made(m, false)} title="作っていなかったときだけ">取り消す</button>}
+            {open === m.id && <div className="mag-posts">
+              {m.posts.length ? m.posts.map((p) => <div key={p.id} className="muted small">{p.week} {p.file} ・ {p.status} ・ {p.title}</div>)
+                : <div className="muted small">まだ記事がありません</div>}
+              {m.split_rule && <div className="muted small">分ける目安: {m.split_rule}</div>}
+            </div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Meta の画面で発行したトークンを貼るだけでつなぐ(2026-11-16。.env をテキストエディタで開かなくてよい) */
 function TokenBox({ platform, account, notify, onDone }) {
   const [tok, setTok] = useState("");

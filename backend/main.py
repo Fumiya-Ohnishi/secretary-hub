@@ -901,6 +901,22 @@ async def connect_token(body: dict):
     return {"key": key, "result": r.get(f"{account}:{platform}", {})}
 
 
+# ---------- note のマガジン(2026-11-16 社長) ----------
+@app.get("/api/magazines")
+def get_magazines(account: str = ""):
+    import magazines
+    return magazines.overview(account)
+
+
+@app.post("/api/magazines/{mag_id}/created")
+def magazine_created(mag_id: str, body: dict):
+    import magazines
+    try:
+        return magazines.mark_created(mag_id, bool(body.get("created", True)))
+    except KeyError as e:
+        return err(e, 404)
+
+
 @app.get("/api/notifications")
 def get_notifications():
     return {"notifications": scheduler.notifications()}
