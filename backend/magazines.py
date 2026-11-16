@@ -13,7 +13,7 @@ import company
 NONE_WORDS = ("なし", "入れない", "-", "none")
 PUBLIC = ("投稿済み",)
 COMING = ("承認済み", "承認待ち", "投稿予定")
-SPLIT_PAID = 4  # 有料記事がこの数そろったら、有料の棚を分ける(P-075)
+SPLIT_PAID = 4  # 有料記事がこの数そろったら、有料の棚を分ける(P-078)
 
 
 def _path():
@@ -70,7 +70,7 @@ def overview(account: str = "") -> Dict:
         if not m.get("created") and (pub or coming):
             todo.append({"kind": "create", "magazine": m["name"], "text": f"「{m['name']}」を note で作って、記事を入れる(入れる記事 {len(pub) + len(coming)}本)"})
         if m.get("account") != "main" and len(paid) >= SPLIT_PAID and "有料" not in m["name"]:
-            todo.append({"kind": "split", "magazine": m["name"], "text": f"「{m['name']}」の有料記事が{len(paid)}本そろった。有料の棚を分ける時期(P-075)"})
+            todo.append({"kind": "split", "magazine": m["name"], "text": f"「{m['name']}」の有料記事が{len(paid)}本そろった。有料の棚を分ける時期(P-078)"})
         rows.append(row)
     known = {m["name"] for m in registry()}
     loose = [p for p in posts if (not account or p.get("account") == account)
