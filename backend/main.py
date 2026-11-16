@@ -818,6 +818,15 @@ async def upload_video_ref(request: Request, name: str = "", note: str = ""):
     return video_ref.start(ref_id, name.strip() or Path(filename).stem, note.strip())
 
 
+@app.post("/api/video_refs/resume")
+def resume_video_ref(body: dict):
+    import video_ref
+    try:
+        return video_ref.resume(body.get("folder", ""))
+    except ValueError as e:
+        return err(e, 400)
+
+
 @app.get("/api/video_refs")
 def list_video_refs():
     import video_ref

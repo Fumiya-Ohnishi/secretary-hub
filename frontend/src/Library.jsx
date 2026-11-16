@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getKnowledge, searchKnowledge, addPref, decidePref, listVideoRefs, uploadVideoRef, getMuse, saveMuse } from "./api.js";
+import { getKnowledge, searchKnowledge, addPref, decidePref, listVideoRefs, uploadVideoRef, getMuse, saveMuse, resumeVideoRef } from "./api.js";
 import Md from "./Md.jsx";
 
 /* 資料室: 会社の知見の棚。社長の好み(確定/確認待ち)の確認、知見の検索、最近の知見 */
@@ -30,7 +30,7 @@ function PendingPref({ p, onDone, notify }) {
 /* 参考動画の分析: 社長が送った動画を、秘書ハブがカット・音量・言葉・静止画に分けて、映像制作部が秒ごとに分析する(2026-11-13)
    11/13 社長「アップロードしたか分かりにくい・左に寄りすぎ」→ 置き場所を広く、送信中は進み具合、送ったら結果を枠の中に出す */
 const fmtMB = (n) => `${(n / 1024 / 1024).toFixed(1)}MB`;
-const STATUS_TONE = (st) => /失敗|止まり/.test(st) ? "ng" : /分析中|作成中/.test(st) ? "run" : "ok";
+const STATUS_TONE = (st) => /失敗|止まり/.test(st) ? "ng" : /分析中|作成中/.test(st) ? "run" : st === "資料" ? "" : "ok";
 
 function VideoRefs({ notify }) {
   const [items, setItems] = useState([]);
@@ -81,7 +81,8 @@ function VideoRefs({ notify }) {
       {result && <div className={`vr-msg ${result.tone}`}>{result.tone === "ok" ? "✓ " : result.tone === "ng" ? "✕ " : "! "}{result.text}</div>}
       {items.length > 0 && <div className="vr-list">
         {items.map((it) => {
-          const st = it.running ? it.status : it.done ? "分析ができました" : "作成中";
+          const st = it.running ? it.status : it.done ? "分析ができました" : (it.status || "作成中");
+          const again = async () => { try { await resumeVideoRef(it.folder); notify("映像制作部に、途中から続きを頼みました", "ok"); load(); } catch (e) { notify(e.message, "error"); } };
           return (
             <div key={it.folder || it.id} className="vr-item">
               <div className="vr-row">
@@ -89,8 +90,11 @@ function VideoRefs({ notify }) {
                 <b className="vr-name">{it.name}</b>
                 {it.error && <span className="muted small">{it.error}</span>}
                 {it.done && <button className="btn sm ghost" onClick={() => setOpen(open === it.folder ? null : it.folder)}>{open === it.folder ? "閉じる" : "▶ 分析を読む"}</button>}
+                {it.resumable && <button className="btn sm" onClick={again}>続きを頼む</button>}
+                {it.doc && <button className="btn sm ghost" onClick={() => setOpen(open === it.folder ? null : it.folder)}>{open === it.folder ? "閉じる" : "▶ 資料を読む"}</button>}
               </div>
               {open === it.folder && it.done && <div className="md-box"><Md text={it.summary} /><div className="muted small">続きは {it.folder}/analysis.md</div></div>}
+              {open === it.folder && it.doc && <div className="md-box"><Md text={it.doc} /><div className="muted small">続きは {it.folder}/{it.doc_name}</div></div>}
             </div>
           );
         })}
