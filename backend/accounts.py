@@ -68,8 +68,9 @@ def read_insights(platform: str, limit: int = 30, account: str = "main") -> List
 
 
 # 投稿ごとの結果(2026-11-10 社長: 投稿のところで結果を報告できるように)。note は媒体全体の数字(metric,value)と分けて、記事ごとの表を使う
-POST_INSIGHTS = {**INSIGHTS, "note": ("insights_note_posts.csv", ["content_id", "views", "likes", "comments", "follows"])}
-LABEL_BY_PLATFORM = {"threads": {"views": "閲覧"}, "x": {"impressions": "表示"}, "note": {"views": "ビュー", "likes": "スキ"},
+# 2026-11-16 社長「インプ数も控えた方がいいよね」: note の画面の「インプレッション」(一覧などに表示された回数)も記録する。views は「ページビュー」
+POST_INSIGHTS = {**INSIGHTS, "note": ("insights_note_posts.csv", ["content_id", "impressions", "views", "likes", "comments", "follows"])}
+LABEL_BY_PLATFORM = {"threads": {"views": "閲覧"}, "x": {"impressions": "表示"}, "note": {"impressions": "インプレッション", "views": "ページビュー", "likes": "スキ"},
                      "youtube": {"likes": "高評価", "follows": "登録者の増加"}, "instagram": {"follows": "フォロー増"}}
 
 
@@ -178,6 +179,11 @@ def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = 
         raise ValueError("投稿IDがありません")
     path = _data(name, account)
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and path.read_text().strip():  # 列が増えた表は、先に頭をそろえる(古い行の新しい列は 0)
+        with path.open(newline="") as f:
+            head = next(csv.reader(f), [])
+        if head != ["date"] + cols:
+            fill_zeros(account)
     new = not path.exists() or not path.read_text().strip()
     with path.open("a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["date"] + cols)
