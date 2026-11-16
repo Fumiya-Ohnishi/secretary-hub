@@ -97,7 +97,7 @@ def _post(path: Path) -> dict:
     secs = sections(body)
     assets = [a.strip() for a in meta.get("assets", "").split(",") if a.strip()]
     media, cover, cover_note = _media(meta, assets)
-    return {
+    d = {
         "path": str(path.relative_to(company.COMPANY_DIR)),
         "file": path.name,
         "id": meta.get("id", path.stem),
@@ -118,7 +118,10 @@ def _post(path: Path) -> dict:
         "sections": secs,
         "caption": next((s["text"] for s in secs if "キャプション" in s["title"]), ""),
         "article": _article(meta, secs) if meta.get("platform") == "note" or meta.get("format") == "article" else None,
+        "week": path.parent.name,
     }
+    d["drive_folder"] = f"投稿素材/{path.parent.name}/{POST_DIR_NAME}/{post_folder_name(d)}"  # 投稿ごとのフォルダ(承認待ち・承認済みのとき作る)
+    return d
 
 
 # note の記事を「タイトル・本文・ハッシュタグ・社内メモ」に分ける(2026-11-10 社長: どこが記事か分かりにくくコピーしにくい)
@@ -324,6 +327,93 @@ def prune_local_media() -> int:
     return n
 
 
+# ---------- 投稿ごとのフォルダ(2026-11-16 社長「週のフォルダに全部たまって探しにくい。投稿ごとに分けて、インスタか note か分かるように」) ----------
+POST_DIR_NAME = "投稿ごと"
+FORMAT_JA = {"reel": "リール", "carousel": "カルーセル", "story": "ストーリーズ", "article": "記事", "post": "投稿",
+             "thread": "スレッド", "image": "画像", "video": "動画", "short": "ショート"}
+ORGANIZE_STATUSES = ("承認待ち", "承認済み", "投稿予定")
+
+
+def _safe_name(text: str, n: int = 28) -> str:
+    t = re.sub(r'[\\/:*?"<>|\n\r\t]+', " ", text or "").strip()
+    return t[:n].strip(" (（・、") or "無題"
+
+
+def _src(rel: str) -> Optional[Path]:
+    try:
+        return safe_path(rel)
+    except Exception:
+        return None
+
+
+def post_folder_name(post: dict) -> str:
+    """媒体ごとのフォルダの下に、投稿ごとのフォルダ。
+    例: 「Instagram/03_カルーセル_AIに貼る前、どの列消す」「note(段取りおばけ)/34_記事_大掃除の前に見る…」"""
+    plat = post.get("platform_ja") or post.get("platform") or "その他"
+    acc = "" if post.get("account") == "main" else "(段取りおばけ)" if post.get("account") == "sub" else f"({post.get('account')})"
+    num = re.match(r"(\d+)", post["file"])
+    fmt = FORMAT_JA.get(post.get("format", ""), post.get("format", "")) or "投稿"
+    return f"{plat}{acc}/{num.group(1) if num else ''}_{fmt}_{_safe_name(post.get('title', ''))}"
+
+
+def organize_posts() -> int:
+    """承認待ち・承認済みの投稿ごとに、ドライブの「投稿素材/YYYY-WW/投稿ごと/<媒体>/」の下へフォルダを作り、
+    その投稿に使う画像・動画を投稿する順の名前(01_1枚目.png・表紙.jpg・動画.mp4)で写す。キャプションも入れる。
+    元の画像(週フォルダ)はそのまま。写した数を返す"""
+    root = media_dir()
+    if not root or not root.is_dir():
+        return 0
+    weeks = {current_week(i) for i in (-1, 0, 1)}
+    n = 0
+    for wd in sorted(p for p in drafts_dir().glob("*") if p.is_dir() and p.name in weeks):
+        used: Dict[str, int] = {}
+        for f in sorted(wd.glob("[0-9]*.md")):
+            try:
+                post = _post(f)
+            except Exception:
+                continue
+            if post["status"] not in ORGANIZE_STATUSES:
+                continue
+            name = post_folder_name(post)
+            used[name] = used.get(name, 0) + 1
+            if used[name] > 1:
+                name += f"_{f.stem}"
+            dst_dir = root / wd.name / POST_DIR_NAME / name
+            want: Dict[str, Path] = {}
+            for i, m in enumerate(post["media"], 1):
+                src = _src(m["path"])
+                if src:
+                    label = re.sub(r"[^0-9A-Za-z\u3040-\u30ff\u4e00-\u9fff]", "", m["label"]) or f"素材{i}"
+                    want[f"{i:02d}_{label}{src.suffix.lower()}"] = src
+            if post.get("cover") and post["cover"].get("path") and not any(x["is_cover"] for x in post["media"]):
+                src = _src(post["cover"]["path"])
+                if src:
+                    want[f"表紙{src.suffix.lower()}"] = src
+            text = post.get("caption") or ""
+            if post.get("article"):
+                text = post["article"]["title"] + "\n\n" + post["article"]["plain"]
+            if not want and not text:
+                continue
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            for fname, src in want.items():
+                dst = dst_dir / fname
+                if dst.exists() and dst.stat().st_size == src.stat().st_size:
+                    continue
+                shutil.copy2(src, dst)
+                n += 1
+            if text:
+                tf = dst_dir / ("本文.txt" if post.get("article") else "キャプション.txt")
+                if not tf.exists() or tf.read_text(encoding="utf-8") != text:
+                    tf.write_text(text, encoding="utf-8")
+            for old in dst_dir.iterdir():  # 投稿の素材が差し替わったら、古いものを消す
+                if old.is_file() and old.name not in want and old.suffix != ".txt":
+                    try:
+                        old.unlink()
+                    except OSError:
+                        pass
+    return n
+
+
 # ---------- いらなくなった画像・動画の片づけ(2026-11-15 社長「ドライブにテスト画像が大量にたまる。いらないものは消していって」) ----------
 WORK_DIR_RE = re.compile(r"(^_|_check$|_frames?$|_compare$|_test$|_tmp$|^tmp|^test|_old$|^sub$|_work$)", re.I)
 TEST_NAME_RE = re.compile(r"(_old|_test|test_|_smoke|_check|_compare|_tmp|_base|_frame|_draft|_sample|_try|_wip|試し|テスト|比較)", re.I)
@@ -371,8 +461,8 @@ def cleanup_media(dry_run: bool = False) -> dict:
     gone, size = [], 0
     for root in roots:
         for f in sorted(root.rglob("*")):
-            if not f.is_file() or f.suffix.lower() not in MEDIA_EXT:
-                continue
+            if not f.is_file() or f.suffix.lower() not in MEDIA_EXT or POST_DIR_NAME in f.relative_to(root).parts:
+                continue  # 投稿ごとのフォルダ(写し)は片づけない
             try:
                 if _unneeded(f, root, used, now):
                     size += f.stat().st_size
