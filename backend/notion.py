@@ -185,13 +185,21 @@ async def update_task(key: str, status: Optional[str] = None, note: Optional[str
     return _task_from_page(page)
 
 
+_last_id = 0
+
+
 async def create_task(title: str, assignee: str = "秘書", due: Optional[str] = None,
                       note: str = "", link: str = "", status: str = "未着手",
                       parent: str = "", next_action: str = "", report: str = "",
                       blocks: Optional[List[dict]] = None) -> dict:
     existing = await list_tasks()
     nums = [int(m.group()) for t in existing for m in [re.search(r"\d+", t["id"] or "")] if m]
-    new_id = f"T-{(max(nums) + 1) if nums else 1:03d}"
+    # 作った直後のページは一覧にすぐ出ないことがあり、続けて作ると番号が重なった(2026-11-16 T-481 が2件)。
+    # この秘書ハブで最後に付けた番号も覚えておき、大きい方の次にする
+    global _last_id
+    n = max(max(nums) if nums else 0, _last_id) + 1
+    _last_id = n
+    new_id = f"T-{n:03d}"
     props = {
         "タスク名": {"title": _text(title)},
         "ID": {"rich_text": _text(new_id)},

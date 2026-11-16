@@ -845,6 +845,50 @@ def post_muse(body: dict):
         return err(e, 400)
 
 
+# ---------- 数字の自動取得をつなぐ(2026-11-16 社長「インスタとスレッズは自動で数字を毎日取りたい」) ----------
+TOKEN_KEYS = {"instagram": "IG_{A}ACCESS_TOKEN", "threads": "THREADS_{A}ACCESS_TOKEN"}
+
+
+def _set_env(key: str, value: str):
+    """backend/.env の key の行を書き換える(無ければ足す)。値は画面にも記録にも出さない"""
+    path = BASE / ".env"
+    lines = path.read_text().splitlines() if path.exists() else []
+    out, done = [], False
+    for line in lines:
+        if line.split("=", 1)[0].strip() == key and not line.strip().startswith("#"):
+            out.append(f"{key}={value}")
+            done = True
+        else:
+            out.append(line)
+    if not done:
+        out.append(f"{key}={value}")
+    path.write_text("\n".join(out) + "\n")
+    os.environ[key] = value
+
+
+@app.post("/api/connect_token")
+async def connect_token(body: dict):
+    """社長が Meta の画面で発行したトークンを貼る → .env に保存して、すぐ数字を取ってみる(トークンは当社・記録に出さない)"""
+    platform, account, token = body.get("platform", ""), body.get("account", "main"), (body.get("token") or "").strip()
+    if platform not in TOKEN_KEYS or not re.fullmatch(r"[A-Za-z0-9_\-|.]{20,}", token):
+        return err(ValueError("トークンの形ではないようです。Meta の画面でコピーした長い文字列をそのまま貼ってください"), 400)
+    if account not in company.account_ids():
+        return err(ValueError("そのアカウントは登録されていません"), 400)
+    key = TOKEN_KEYS[platform].format(A="" if account == "main" else f"{account.upper()}_")
+    _set_env(key, token)
+    try:  # 前のトークンから作った保存(長期のトークン)を消して、新しいトークンで作り直させる
+        import instagram_api
+        import threads_api
+        for f in ((instagram_api._cache_path(account),) if platform == "instagram" else (threads_api._path(account),)):
+            if f.exists():
+                f.unlink()
+    except Exception:
+        pass
+    import stats_sync
+    r = await stats_sync.run(f"{account}:{platform}")
+    return {"key": key, "result": r.get(f"{account}:{platform}", {})}
+
+
 @app.get("/api/notifications")
 def get_notifications():
     return {"notifications": scheduler.notifications()}

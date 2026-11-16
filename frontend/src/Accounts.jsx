@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getContentWeeks, getAccount, getAccounts, addInsight, addImprovement, recordFollowers, markCrossposted, recordRevenue,
+import { connectToken, getContentWeeks, getAccount, getAccounts, addInsight, addImprovement, recordFollowers, markCrossposted, recordRevenue,
          getProposals, addProposal, patchProposal, proposalRevenue, syncStats, registerAccount, addAccountSet, startMeeting, getStamps, decideStamp } from "./api.js";
 import Content, { PostPreview, PostResults } from "./Content.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
@@ -437,6 +437,29 @@ function Proposals({ notify, onChanged }) {
 }
 
 /** 公式の仕組み(API)で自動で取った数字(2026-11-12 社長: つないだアカウントは自動で数字を取りたい) */
+/** Meta の画面で発行したトークンを貼るだけでつなぐ(2026-11-16。.env をテキストエディタで開かなくてよい) */
+function TokenBox({ platform, account, notify, onDone }) {
+  const [tok, setTok] = useState("");
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      const r = await connectToken(platform, account, tok.trim());
+      setTok("");
+      notify(r.result?.ok ? `つながりました: ${r.result.detail}` : `保存しましたが、まだ取れませんでした: ${r.result?.detail || ""}`, r.result?.ok ? "ok" : "error");
+      onDone();
+    } catch (e) { notify(e.message, "error"); }
+    setBusy(false);
+  };
+  return (
+    <div className="token-box" style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <input type="password" autoComplete="off" placeholder={`${platform === "instagram" ? "Instagram" : "Threads"} のトークンを貼る(この Mac の .env にだけ保存)`}
+        value={tok} onChange={(e) => setTok(e.target.value)} style={{ flex: 1, minWidth: 260 }} />
+      <button className="btn sm primary" disabled={busy || tok.trim().length < 20} onClick={go}>{busy ? "確かめ中…" : "つなぐ"}</button>
+    </div>
+  );
+}
+
 function AutoStats({ data, platform, account, notify, onDone }) {
   const a = data.auto || {};
   const [busy, setBusy] = useState(false);
@@ -468,7 +491,9 @@ function AutoStats({ data, platform, account, notify, onDone }) {
         </div>
       )}
       {!a.connected ? (
-        <div className="empty">まだつないでいません。会社のフォルダの <b>playbooks/account_connect.md</b>(アカウント連携マニュアル)の手順でつなぐと、フォロワー数と投稿ごとの閲覧数などを毎朝自動で記録します。</div>
+        <div className="empty">まだつないでいません。会社のフォルダの <b>playbooks/account_connect.md</b>(アカウント連携マニュアル)の手順でつなぐと、フォロワー数と投稿ごとの閲覧数などを毎朝自動で記録します。
+          {(platform === "instagram" || platform === "threads") && <TokenBox platform={platform} account={account} notify={notify} onDone={onDone} />}
+        </div>
       ) : (
         <>
           {st.ok === false && st.detail && <div className="warn-box small">前回は取れませんでした: {st.detail}</div>}
