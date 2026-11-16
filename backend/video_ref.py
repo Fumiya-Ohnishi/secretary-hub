@@ -287,5 +287,37 @@ def listing() -> List[dict]:
             s["status"] = "分析が止まりました(部署の作業タブで確認してください)"
         running.append({"running": True, **s})
     shown = {s["folder"] for s in running}
-    return running + [{"folder": f, "name": Path(f).name, "done": bool(t), "summary": t or ""}
-                      for f, t in done.items() if f not in shown]
+    out = []
+    for f, t in done.items():
+        if f in shown:
+            continue
+        item = {"folder": f, "name": Path(f).name, "done": bool(t), "summary": t or ""}
+        if not t:  # analysis.md が無い: 途中で止まった分析か、分析ではない資料か(2026-11-16 社長「かなり前の動画が作成中のまま」)
+            d = company.COMPANY_DIR / f
+            parts = [x.name for x in d.glob("*.md") if x.name == "timeline.md" or x.name.startswith("_")]
+            docs = [x for x in sorted(d.glob("*.md")) if x.name != "timeline.md" and not x.name.startswith("_")]
+            if parts:
+                item.update(status="途中で止まりました", resumable=True, parts=parts)
+            elif docs:
+                item.update(status="資料", doc=docs[0].read_text(encoding="utf-8")[:3000], doc_name=docs[0].name)
+        out.append(item)
+    return running + out
+
+
+RESUME = """参考動画の分析の続きをする(2026-11-16 社長「かなり前にあげた動画が作成中のまま」)。
+{folder} に途中までの分析({parts})がある。最初からやり直さず、それを読んで、足りない所だけ補って {folder}/analysis.md にまとめる。
+analysis.md に書くことと守ることは、最初の依頼と同じ:
+""" + INSTRUCTION.split("\n", 1)[1]
+
+
+def resume(folder: str) -> dict:
+    """途中で止まった分析を、映像制作部に続きから頼む"""
+    d = company.COMPANY_DIR / folder
+    if not str(folder).startswith(str(OUT_REL)) or not d.is_dir() or (d / "analysis.md").exists():
+        raise ValueError("続きを頼める分析ではありません")
+    parts = "・".join(x.name for x in sorted(d.glob("*.md")) if x.name == "timeline.md" or x.name.startswith("_")) or "timeline.md"
+    import agent
+    job = agent.start_job("映像", RESUME.format(folder=folder, parts=parts), f"参考動画の分析(続き): {d.name}")
+    ref_id = "resume_" + job["id"]
+    _state[ref_id] = {"id": ref_id, "name": d.name, "status": "映像制作部が分析中", "error": "", "folder": folder, "job": job["id"]}
+    return _state[ref_id]

@@ -818,6 +818,15 @@ async def upload_video_ref(request: Request, name: str = "", note: str = ""):
     return video_ref.start(ref_id, name.strip() or Path(filename).stem, note.strip())
 
 
+@app.post("/api/video_refs/resume")
+def resume_video_ref(body: dict):
+    import video_ref
+    try:
+        return video_ref.resume(body.get("folder", ""))
+    except ValueError as e:
+        return err(e, 400)
+
+
 @app.get("/api/video_refs")
 def list_video_refs():
     import video_ref
@@ -828,14 +837,14 @@ def list_video_refs():
 @app.get("/api/muse")
 def get_muse():
     import muse
-    return {"questions": muse.QUESTIONS, "recent": muse.recent(14)}
+    return {"questions": muse.all_questions(), "recent": muse.recent(14)}
 
 
 @app.post("/api/muse")
 def post_muse(body: dict):
     import muse
     try:
-        r = muse.save(body.get("text", ""), body.get("kind", ""))
+        r = muse.save(body.get("text", ""), body.get("kind", ""), body.get("question", ""))
         try:  # 答えが貼られたら、月曜の【Muse】確認タスクを完了にする
             agent._run_sync(muse.close_weekly_task())
         except Exception:

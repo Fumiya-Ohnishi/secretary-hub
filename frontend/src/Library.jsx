@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getKnowledge, searchKnowledge, addPref, decidePref, listVideoRefs, uploadVideoRef, getMuse, saveMuse } from "./api.js";
+import { getKnowledge, searchKnowledge, addPref, decidePref, listVideoRefs, uploadVideoRef, getMuse, saveMuse, resumeVideoRef } from "./api.js";
 import Md from "./Md.jsx";
 
 /* 資料室: 会社の知見の棚。社長の好み(確定/確認待ち)の確認、知見の検索、最近の知見 */
@@ -30,7 +30,7 @@ function PendingPref({ p, onDone, notify }) {
 /* 参考動画の分析: 社長が送った動画を、秘書ハブがカット・音量・言葉・静止画に分けて、映像制作部が秒ごとに分析する(2026-11-13)
    11/13 社長「アップロードしたか分かりにくい・左に寄りすぎ」→ 置き場所を広く、送信中は進み具合、送ったら結果を枠の中に出す */
 const fmtMB = (n) => `${(n / 1024 / 1024).toFixed(1)}MB`;
-const STATUS_TONE = (st) => /失敗|止まり/.test(st) ? "ng" : /分析中|作成中/.test(st) ? "run" : "ok";
+const STATUS_TONE = (st) => /失敗|止まり/.test(st) ? "ng" : /分析中|作成中/.test(st) ? "run" : st === "資料" ? "" : "ok";
 
 function VideoRefs({ notify }) {
   const [items, setItems] = useState([]);
@@ -81,7 +81,8 @@ function VideoRefs({ notify }) {
       {result && <div className={`vr-msg ${result.tone}`}>{result.tone === "ok" ? "✓ " : result.tone === "ng" ? "✕ " : "! "}{result.text}</div>}
       {items.length > 0 && <div className="vr-list">
         {items.map((it) => {
-          const st = it.running ? it.status : it.done ? "分析ができました" : "作成中";
+          const st = it.running ? it.status : it.done ? "分析ができました" : (it.status || "作成中");
+          const again = async () => { try { await resumeVideoRef(it.folder); notify("映像制作部に、途中から続きを頼みました", "ok"); load(); } catch (e) { notify(e.message, "error"); } };
           return (
             <div key={it.folder || it.id} className="vr-item">
               <div className="vr-row">
@@ -89,8 +90,11 @@ function VideoRefs({ notify }) {
                 <b className="vr-name">{it.name}</b>
                 {it.error && <span className="muted small">{it.error}</span>}
                 {it.done && <button className="btn sm ghost" onClick={() => setOpen(open === it.folder ? null : it.folder)}>{open === it.folder ? "閉じる" : "▶ 分析を読む"}</button>}
+                {it.resumable && <button className="btn sm" onClick={again}>続きを頼む</button>}
+                {it.doc && <button className="btn sm ghost" onClick={() => setOpen(open === it.folder ? null : it.folder)}>{open === it.folder ? "閉じる" : "▶ 資料を読む"}</button>}
               </div>
               {open === it.folder && it.done && <div className="md-box"><Md text={it.summary} /><div className="muted small">続きは {it.folder}/analysis.md</div></div>}
+              {open === it.folder && it.doc && <div className="md-box"><Md text={it.doc} /><div className="muted small">続きは {it.folder}/{it.doc_name}</div></div>}
             </div>
           );
         })}
@@ -101,32 +105,53 @@ function VideoRefs({ notify }) {
 
 /* Muse の答え: 社長が Instagram の Muse に決まった質問をし、答えを貼る(週次リサーチ・速報チェックが読む) */
 function MuseBox({ notify }) {
+  // 2026-11-16 社長「デザインがよくない。自分で検索した内容を書くとき、指示した文章を書けない」→ 上から順に 1 質問 2 答え 3 保存。自分で考えた質問も書ける
   const [d, setD] = useState(null);
   const [kind, setKind] = useState("weekly_top");
+  const [ask, setAsk] = useState("");
   const [text, setText] = useState("");
   const load = () => getMuse().then(setD).catch(() => {});
   useEffect(() => { load(); }, []);
   if (!d) return null;
+  const custom = kind === "custom";
   const q = d.questions.find((x) => x.id === kind);
+  const groups = [
+    ["今週の追加の質問(部署から)", d.questions.filter((x) => x.extra)],
+    ["本アカウント(毎週月曜の朝)", d.questions.filter((x) => !x.extra && !x.id.startsWith("sub_") && /月曜/.test(x.when))],
+    ["段取りおばけの note 用(毎週月曜の朝)", d.questions.filter((x) => x.id.startsWith("sub_"))],
+    ["ときどき", d.questions.filter((x) => !x.extra && !x.id.startsWith("sub_") && !/月曜/.test(x.when))],
+  ];
   const copy = async (t) => { try { await navigator.clipboard.writeText(t); notify("質問をコピーしました。Muse に貼ってください", "ok"); } catch { notify("コピーできませんでした。長押しで選んでください", "error"); } };
   const save = async () => {
-    try { const r = await saveMuse(text, kind); notify(`保存しました(URL ${r.urls}件)。次のリサーチで部署が読みます`, "ok"); setText(""); load(); }
-    catch (e) { notify(e.message, "error"); }
+    try {
+      const r = await saveMuse(text, custom ? "" : kind, custom ? ask : "");
+      notify(`保存しました(URL ${r.urls}件)。次のリサーチで部署が読みます`, "ok"); setText(""); if (custom) setAsk(""); load();
+    } catch (e) { notify(e.message, "error"); }
   };
   return (
-    <section className="card">
-      <div className="card-head"><h3>📱 Muse の答え</h3>
-        <span className="muted small">Instagram の Muse に質問をコピーして聞き、答えをここに貼ります。社長の画面でしか見えない流行を、週次リサーチと速報チェックが使います</span></div>
-      <div className="pr-form">
-        <label><span>質問</span>
-          <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            {d.questions.map((x) => <option key={x.id} value={x.id}>{x.text.slice(0, 28)}…({x.when})</option>)}
-          </select></label>
-        {q && <div className="muse-q"><span>{q.text}</span> <button className="btn sm" onClick={() => copy(q.text)}>コピー</button></div>}
-        <label><span>Muse の答え</span><textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="Muse の答えをそのまま貼る(URL も一緒に)" /></label>
-        <button className="btn primary" disabled={text.trim().length < 10} onClick={save}>保存</button>
+    <section className="card muse-box">
+      <div className="card-head"><h3>📱 Muse の答え</h3></div>
+      <div className="muted small" style={{ marginBottom: 12 }}>Instagram の Muse に聞いた答えを貼ります。週次リサーチと速報チェックで部署が読みます。</div>
+      <div className="muse-step"><b>1. 何を聞いたか</b>
+        <select value={kind} onChange={(e) => setKind(e.target.value)} style={{ width: "100%" }}>
+          <option value="custom">✏️ 自分で考えた質問(下に書く)</option>
+          {groups.map(([g, qs]) => qs.length > 0 && (
+            <optgroup key={g} label={g}>{qs.map((x) => <option key={x.id} value={x.id}>{x.text.replace(/^@\S+\s*で、?/, "").slice(0, 40)}…</option>)}</optgroup>
+          ))}
+        </select>
+        {custom
+          ? <textarea rows={3} value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Muse に聞いた文をそのまま書く(例: note で今売れているジャンルを、公式の資料を元に3つ教えて)" style={{ width: "100%", marginTop: 8 }} />
+          : q && <div className="muse-q" style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 8, padding: "10px 12px", border: "1px solid var(--line, #2a3a4a)", borderRadius: 8 }}>
+              <span style={{ flex: 1, lineHeight: 1.6 }}>{q.text}{q.why && <span className="muted small" style={{ display: "block" }}>なぜ聞くか: {q.why}</span>}</span>
+              <button className="btn sm" onClick={() => copy(q.text)}>コピー</button></div>}
       </div>
-      {d.recent.length > 0 && <div className="muted small">最近の答え: {d.recent.slice(0, 5).map((r) => r.at.replace("T", " ")).join(" / ")}</div>}
+      <div className="muse-step" style={{ marginTop: 14 }}><b>2. Muse の答え</b>
+        <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder="Muse の答えをそのまま貼る(URL も一緒に)" style={{ width: "100%" }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, gap: 10, flexWrap: "wrap" }}>
+        {d.recent.length > 0 ? <div className="muted small">最近の答え: {d.recent.slice(0, 4).map((r) => r.at.slice(5, 16).replace("T", " ")).join(" / ")}</div> : <span />}
+        <button className="btn primary" disabled={text.trim().length < 10 || (custom && ask.trim().length < 5)} onClick={save}>3. 保存</button>
+      </div>
     </section>
   );
 }
