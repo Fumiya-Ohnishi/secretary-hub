@@ -127,6 +127,16 @@ ROUTINES += [
                     "3. 見出し画像はデザイン部の型で(ChatGPT のプロンプトも添える)。品質管理部が点検し、合格したものだけ status を承認待ちにする\n"
                     "4. その記事を入れるマガジンが note にまだ無ければ、社長が作るマガジンの名前と説明文をコピーできる形で、報告の「## 社長への確認」に書く(社長が作る。T-270 の無料・有料の棚の分け方に合わせる)\n"
                     "社長への確認は、本当に判断が要るときだけ報告の「## 社長への確認」に A・B・C で書く。"},
+    # 2026-11-16 社長「Grok はイマイチ。当社で作る。投稿は私がする。手間は考えないでどんどん運用して」(P-072)
+    {"id": "sub_sns_weekly", "weekday": 2, "time": "10:00", "department": "SNS運用", "title": "段取りおばけの SNS 投稿セット(翌週分)",
+     "instruction": "段取りおばけ(note 別アカウント・account: sub)の Instagram・Threads・X の翌週分(月〜日)の投稿を作る。"
+                    "運用の型・プロフィール・投稿時間・予約の手順は strategy/proposals/2026-11-12_請け負い仕事/t294_sub_sns/plan.md(§4-1 の 11/16 追記の本数)。"
+                    "書き方の線は playbooks/sub/note.md・P-035〜P-037・P-071・P-072(本アカウントに触れない・AIで運営と書く・値段や「有料」の語を入れない・作った体験談を書かない)。\n"
+                    "1. 材料: その週と前の週の段取りおばけの note 記事(content/drafts の account: sub)と、strategy/research/muse/ の sub_ の答え\n"
+                    "2. 目安: Instagram リール毎日1本(映像制作部に台本と書き出しを頼む。セナ・本アカウントの見た目は使わない)・カルーセル週3〜4本(デザイン部)・X と Threads は毎日1〜2本\n"
+                    "3. 投稿ファイルは翌週の週フォルダ content/drafts/YYYY-WW/ に次の番号で置き、account: sub と scheduled を付ける\n"
+                    "4. 品質管理部が点検し、合格したものだけ status を承認待ちにする(本数のために点検を省かない)\n"
+                    "社長への確認は、本当に判断が要るときだけ報告の「## 社長への確認」に A・B・C で書く。"},
     {"id": "news_flash_am", "daily": True, "time": "07:30", "department": "秘書", "title": "AIの新機能の速報チェック(朝)", "instruction": NEWS_FLASH},
     {"id": "news_flash_pm", "daily": True, "time": "13:00", "department": "秘書", "title": "AIの新機能の速報チェック(昼)", "instruction": NEWS_FLASH},
 ]
