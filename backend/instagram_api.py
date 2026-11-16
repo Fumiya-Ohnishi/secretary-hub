@@ -101,7 +101,7 @@ async def access_token(account: str = "main") -> str:
         # 長期のユーザートークンから取ったページのトークンは期限が無い。それを使えば作り直しが要らない
         if c.get("expires"):
             try:
-                found = await _find_ig(token=c["token"])
+                found = await _find_ig(token=c["token"], account=account)
                 c.update(ig_user_id=found["ig_user_id"], ig_username=found["ig_username"])
                 if found.get("page_token"):
                     c.update(token=found["page_token"], expires="", kind="page")
@@ -135,8 +135,29 @@ async def _exchange(tok: str) -> dict:
     return {"token": d["access_token"], "expires": exp.isoformat(timespec="seconds")}
 
 
-async def _find_ig(token: Optional[str] = None) -> dict:
-    """トークンから、つながった Instagram プロアカウントを探す。見つからなければ、何が見えたかを添えて IGError"""
+def _account_ids() -> list:
+    try:
+        import company
+        return company.account_ids()
+    except Exception:
+        return ["main"]
+
+
+def _want_username(account: str) -> str:
+    """アカウントタブに登録した Instagram の URL から、つなぎたいユーザー名を読む(1つのトークンで複数のページが見えるとき用)"""
+    try:
+        import company
+        for x in company.account_sets():
+            if x.get("id") == account:
+                return username_from((x.get("urls", {}).get("instagram") or {}).get("url", "")).lower()
+    except Exception:
+        pass
+    return ""
+
+
+async def _find_ig(token: Optional[str] = None, account: str = "main") -> dict:
+    """トークンから、つながった Instagram プロアカウントを探す。見つからなければ、何が見えたかを添えて IGError。
+    2026-11-16: 1つのトークンで本アカウントと別アカウントの両方のページを許可しても、登録した URL のユーザー名と同じものを選ぶ"""
     fields = "name,access_token,instagram_business_account{id,username},connected_instagram_account{id,username}"
     try:
         pages = (await _get("me/accounts", {"fields": fields, "limit": 100}, token=token)).get("data", [])
@@ -144,6 +165,10 @@ async def _find_ig(token: Optional[str] = None) -> dict:
         if "accounts" not in str(e):
             raise
         pages = []  # ページ用のトークン(me がページ自身)のときは一覧が無い。下で me に直接聞く
+    want = _want_username(account)
+    if want:  # 登録したユーザー名のページを先に見る
+        pages = sorted(pages, key=lambda p: 0 if ((p.get("instagram_business_account") or p.get("connected_instagram_account") or {}).get("username", "").lower() == want) else 1)
+    found_any = None
     for p in pages:
         ig = p.get("instagram_business_account") or p.get("connected_instagram_account")
         if not ig and p.get("access_token"):  # 一覧に出ないときは、ページのトークンでページ自身に聞く
@@ -153,7 +178,14 @@ async def _find_ig(token: Optional[str] = None) -> dict:
             except IGError:
                 pass
         if ig:
-            return {"ig_user_id": ig["id"], "ig_username": ig.get("username", ""), "page": p.get("name", ""), "page_token": p.get("access_token", "")}
+            hit = {"ig_user_id": ig["id"], "ig_username": ig.get("username", ""), "page": p.get("name", ""), "page_token": p.get("access_token", "")}
+            others = {_want_username(a) for a in _account_ids() if a != account} - {""}
+            if (not want and hit["ig_username"].lower() not in others) or hit["ig_username"].lower() == want:
+                return hit
+            found_any = found_any or hit
+    if found_any:
+        raise IGError(f"トークンで見えたインスタは @{found_any['ig_username']} で、このアカウントのものではありません(登録: @{want or '未登録'})。"
+                      f"トークンを作るとき、@{want} とそのページにもチェックを入れてください")
     if not pages:
         # ページのトークンの場合は me がページ自身
         try:
@@ -176,7 +208,7 @@ async def my_ig_id(account: str = "main") -> str:
     c = _cache(account)
     if c.get("ig_user_id"):
         return c["ig_user_id"]
-    found = await _find_ig(token=await access_token(account))
+    found = await _find_ig(token=await access_token(account), account=account)
     c.update(ig_user_id=found["ig_user_id"], ig_username=found["ig_username"])
     if found.get("page_token") and c.get("kind") != "page" and c.get("expires"):
         c.update(token=found["page_token"], expires="", kind="page")  # 期限なしのページ用トークンに切り替える
