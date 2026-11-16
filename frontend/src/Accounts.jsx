@@ -496,7 +496,12 @@ function AutoStats({ data, platform, account, notify, onDone }) {
         </div>
       ) : (
         <>
-          {st.ok === false && st.detail && <div className="warn-box small">前回は取れませんでした: {st.detail}</div>}
+          {st.ok === false && st.detail && <div className="warn-box small">前回は取れませんでした: {st.detail}
+            {(platform === "instagram" || platform === "threads") && <TokenBox platform={platform} account={account} notify={notify} onDone={onDone} />}</div>}
+          {st.ok !== false && (platform === "instagram" || platform === "threads") && (
+            <details className="muted small" style={{ marginTop: 6 }}><summary>トークンを入れ直す</summary>
+              <TokenBox platform={platform} account={account} notify={notify} onDone={onDone} /></details>
+          )}
           {a.rows.length ? (
             <div className="table-wrap"><table className="tbl">
               <thead><tr><th>投稿日</th><th>種類</th><th>投稿</th>{a.columns.map((c) => <th key={c.key}>{c.label}</th>)}<th>取った日</th></tr></thead>
