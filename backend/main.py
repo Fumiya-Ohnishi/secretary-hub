@@ -837,7 +837,10 @@ def list_video_refs():
 @app.get("/api/muse")
 def get_muse():
     import muse
-    return {"questions": muse.all_questions(), "recent": muse.recent(14)}
+    done = muse.answered_ids()  # 聞き終わった質問は選択欄から消す(今週の決まった質問・答えた今週だけの質問)
+    qs = [{**q, "answered": done.get(q["id"], "")} for q in muse.all_questions()]
+    return {"questions": [q for q in qs if not q["answered"]], "answered": [q for q in qs if q["answered"]],
+            "remaining": len(muse.remaining_this_week()), "recent": muse.recent(14)}
 
 
 @app.post("/api/muse")
