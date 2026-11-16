@@ -835,7 +835,7 @@ def get_muse():
 def post_muse(body: dict):
     import muse
     try:
-        r = muse.save(body.get("text", ""), body.get("kind", ""))
+        r = muse.save(body.get("text", ""), body.get("kind", ""), body.get("question", ""))
         try:  # 答えが貼られたら、月曜の【Muse】確認タスクを完了にする
             agent._run_sync(muse.close_weekly_task())
         except Exception:

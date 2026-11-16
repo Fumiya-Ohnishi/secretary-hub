@@ -120,5 +120,5 @@ export function uploadVideoRef(file, name, note, onProgress) {
 
 // Muse の答え(社長が Instagram の Muse に聞いた答えを貼る)
 export const getMuse = () => call("GET", "/api/muse");
-export const saveMuse = (text, kind) => call("POST", "/api/muse", { text, kind });
+export const saveMuse = (text, kind, question = "") => call("POST", "/api/muse", { text, kind, question });
 export const connectToken = (platform, account, token) => call("POST", "/api/connect_token", { platform, account, token });

@@ -1173,3 +1173,13 @@ select.status-sel { color-scheme: dark; }
 .ac-opt b { margin-right: 6px; }
 .ac-opt-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
+
+/* Muse の答え(2026-11-16 社長「デザインがよくない」): 上から 1 質問 → 2 答え → 3 保存 */
+.muse-box .muse-step > b { display: block; font-size: 13px; margin-bottom: 6px; color: var(--text); }
+.muse-box select, .muse-box textarea {
+  width: 100%; background: var(--bg2); color: var(--text); border: 1px solid var(--line2);
+  border-radius: 10px; padding: 10px 12px; color-scheme: dark; line-height: 1.6;
+}
+.muse-box select:focus, .muse-box textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.muse-box textarea::placeholder { color: var(--mute); }
+.muse-box .muse-q { background: var(--panel2); border-color: var(--line) !important; }

@@ -101,32 +101,52 @@ function VideoRefs({ notify }) {
 
 /* Muse の答え: 社長が Instagram の Muse に決まった質問をし、答えを貼る(週次リサーチ・速報チェックが読む) */
 function MuseBox({ notify }) {
+  // 2026-11-16 社長「デザインがよくない。自分で検索した内容を書くとき、指示した文章を書けない」→ 上から順に 1 質問 2 答え 3 保存。自分で考えた質問も書ける
   const [d, setD] = useState(null);
   const [kind, setKind] = useState("weekly_top");
+  const [ask, setAsk] = useState("");
   const [text, setText] = useState("");
   const load = () => getMuse().then(setD).catch(() => {});
   useEffect(() => { load(); }, []);
   if (!d) return null;
+  const custom = kind === "custom";
   const q = d.questions.find((x) => x.id === kind);
+  const groups = [
+    ["本アカウント(毎週月曜の朝)", d.questions.filter((x) => !x.id.startsWith("sub_") && /月曜/.test(x.when))],
+    ["段取りおばけの note 用(毎週月曜の朝)", d.questions.filter((x) => x.id.startsWith("sub_"))],
+    ["ときどき", d.questions.filter((x) => !x.id.startsWith("sub_") && !/月曜/.test(x.when))],
+  ];
   const copy = async (t) => { try { await navigator.clipboard.writeText(t); notify("質問をコピーしました。Muse に貼ってください", "ok"); } catch { notify("コピーできませんでした。長押しで選んでください", "error"); } };
   const save = async () => {
-    try { const r = await saveMuse(text, kind); notify(`保存しました(URL ${r.urls}件)。次のリサーチで部署が読みます`, "ok"); setText(""); load(); }
-    catch (e) { notify(e.message, "error"); }
+    try {
+      const r = await saveMuse(text, custom ? "" : kind, custom ? ask : "");
+      notify(`保存しました(URL ${r.urls}件)。次のリサーチで部署が読みます`, "ok"); setText(""); if (custom) setAsk(""); load();
+    } catch (e) { notify(e.message, "error"); }
   };
   return (
-    <section className="card">
-      <div className="card-head"><h3>📱 Muse の答え</h3>
-        <span className="muted small">Instagram の Muse に質問をコピーして聞き、答えをここに貼ります。社長の画面でしか見えない流行を、週次リサーチと速報チェックが使います</span></div>
-      <div className="pr-form">
-        <label><span>質問</span>
-          <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            {d.questions.map((x) => <option key={x.id} value={x.id}>{x.text.slice(0, 28)}…({x.when})</option>)}
-          </select></label>
-        {q && <div className="muse-q"><span>{q.text}</span> <button className="btn sm" onClick={() => copy(q.text)}>コピー</button></div>}
-        <label><span>Muse の答え</span><textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="Muse の答えをそのまま貼る(URL も一緒に)" /></label>
-        <button className="btn primary" disabled={text.trim().length < 10} onClick={save}>保存</button>
+    <section className="card muse-box">
+      <div className="card-head"><h3>📱 Muse の答え</h3></div>
+      <div className="muted small" style={{ marginBottom: 12 }}>Instagram の Muse に聞いた答えを貼ります。週次リサーチと速報チェックで部署が読みます。</div>
+      <div className="muse-step"><b>1. 何を聞いたか</b>
+        <select value={kind} onChange={(e) => setKind(e.target.value)} style={{ width: "100%" }}>
+          <option value="custom">✏️ 自分で考えた質問(下に書く)</option>
+          {groups.map(([g, qs]) => qs.length > 0 && (
+            <optgroup key={g} label={g}>{qs.map((x) => <option key={x.id} value={x.id}>{x.text.replace(/^@\S+\s*で、?/, "").slice(0, 40)}…</option>)}</optgroup>
+          ))}
+        </select>
+        {custom
+          ? <textarea rows={3} value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Muse に聞いた文をそのまま書く(例: note で今売れているジャンルを、公式の資料を元に3つ教えて)" style={{ width: "100%", marginTop: 8 }} />
+          : q && <div className="muse-q" style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 8, padding: "10px 12px", border: "1px solid var(--line, #2a3a4a)", borderRadius: 8 }}>
+              <span style={{ flex: 1, lineHeight: 1.6 }}>{q.text}</span>
+              <button className="btn sm" onClick={() => copy(q.text)}>コピー</button></div>}
       </div>
-      {d.recent.length > 0 && <div className="muted small">最近の答え: {d.recent.slice(0, 5).map((r) => r.at.replace("T", " ")).join(" / ")}</div>}
+      <div className="muse-step" style={{ marginTop: 14 }}><b>2. Muse の答え</b>
+        <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder="Muse の答えをそのまま貼る(URL も一緒に)" style={{ width: "100%" }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, gap: 10, flexWrap: "wrap" }}>
+        {d.recent.length > 0 ? <div className="muted small">最近の答え: {d.recent.slice(0, 4).map((r) => r.at.slice(5, 16).replace("T", " ")).join(" / ")}</div> : <span />}
+        <button className="btn primary" disabled={text.trim().length < 10 || (custom && ask.trim().length < 5)} onClick={save}>3. 保存</button>
+      </div>
     </section>
   );
 }
