@@ -193,7 +193,12 @@ export function PostResults({ post, platform, postedOn, notify }) {
   );
 }
 
-export function PostPreview({ post, start = 0, onClose }) {
+export function PostPreview(props) {
+  // note の記事は、インスタの画面ではなく note の記事の見え方で開く(2026-11-16 社長。アカウントタブの「投稿を見る」から)
+  return props.post?.article ? <NotePreview post={props.post} onClose={props.onClose} /> : <InstaPreview {...props} />;
+}
+
+function InstaPreview({ post, start = 0, onClose }) {
   const items = (post.media || []).filter((m) => m.exists && m.kind !== "file");
   const [i, setI] = useState(Math.min(start, Math.max(0, items.length - 1)));
   const [more, setMore] = useState(false);
