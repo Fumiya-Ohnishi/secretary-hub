@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { getContentWeeks, getContentWeek, decidePost, approveWeek, getPostResults, addInsight } from "./api.js";
 
 const POST_CLASS = { 下書き: "s-todo", 承認待ち: "s-wait", 承認済み: "s-ok", 差し戻し: "s-ng", 投稿済み: "s-done" };
+const STATUS_ORDER = ["承認待ち", "差し戻し", "下書き", "承認済み", "投稿予定", "投稿済み"];
 const FORMAT_JA = { reel: "リール", carousel: "カルーセル", story: "ストーリー", post: "投稿", thread: "スレッド", article: "記事" };
 const fileUrl = (p) => `/api/content/file?path=${encodeURIComponent(p)}`;
 
@@ -421,6 +422,10 @@ function Post({ post, open, onToggle, onChanged, notify }) {
 
 /** 投稿セット(週ごと)。台本・キャプション・画像を見て、承認・差し戻し・投稿済みを付ける */
 export default function Content({ week, setWeek, onChanged, notify, onSay, platform = null, account = null }) {
+  const [stFilter, setStFilter] = useState(() => { try { return localStorage.getItem("posts_filter") || "すべて"; } catch { return "すべて"; } });
+  const [order, setOrder] = useState(() => { try { return localStorage.getItem("posts_order") || "asc"; } catch { return "asc"; } });
+  const pickFilter = (v) => { setStFilter(v); try { localStorage.setItem("posts_filter", v); } catch { /* 保存できなくても動く */ } };
+  const pickOrder = (v) => { setOrder(v); try { localStorage.setItem("posts_order", v); } catch { /* 保存できなくても動く */ } };
   const [weeks, setWeeks] = useState(null);
   const [data, setData] = useState(null);
   const [open, setOpen] = useState(null);
@@ -452,7 +457,19 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
     );
   }
   // account: main=本アカウント / sub=別アカウント(2026-11-12)。未指定なら全部
-  const posts = data ? data.posts.filter((p) => (!platform || p.platform === platform) && (!account || (p.account || "main") === account)) : [];
+  const allPosts = data ? data.posts.filter((p) => (!platform || p.platform === platform) && (!account || (p.account || "main") === account)) : [];
+  // 状態で絞り込み・並ぶ順(2026-11-17 社長「投稿日順にしたい・承認済み/承認待ちで絞り込み・順も変えたい」)
+  const counts = allPosts.reduce((m, p) => ({ ...m, [p.status]: (m[p.status] || 0) + 1 }), {});
+  const posts = allPosts.filter((p) => stFilter === "すべて" || p.status === stFilter)
+    .slice().sort((a, b) => {
+      if (order === "status") {
+        const d = STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
+        if (d) return d;
+      }
+      const x = a.scheduled || "", y = b.scheduled || "";
+      if (!x !== !y) return x ? -1 : 1; // 日時の無いものは最後
+      return order === "desc" ? y.localeCompare(x) : x.localeCompare(y);
+    });
   // 別アカウントでは、本アカウントの週のテーマ(_week.md)は出さない。週の一覧も、そのアカウントの投稿がある週だけ(2026-11-12 社長)
   const sub = account && account !== "main";
   const shownWeeks = sub ? weeks.filter((w) => Object.keys(w.by_account?.[account] || {}).length) : weeks;
@@ -488,11 +505,30 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
             </div>
             {waiting > 0 && !platform && <button className="btn primary" disabled={busy} onClick={approveAll}>承認待ち {waiting}件を全部承認</button>}
           </div>)}
+          {allPosts.length > 0 && (
+            <div className="post-tools">
+              <div className="seg">
+                {["すべて", ...STATUS_ORDER.filter((st) => counts[st])].map((st) => (
+                  <button key={st} className={stFilter === st ? "on" : ""} onClick={() => pickFilter(st)}>
+                    {st}<span className="muted small"> {st === "すべて" ? allPosts.length : counts[st]}</span>
+                  </button>
+                ))}
+              </div>
+              <label className="muted small">並び
+                <select value={order} onChange={(e) => pickOrder(e.target.value)}>
+                  <option value="asc">投稿日が早い順</option>
+                  <option value="desc">投稿日が遅い順</option>
+                  <option value="status">状態ごと(承認待ちが先)</option>
+                </select>
+              </label>
+            </div>
+          )}
           {posts.map((p) => (
             <Post key={p.path} post={p} open={open === p.path} onToggle={() => setOpen(open === p.path ? null : p.path)}
                   onChanged={changed} notify={notify} />
           ))}
-          {posts.length === 0 && <div className="empty">この週の{platform ? "この媒体の" : ""}投稿はまだありません。</div>}
+          {allPosts.length > 0 && posts.length === 0 && <div className="empty">「{stFilter}」の投稿はこの週にはありません。<button className="btn ghost sm" onClick={() => pickFilter("すべて")}>すべて表示</button></div>}
+          {allPosts.length === 0 && <div className="empty">この週の{platform ? "この媒体の" : ""}投稿はまだありません。</div>}
         </>
       )}
     </div>
