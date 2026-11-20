@@ -409,6 +409,9 @@ async def tidy_tasks() -> dict:
             try:
                 await company.update_task(t["key"], status="完了", append_note=f"社長の判断で終わり(承認済み→完了 {datetime.datetime.now():%m/%d %H:%M} 秘書が整理)")
                 changed["完了"] += 1
+                if t.get("parent"):  # 確認の子が終わって親が仕上がったら報告する(2026-11-20 社長「親が完了しても報告がない」)
+                    import progress
+                    await progress.check(t["key"])
             except Exception:
                 pass
     for t in data["tasks"]:

@@ -1217,3 +1217,7 @@ select.status-sel { color-scheme: dark; }
 .ext-date { font-size: 12px; }
 .row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
 @media (max-width: 600px) { .ext-row { flex-wrap: wrap; } }
+
+/* 仕上がりました(親タスクの完了の報告)は閉じるまで出す(2026-11-20) */
+.toast.done { white-space: pre-line; cursor: pointer; border-left: 3px solid #4fd1a5; max-width: 420px; }
+.toast .toast-x { float: right; margin-left: 10px; opacity: .7; }

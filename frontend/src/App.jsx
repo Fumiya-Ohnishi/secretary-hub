@@ -150,7 +150,8 @@ export default function App() {
   const notify = useCallback((text, kind = "info") => {
     const id = Math.random();
     setToasts((t) => [...t, { id, text, kind }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
+    // 「仕上がりました」(親タスクの完了の報告)は、社長が閉じるまで出しておく(2026-11-20 社長「親が完了しても報告がない」)
+    if (kind !== "done") setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
   }, []);
 
   const say = useCallback((raw, m = "normal", speakIt = true) => {
@@ -209,7 +210,9 @@ export default function App() {
       if (fresh.length) {
         fresh.forEach((n) => seenNotes.current.add(n.id));
         const last = fresh[fresh.length - 1];
-        notify(`🔔 ${last.title}`, "info");
+        // 仕上がりました(親の完了)は1件ずつ全部、閉じるまで出す。それ以外は最後の1件だけ
+        fresh.filter((n) => n.kind === "done").forEach((n) => notify(`✅ ${n.title}: ${n.text}`, "done"));
+        if (last.kind !== "done") notify(`🔔 ${last.title}`, "info");
         say(last.text, "normal");
         try { if ("Notification" in window && Notification.permission === "granted" && document.hidden) new Notification(last.title, { body: last.text }); } catch (e) {}
         readNotifications(fresh.map((n) => n.id)).catch(() => {});
@@ -597,7 +600,9 @@ export default function App() {
         <ApprovalCard task={approval} busy={deciding} onDecide={decide} onClose={() => setApproval(null)}
                       onOpenDoc={(id) => { setDocId(id); setTab("docs"); setApproval(null); }} />
       )}
-      <div className="toasts">{toasts.map((t) => <div key={t.id} className={`toast ${t.kind}`}>{t.text}</div>)}</div>
+      <div className="toasts">{toasts.map((t) => (
+        <div key={t.id} className={`toast ${t.kind}`} onClick={() => t.kind === "done" && setToasts((x) => x.filter((y) => y.id !== t.id))}
+             title={t.kind === "done" ? "押すと閉じます" : undefined}>{t.text}{t.kind === "done" && <span className="toast-x">×</span>}</div>))}</div>
     </div>
   );
 }
