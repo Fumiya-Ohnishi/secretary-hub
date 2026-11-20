@@ -144,6 +144,11 @@ async def check(key: str, tasks: Optional[List[dict]] = None, notify: bool = Tru
                                       next_action=nxt, append_note="子のタスクが全部終わり、社長に見せられる状態になった(秘書が進行表で確認)")
         except Exception:
             pass
+    elif len(family) > 1 and "子の残り" in (root.get("next_action") or ""):  # 先に承認した親: 「子の残り」の書きかけを直す
+        try:
+            await company.update_task(root["key"], next_action="なし(子のタスクも全部終わった)" if not review else "社長: 承認待ちの中身を見て承認")
+        except Exception:
+            pass
     state[root["key"]] = review_ids
     _save(state)
     if notify:
@@ -166,11 +171,25 @@ async def check(key: str, tasks: Optional[List[dict]] = None, notify: bool = Tru
     return {"root": root.get("id"), "ready": True, "status": new_status, "review": [t.get("id") for t in review]}
 
 
+RECENT_DAYS = 2  # 締まった親は、この日数の間に家族のどれかが動いたものだけ見る(古い親をまとめて報告しない)
+
+
 async def check_all(tasks: Optional[List[dict]] = None) -> List[dict]:
-    """開いている親(子を持つタスク)を全部見る。朝のチェックや見回りから呼ぶ"""
+    """親(子を持つ根のタスク)を全部見る。朝のチェックや見回りから呼ぶ。
+    2026-11-20 社長「親タスクが完了しても報告がない」: 社長が先に親を承認した(承認済み)あとで子の確認が終わった、のような
+    締まった親も見る(まだ知らせていなければ、仕上がったときに1回知らせる)"""
+    import datetime
     tasks = tasks if tasks is not None else await company.list_tasks()
+    by_key = {t["key"]: t for t in tasks}
+    since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=RECENT_DAYS)).isoformat()
+    told = _load()
     out = []
     for t in tasks:
-        if t.get("children") and not t.get("parent") and t.get("status") not in ("完了", "承認済み"):
-            out.append(await check(t["key"], tasks))
+        if not t.get("children") or t.get("parent"):
+            continue
+        if t.get("status") in ("完了", "承認済み"):
+            fam = [t] + descendants(t["key"], by_key)
+            if t["key"] in told or max((f.get("edited") or "") for f in fam) < since:
+                continue
+        out.append(await check(t["key"], tasks))
     return out
