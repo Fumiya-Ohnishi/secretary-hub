@@ -1616,7 +1616,7 @@ async def chat_stream(message: str, history: List[dict]):
             except anthropic.BadRequestError as e:
                 low = str(e).lower()
                 print("会話の API が 400:", (getattr(e, "message", "") or str(e))[:500])
-                if plain or "credit balance" in low:
+                if plain or "credit balance" in low or "usage limit" in low:
                     raise
                 plain = True
                 if "too long" in low or "too many tokens" in low:  # 会話が長すぎる: 直近だけにする
@@ -1662,9 +1662,12 @@ async def chat_stream(message: str, history: List[dict]):
     except anthropic.RateLimitError:
         error = "API の利用上限に達しました。少し待ってからもう一度お願いします。"
     except anthropic.APIStatusError as e:
-        if "credit balance" in str(e).lower() and not spoken and shutil.which("claude"):
-            # API の残高切れ: Claude Code(ログイン中の Pro プラン)で返事する。道具は使えないが会話は続く
-            notice = "(API の残高が切れているため、Pro プランで返事します。少し時間がかかります)\n"
+        low = str(e).lower()
+        limit_hit = "usage limit" in low  # console.anthropic.com で決めた「月の上限額」に届いた(2026-11-20)
+        if ("credit balance" in low or limit_hit) and not spoken and shutil.which("claude"):
+            # API の残高切れ・月の上限: Claude Code(ログイン中の Pro プラン)で返事する。道具は使えないが会話は続く
+            notice = ("(API の月の上限額に届いたため、Pro プランで返事します。少し時間がかかります)\n" if limit_hit
+                      else "(API の残高が切れているため、Pro プランで返事します。少し時間がかかります)\n")
             spoken += notice
             yield {"t": "text", "v": notice}
             try:
@@ -1674,7 +1677,11 @@ async def chat_stream(message: str, history: List[dict]):
                 yield {"t": "text", "v": out}
             except Exception as ce:
                 error = f"API の残高が切れていて、Pro プランでの返事もできませんでした({ce})。console.anthropic.com の Billing で残高を足してください。"
-        elif "credit balance" in str(e).lower():
+        elif limit_hit:
+            m = re.search(r"regain access on (\S+)", str(e))
+            error = ("API の月の上限額に届きました(社長が console.anthropic.com で決めた上限)。"
+                     + (f"{m.group(1)} に戻ります。" if m else "") + "すぐ使うには Settings → Limits で月の上限額を上げてください。")
+        elif "credit balance" in low:
             error = "API の残高が切れています。console.anthropic.com の Billing で残高を足すと、また会話できます。"
         else:
             detail = (getattr(e, "message", "") or str(e)).replace("\n", " ")[:220]
