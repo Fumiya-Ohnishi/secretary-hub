@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import Md from "./Md.jsx";
 import React, { useEffect, useState } from "react";
+import { ExtAddBox, ExtRow, useExternalPosts } from "./ExternalPosts.jsx";
 import { getContentWeeks, getContentWeek, decidePost, approveWeek, getPostResults, addInsight } from "./api.js";
 
 const POST_CLASS = { 下書き: "s-todo", 承認待ち: "s-wait", 承認済み: "s-ok", 差し戻し: "s-ng", 投稿済み: "s-done" };
@@ -428,6 +429,9 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
   const pickOrder = (v) => { setOrder(v); try { localStorage.setItem("posts_order", v); } catch { /* 保存できなくても動く */ } };
   const [weeks, setWeeks] = useState(null);
   const [data, setData] = useState(null);
+  // 外で作って URL で足した投稿(note・X)も、投稿日の週の一覧に並べる(2026-11-20 社長)
+  const extOn = platform === "note" || platform === "x";
+  const [extItems, loadExt] = useExternalPosts(account || "main", extOn ? platform : "");
   const [open, setOpen] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -457,7 +461,10 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
     );
   }
   // account: main=本アカウント / sub=別アカウント(2026-11-12)。未指定なら全部
-  const allPosts = data ? data.posts.filter((p) => (!platform || p.platform === platform) && (!account || (p.account || "main") === account)) : [];
+  const ownPosts = data && data.week === week ? data.posts.filter((p) => (!platform || p.platform === platform) && (!account || (p.account || "main") === account)) : [];
+  const extHere = (extItems || []).filter((i) => i.week === week)
+    .map((i) => ({ ...i, ext: true, path: "ext:" + i.id, status: "投稿済み", scheduled: i.posted_at || "" }));
+  const allPosts = [...ownPosts, ...extHere];
   // 状態で絞り込み・並ぶ順(2026-11-17 社長「投稿日順にしたい・承認済み/承認待ちで絞り込み・順も変えたい」)
   const counts = allPosts.reduce((m, p) => ({ ...m, [p.status]: (m[p.status] || 0) + 1 }), {});
   const posts = allPosts.filter((p) => stFilter === "すべて" || p.status === stFilter)
@@ -472,7 +479,10 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
     });
   // 別アカウントでは、本アカウントの週のテーマ(_week.md)は出さない。週の一覧も、そのアカウントの投稿がある週だけ(2026-11-12 社長)
   const sub = account && account !== "main";
-  const shownWeeks = sub ? weeks.filter((w) => Object.keys(w.by_account?.[account] || {}).length) : weeks;
+  const extWeeks = [...new Set((extItems || []).map((i) => i.week).filter(Boolean))];
+  const baseWeeks = sub ? weeks.filter((w) => Object.keys(w.by_account?.[account] || {}).length) : weeks;
+  const shownWeeks = [...baseWeeks, ...extWeeks.filter((w) => !baseWeeks.some((b) => b.week === w)).map((w) => ({ week: w, counts: {} }))]
+    .sort((a, b) => b.week.localeCompare(a.week));
   const wcount = (w) => (account ? (w.by_account?.[account]?.[platform || "all"] || {})
                                  : (platform ? (w.by_platform?.[platform] || {}) : w.counts))["承認待ち"] || 0;
   const waiting = posts.filter((p) => p.status === "承認待ち").length;
@@ -485,6 +495,8 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
 
   return (
     <div className="content-tab">
+      {extOn && <ExtAddBox platform={platform} account={account || "main"} notify={notify} canRefresh={!!extItems?.length}
+                           onAdded={(r) => { loadExt(); if (r?.week) setWeek(r.week); }} />}
       <div className="seg">
         {shownWeeks.map((w) => (
           <button key={w.week} className={week === w.week ? "on" : ""} onClick={() => setWeek(w.week)}>
@@ -493,9 +505,9 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
         ))}
       </div>
       {sub && shownWeeks.length === 0 && <div className="empty">このアカウントの投稿はまだありません。投稿ファイルに account: {account} が付いたものがここに出ます。</div>}
-      {data && (!sub || shownWeeks.some((w) => w.week === week)) && (
+      {(data || extHere.length > 0) && (!sub || shownWeeks.some((w) => w.week === week)) && (
         <>
-          {sub ? (waiting > 0 && <div className="card week-head"><div className="muted small">{data.week} ・ このアカウントの投稿</div>
+          {!(data && data.week === week) ? null : sub ? (waiting > 0 && <div className="card week-head"><div className="muted small">{data.week} ・ このアカウントの投稿</div>
             {!platform && <button className="btn primary" disabled={busy} onClick={approveAll}>承認待ち {waiting}件を全部承認</button>}</div>) : (
           <div className="card week-head">
             <div>
@@ -523,7 +535,7 @@ export default function Content({ week, setWeek, onChanged, notify, onSay, platf
               </label>
             </div>
           )}
-          {posts.map((p) => (
+          {posts.map((p) => p.ext ? <ExtRow key={p.path} it={p} account={account || "main"} notify={notify} onChanged={loadExt} /> : (
             <Post key={p.path} post={p} open={open === p.path} onToggle={() => setOpen(open === p.path ? null : p.path)}
                   onChanged={changed} notify={notify} />
           ))}

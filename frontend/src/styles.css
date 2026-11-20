@@ -1212,7 +1212,7 @@ select.status-sel { color-scheme: dark; }
 .ext-pv-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .ext-pv-body .ttl { color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ext-warn { color: #e0a35a; font-size: 12px; }
-.ext-item { border-top: 1px solid var(--line); padding: 8px 0; }
+
 .ext-tag { margin-left: 6px; font-size: 10px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 99px; color: var(--sub); }
 .ext-date { font-size: 12px; }
 .row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -1221,3 +1221,7 @@ select.status-sel { color-scheme: dark; }
 /* 仕上がりました(親タスクの完了の報告)は閉じるまで出す(2026-11-20) */
 .toast.done { white-space: pre-line; cursor: pointer; border-left: 3px solid #4fd1a5; max-width: 420px; }
 .toast .toast-x { float: right; margin-left: 10px; opacity: .7; }
+.ext-add { padding: 8px 12px; }
+.ext-add-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ext-item.card.post { padding: 10px 12px; }
+.ext-item .badge { flex: none; align-self: center; }

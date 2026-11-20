@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { connectToken, getMagazines, markMagazineCreated, getContentWeeks, getAccount, getAccounts, addInsight, addImprovement, recordFollowers, markCrossposted, recordRevenue,
-         getProposals, addProposal, patchProposal, proposalRevenue, syncStats, registerAccount, addAccountSet, startMeeting, getStamps, decideStamp,
-         getExternalPosts, previewExternalPost, addExternalPost, patchExternalPost, removeExternalPost, refreshExternalPosts } from "./api.js";
+         getProposals, addProposal, patchProposal, proposalRevenue, syncStats, registerAccount, addAccountSet, startMeeting, getStamps, decideStamp } from "./api.js";
+import ExternalPosts from "./ExternalPosts.jsx";
 import Content, { PostPreview, PostResults } from "./Content.jsx";
 import { LineChart, PLATFORM_COLORS } from "./Charts.jsx";
 
@@ -155,103 +155,13 @@ function Account({ account = "main", platform, week, setWeek, onChanged, notify,
       </div>
       {section === "posts" && data.crosspost && (platform === "tiktok" || platform === "youtube") &&
         <Crosspost data={data} platform={platform} notify={notify} onDone={() => { load(); onChanged(); }} />}
-      {section === "posts" && EXT_PLATFORMS.includes(platform) && <ExternalPosts platform={platform} account={account} notify={notify} />}
+      {section === "posts" && (platform === "tiktok" || platform === "youtube") && <ExternalPosts platform={platform} account={account} notify={notify} />}
       {section === "posts" && !(platform === "tiktok" || platform === "youtube") && <Content week={week} setWeek={setWeek} onChanged={onChanged} notify={notify} onSay={onSay} platform={platform} account={account} />}
       {section === "numbers" && <Numbers data={data} platform={platform} account={account} notify={notify} onDone={() => { load(); onChanged(); }} />}
       {section === "revenue" && <Revenue data={data} notify={notify} onDone={() => { load(); onChanged(); }} />}
       {section === "improve" && <Improvements data={data} platform={platform} account={account} notify={notify} onDone={load} />}
       {section === "rules" && <div className="card"><div className="sec-text">{data.playbook || "ルールはまだありません。"}</div></div>}
     </>
-  );
-}
-
-/** 秘書ハブの外で作って出した投稿(Muse など)を、URL を貼って足す(2026-11-20 社長)。
- *  Instagram・Threads は毎朝自動で取っているので出さない */
-const EXT_PLATFORMS = ["tiktok", "youtube", "note", "x"];
-const EXT_HINT = {
-  tiktok: "題・サムネイル・投稿日を取ります。再生数などの数字は TikTok の画面を見て入れてください",
-  youtube: "題・投稿日・再生数・いいね・コメントを取ります(毎朝 8:00 に取り直し)",
-  note: "題・公開日・スキ・見出し画像を取ります(スキは毎朝 8:00 に取り直し)。ページビューは note の画面を見て入れてください",
-  x: "本文の頭・投稿日を取ります。数字は X の画面を見て入れてください",
-};
-function ExternalPosts({ platform, account = "main", notify }) {
-  const [items, setItems] = useState(null);
-  const [url, setUrl] = useState("");
-  const [pv, setPv] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState(null);
-  const load = () => getExternalPosts(account, platform).then((r) => setItems(r.items)).catch(() => setItems([]));
-  useEffect(() => { setPv(null); setUrl(""); load(); }, [platform, account]);
-  const check = async () => {
-    if (!url.trim()) return;
-    setBusy(true);
-    try { setPv(await previewExternalPost(url.trim(), account)); } catch (e) { setPv(null); notify(e.message, "error"); }
-    setBusy(false);
-  };
-  const add = async (other = false) => {
-    setBusy(true);
-    try { const r = await addExternalPost(url.trim(), account, "", other); notify(`「${r.title.slice(0, 30)}」を足しました`, "ok"); setUrl(""); setPv(null); load(); }
-    catch (e) { notify(e.message, "error"); }
-    setBusy(false);
-  };
-  const refresh = async () => {
-    setBusy(true);
-    try { const r = await refreshExternalPosts(account); notify(`数字を取り直しました(${r.updated}本)${r.errors.length ? "。取れなかったもの: " + r.errors.join(" / ") : ""}`, r.errors.length ? "error" : "ok"); load(); }
-    catch (e) { notify(e.message, "error"); }
-    setBusy(false);
-  };
-  const setDate = async (it, d) => { try { await patchExternalPost(it.platform, it.id, { posted_at: d }, account); load(); } catch (e) { notify(e.message, "error"); } };
-  const drop = async (it) => {
-    if (!window.confirm(`「${it.title.slice(0, 30)}」を一覧から外しますか?(記録した数字は消えません)`)) return;
-    try { await removeExternalPost(it.platform, it.id, account); load(); } catch (e) { notify(e.message, "error"); }
-  };
-  const nums = (it) => Object.entries(it.numbers || {}).map(([k, v]) => `${{ views: "再生", likes: platform === "note" ? "スキ" : "いいね", comments: "コメント" }[k] || k} ${Number(v).toLocaleString()}`).join("・");
-  return (
-    <div className="card ext-posts">
-      <div className="card-head"><h3>URL で足した投稿</h3>
-        {items?.some((i) => i.platform === "note" || i.platform === "youtube") && <button className="btn ghost sm" disabled={busy} onClick={refresh}>数字を取り直す</button>}</div>
-      <div className="muted small">秘書ハブの外(Muse など)で作って出した {PJA[platform]} の投稿の URL を貼ると、一覧に足して数字を記録できます。{EXT_HINT[platform]}</div>
-      <div className="inline-form">
-        <input value={url} onChange={(e) => { setUrl(e.target.value); setPv(null); }} onKeyDown={(e) => e.key === "Enter" && check()}
-               placeholder={{ tiktok: "https://www.tiktok.com/@名前/video/…", youtube: "https://www.youtube.com/shorts/…", note: "https://note.com/名前/n/…", x: "https://x.com/名前/status/…" }[platform]} />
-        <button className="btn" disabled={busy || !url.trim()} onClick={check}>{busy && !pv ? "読んでいます…" : "読み込む"}</button>
-      </div>
-      {pv && (
-        <div className={`ext-pv ${pv.mismatch ? "warn" : ""}`}>
-          {pv.thumbnail ? <img src={pv.thumbnail} alt="" referrerPolicy="no-referrer" /> : <div className="ext-noimg">画像なし</div>}
-          <div className="ext-pv-body">
-            <b>{pv.title}</b>
-            <div className="muted small">{pv.posted_at || "投稿日は不明(足したあとに入れられます)"}{pv.author ? ` ・ @${pv.author}` : ""}{nums(pv) ? ` ・ ${nums(pv)}` : ""}</div>
-            {pv.mismatch && <div className="ext-warn">登録したアカウントの投稿ではないようです。URL を確かめてください。</div>}
-            <div className="row-btns">
-              {!pv.mismatch && <button className="btn primary sm" disabled={busy} onClick={() => add(false)}>この投稿を足す</button>}
-              {pv.mismatch && <button className="btn sm" disabled={busy} onClick={() => add(true)}>それでも足す</button>}
-              <button className="btn ghost sm" onClick={() => setPv(null)}>やめる</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {items && items.length === 0 && <div className="empty">まだありません。</div>}
-      {items && items.map((it) => (
-        <div key={it.id} className="ext-item">
-          <div className="ext-row">
-            {it.thumbnail ? <img src={it.thumbnail} alt="" referrerPolicy="no-referrer" /> : <div className="ext-noimg">—</div>}
-            <div className="ext-pv-body">
-              <a href={it.url} target="_blank" rel="noreferrer" className="ttl">{it.title}</a>
-              <div className="muted small">
-                {it.posted_at || <input type="date" className="ext-date" onChange={(e) => e.target.value && setDate(it, e.target.value)} title="投稿日を入れる" />}
-                {it.price ? ` ・ 有料 ${it.price}円` : ""}{nums(it) ? ` ・ ${nums(it)}` : ""}<span className="ext-tag">外で作成</span>
-              </div>
-            </div>
-            <div className="row-btns">
-              <button className="btn sm" onClick={() => setOpen(open === it.id ? null : it.id)}>{open === it.id ? "閉じる" : "数字"}</button>
-              <button className="btn ghost sm" onClick={() => drop(it)}>外す</button>
-            </div>
-          </div>
-          {open === it.id && <PostResults post={{ id: it.content_id, platform: it.platform, account, title: it.title, posted: it.posted_at }} platform={it.platform} notify={notify} />}
-        </div>
-      ))}
-    </div>
   );
 }
 
