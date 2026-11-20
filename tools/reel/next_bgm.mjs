@@ -17,7 +17,8 @@ export function nextBgm(companyDir, { peek = false } = {}) {
   const path = resolve(companyDir, "content/assets/sfx/bgm_rotation.json");
   if (!existsSync(path)) throw new Error(`BGM の一覧がありません: ${path}`);
   const rot = JSON.parse(readFileSync(path, "utf8"));
-  const tracks = (rot.tracks || []).filter((t) => existsSync(resolve(companyDir, t.file)));
+  // hold: 作者の利用条件を確かめ終わるまで使わない曲(2026-11-20 パステルハウスの「利用条件有」)
+  const tracks = (rot.tracks || []).filter((t) => !t.hold && existsSync(resolve(companyDir, t.file)));
   if (!tracks.length) throw new Error("使える BGM がありません(ファイルが置かれているか確かめてください)");
   const i = tracks.findIndex((t) => t.file === rot.last);
   const t = tracks[(i + 1) % tracks.length];
