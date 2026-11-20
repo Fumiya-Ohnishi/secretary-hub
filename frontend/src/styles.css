@@ -1201,3 +1201,19 @@ select.status-sel { color-scheme: dark; }
 .post-tools .seg { margin-bottom: 0; }
 .post-tools label { display: flex; align-items: center; gap: 6px; }
 .post-tools select { background: var(--panel2, transparent); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font-size: 12px; }
+
+/* URL で足した投稿(2026-11-20) */
+.ext-posts .inline-form input { flex: 1; min-width: 0; }
+.ext-pv, .ext-row { display: flex; gap: 10px; align-items: flex-start; }
+.ext-pv { margin: 8px 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.ext-pv.warn { border-color: #d98b3a; }
+.ext-pv img, .ext-row img, .ext-noimg { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; flex: none; background: var(--panel3, #222); }
+.ext-noimg { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--sub); }
+.ext-pv-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ext-pv-body .ttl { color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ext-warn { color: #e0a35a; font-size: 12px; }
+.ext-item { border-top: 1px solid var(--line); padding: 8px 0; }
+.ext-tag { margin-left: 6px; font-size: 10px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 99px; color: var(--sub); }
+.ext-date { font-size: 12px; }
+.row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+@media (max-width: 600px) { .ext-row { flex-wrap: wrap; } }
