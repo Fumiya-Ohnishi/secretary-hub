@@ -107,12 +107,20 @@ await browser.close();
 // ---- 4. 動画にまとめる(BGM があれば小さく重ねる)----
 mkdirSync(dirname(resolve(outPath)), { recursive: true });
 const args = ["-y", "-loglevel", "error", "-framerate", String(FPS), "-i", join(work, "frames", "%05d.jpg"), "-i", join(work, "voice.wav")];
+// bgm: "auto" なら OpenTracks の3曲を順に回す(2026-11-20 P-088)。音量の決まりは 0.07
+if (spec.bgm === "auto") {
+  const { nextBgm } = await import("./next_bgm.mjs");
+  const nb = nextBgm(process.env.AI_COMPANY_DIR || resolve(dirname(new URL(import.meta.url).pathname), "../../../ai-company"));
+  spec.bgm = nb.bgm;
+  spec.bgm_volume = spec.bgm_volume ?? nb.bgm_volume;
+  console.log(`BGM: ${nb.title}(${nb.credit})`);
+}
 if (spec.bgm) {
   const companyDir = process.env.AI_COMPANY_DIR || resolve(dirname(new URL(import.meta.url).pathname), "../../../ai-company");
   const bgm = isAbsolute(spec.bgm) ? spec.bgm : resolve(companyDir, spec.bgm);
   if (!existsSync(bgm)) throw new Error(`BGM が見つかりません: ${bgm}`);
   args.push("-stream_loop", "-1", "-i", bgm, "-filter_complex",
-    `[2:a]volume=${spec.bgm_volume ?? 0.12}[b];[1:a][b]amix=inputs=2:duration=first:dropout_transition=0[a]`, "-map", "0:v", "-map", "[a]");
+    `[2:a]volume=${spec.bgm_volume ?? 0.07}[b];[1:a][b]amix=inputs=2:duration=first:dropout_transition=0[a]`, "-map", "0:v", "-map", "[a]");
 }
 args.push("-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "20", "-r", String(FPS), "-c:a", "aac", "-b:a", "160k", "-shortest", resolve(outPath));
 const enc = spawnSync(ffmpeg, args, { stdio: "inherit" });
