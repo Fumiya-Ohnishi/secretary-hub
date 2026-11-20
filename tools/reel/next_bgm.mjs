@@ -3,6 +3,7 @@
 //   次に使う曲のパス・音量・クレジットを JSON で出し、「最後に使った曲」を記録する(--peek は記録しない)
 // 曲の一覧と最後に使った曲: <ai-company>/content/assets/sfx/bgm_rotation.json
 import { readFileSync, writeFileSync, existsSync } from "fs";
+import { spawnSync } from "child_process";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -22,6 +23,12 @@ export function nextBgm(companyDir, { peek = false } = {}) {
   if (!tracks.length) throw new Error("使える BGM がありません(ファイルが置かれているか確かめてください)");
   const i = tracks.findIndex((t) => t.file === rot.last);
   const t = tracks[(i + 1) % tracks.length];
+  // ファイルのタグの曲名が一覧と違えば止める(2026-11-20 パステルハウスのはずが Morning だった取り違えの再発防止)
+  const tag = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format_tags=title", "-of", "default=nw=1:nk=1", resolve(companyDir, t.file)], { encoding: "utf8" });
+  const tagTitle = (tag.stdout || "").trim();
+  if (tag.status === 0 && tagTitle && t.title && tagTitle !== t.title) {
+    throw new Error(`BGM の取り違え: ${t.file} のタグの曲名は「${tagTitle}」で、一覧の「${t.title}」と違います。bgm_rotation.json と素材台帳を直してから使ってください`);
+  }
   if (!peek) {
     rot.last = t.file;
     rot.history = [...(rot.history || []), { file: t.file, at: new Date().toISOString().slice(0, 16) }].slice(-30);
