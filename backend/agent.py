@@ -1599,18 +1599,29 @@ async def chat_stream(message: str, history: List[dict]):
     spoken, error = "", None
     mf = _MoodFilter()
     try:
-        for _ in range(8):
-            opts = _request_options()
-            # これまでの会話(道具の結果を含む)も自動で使い回す。往復のたびに全部を払い直さない
-            opts.setdefault("extra_body", {})["cache_control"] = {"type": "ephemeral"}
-            async with client.messages.stream(model=MODEL, max_tokens=16000, system=system, tools=TOOLS_STREAM,
-                                              messages=messages, **opts) as stream:
-                async for text in stream.text_stream:
-                    out = mf.feed(text)
-                    if out:
-                        spoken += out
-                        yield {"t": "text", "v": out}
-                resp = await stream.get_final_message()
+        plain = False  # 400 のとき、付け足しの設定(フォールバック・効き目・自動キャッシュ)を外して1回だけやり直す(2026-11-20)
+        for _ in range(9):
+            opts = {} if plain else _request_options()
+            if not plain:  # これまでの会話(道具の結果を含む)も自動で使い回す。往復のたびに全部を払い直さない
+                opts.setdefault("extra_body", {})["cache_control"] = {"type": "ephemeral"}
+            try:
+                async with client.messages.stream(model=MODEL, max_tokens=16000, system=system, tools=TOOLS_STREAM,
+                                                  messages=messages, **opts) as stream:
+                    async for text in stream.text_stream:
+                        out = mf.feed(text)
+                        if out:
+                            spoken += out
+                            yield {"t": "text", "v": out}
+                    resp = await stream.get_final_message()
+            except anthropic.BadRequestError as e:
+                low = str(e).lower()
+                print("会話の API が 400:", (getattr(e, "message", "") or str(e))[:500])
+                if plain or "credit balance" in low:
+                    raise
+                plain = True
+                if "too long" in low or "too many tokens" in low:  # 会話が長すぎる: 直近だけにする
+                    del messages[:-1]
+                continue
             add_usage(resp)
             if resp.stop_reason == "refusal":
                 error = "申し訳ありません、その件はお答えできません。"
@@ -1666,7 +1677,10 @@ async def chat_stream(message: str, history: List[dict]):
         elif "credit balance" in str(e).lower():
             error = "API の残高が切れています。console.anthropic.com の Billing で残高を足すと、また会話できます。"
         else:
-            error = f"API エラー({e.status_code})です。少し待ってからもう一度お願いします。"
+            detail = (getattr(e, "message", "") or str(e)).replace("\n", " ")[:220]
+            print("会話の API エラー:", e.status_code, detail)
+            error = (f"API エラー({e.status_code})です。理由: {detail}" if e.status_code == 400
+                     else f"API エラー({e.status_code})です。少し待ってからもう一度お願いします。")
     except anthropic.APIConnectionError:
         error = "API に接続できません。インターネット接続を確認してください。"
     rest = mf.flush()
