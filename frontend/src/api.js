@@ -125,3 +125,10 @@ export const connectToken = (platform, account, token) => call("POST", "/api/con
 export const resumeVideoRef = (folder) => call("POST", "/api/video_refs/resume", { folder });
 export const getMagazines = (account = "") => call("GET", `/api/magazines?account=${encodeURIComponent(account)}`);
 export const markMagazineCreated = (id, created = true) => call("POST", `/api/magazines/${encodeURIComponent(id)}/created`, { created });
+// 秘書ハブの外で作った投稿(Muse など)を URL で足す(2026-11-20)
+export const getExternalPosts = (account = "main", platform = "") => call("GET", `/api/external_posts?account=${encodeURIComponent(account)}&platform=${encodeURIComponent(platform)}`);
+export const previewExternalPost = (url, account = "main") => call("POST", "/api/external_posts/preview", { url, account });
+export const addExternalPost = (url, account = "main", note = "", allowOther = false) => call("POST", "/api/external_posts", { url, account, note, allow_other: allowOther });
+export const patchExternalPost = (platform, id, values, account = "main") => call("PATCH", `/api/external_posts/${encodeURIComponent(platform)}/${encodeURIComponent(id)}`, { ...values, account });
+export const removeExternalPost = (platform, id, account = "main") => call("DELETE", `/api/external_posts/${encodeURIComponent(platform)}/${encodeURIComponent(id)}?account=${encodeURIComponent(account)}`);
+export const refreshExternalPosts = (account = "main") => call("POST", `/api/external_posts/refresh?account=${encodeURIComponent(account)}`);

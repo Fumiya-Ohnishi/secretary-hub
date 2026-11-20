@@ -163,7 +163,7 @@ def _normalize(col: str, value: str) -> str:
 
 
 def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = None, per_post: bool = False,
-                   account: str = "main") -> dict:
+                   account: str = "main", blank_ok: bool = False) -> dict:
     """投稿1本の数字を記録する(足りない列は空のまま)"""
     _check(platform, account)
     name, cols = (POST_INSIGHTS if per_post else INSIGHTS)[platform]
@@ -171,7 +171,7 @@ def record_insight(platform: str, values: Dict[str, str], date: Optional[str] = 
     for c in cols:
         v = values.get(c, "")
         row[c] = _normalize(c, str(v).strip()) if v is not None else ""
-        if c not in TEXT_COLS and not row[c]:
+        if c not in TEXT_COLS and not row[c] and not blank_ok:  # blank_ok: 自動で取った数字(取れない列は 0 ではなく空のまま)
             row[c] = "0"  # 2026-11-12 社長: 変わらなかった(入れなかった)数字は 0 で記録する
     if "metric" in cols and not row.get("metric"):
         raise ValueError("項目(metric)を入れてください")

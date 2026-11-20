@@ -144,6 +144,11 @@ async def instagram_loop():
                 bad = [k for k, v in r.items() if v.get("connected") and not v.get("ok")]
                 if bad:
                     print("数字の自動取得で失敗:", {k: r[k]["detail"] for k in bad})
+                try:  # URL で足した投稿(note のスキ・YouTube の再生数など)も取り直す(2026-11-20)
+                    import external_posts
+                    print("URL で足した投稿の数字:", await external_posts.refresh())
+                except Exception as e:
+                    print("URL で足した投稿の数字の取り直しでエラー:", e)
             if instagram_api.configured() and now.strftime("%H:%M") >= "08:00":
                 if now.weekday() == 0 and last_week != today:  # 月曜: 週次リサーチ(8:30)の前に参考アカウントの数字
                     last_week = today
@@ -596,6 +601,69 @@ def add_insight(platform: str, body: InsightIn):
         return accounts.record_insight(platform, body.values, body.date, per_post=body.per_post, account=body.account)
     except ValueError as e:
         return err(e, 400)
+
+
+class ExtPostIn(BaseModel):
+    url: str
+    account: str = "main"
+    note: str = ""
+    allow_other: bool = False
+
+
+class ExtPostPatch(BaseModel):
+    account: str = "main"
+    posted_at: Optional[str] = None
+    title: Optional[str] = None
+    note: Optional[str] = None
+
+
+# 秘書ハブの外で作った投稿(Muse など)を URL で足す(2026-11-20 社長)
+@app.get("/api/external_posts")
+def get_external_posts(account: str = "main", platform: str = ""):
+    import external_posts
+    return {"items": external_posts.listing(account, platform)}
+
+
+@app.post("/api/external_posts/preview")
+async def preview_external_post(body: ExtPostIn):
+    import external_posts
+    try:
+        return await external_posts.fetch(body.url, body.account)
+    except (external_posts.ExtError, ValueError, httpx.HTTPError) as e:
+        return err(e, 400)
+
+
+@app.post("/api/external_posts")
+async def add_external_post(body: ExtPostIn):
+    import external_posts
+    try:
+        return await external_posts.add(body.url, body.account, body.note, body.allow_other)
+    except (external_posts.ExtError, ValueError, httpx.HTTPError) as e:
+        return err(e, 400)
+
+
+@app.patch("/api/external_posts/{platform}/{id}")
+def patch_external_post(platform: str, id: str, body: ExtPostPatch):
+    import external_posts
+    try:
+        return external_posts.update(body.account, platform, id, body.posted_at, body.title, body.note)
+    except external_posts.ExtError as e:
+        return err(e, 400)
+
+
+@app.delete("/api/external_posts/{platform}/{id}")
+def delete_external_post(platform: str, id: str, account: str = "main"):
+    import external_posts
+    try:
+        return external_posts.remove(account, platform, id)
+    except external_posts.ExtError as e:
+        return err(e, 400)
+
+
+@app.post("/api/external_posts/refresh")
+async def refresh_external_posts(account: str = "main"):
+    import external_posts
+    return await external_posts.refresh(account)
 
 
 @app.get("/api/accounts/{platform}/results")
