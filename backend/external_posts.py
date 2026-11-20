@@ -42,13 +42,23 @@ def listing(account: str = "main", platform: str = "") -> List[dict]:
         items = []
     if platform:
         items = [i for i in items if i.get("platform") == platform]
+    for i in items:  # どの週の投稿か(投稿日の週。分からなければ足した日の週)。秘書ハブの週(例 2026-47)と同じ数え方
+        i["week"] = week_of(i.get("posted_at") or (i.get("added") or "")[:10])
     return sorted(items, key=lambda i: (i.get("posted_at") or "", i.get("added") or ""), reverse=True)
+
+
+def week_of(day: str) -> str:
+    try:
+        y, w, _ = datetime.date.fromisoformat(day[:10]).isocalendar()
+        return f"{y}-{w:02d}"
+    except Exception:
+        return ""
 
 
 def _save(account: str, items: List[dict]):
     p = _path(account)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
+    p.write_text(json.dumps([{k: v for k, v in i.items() if k != "week"} for i in items], ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def detect(url: str) -> str:
@@ -227,6 +237,7 @@ async def add(url: str, account: str = "main", note: str = "", allow_other: bool
     items.append(item)
     _save(account, items)
     _record_numbers(item, account)
+    item["week"] = week_of(item.get("posted_at") or item["added"][:10])
     return item
 
 
