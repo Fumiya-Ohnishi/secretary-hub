@@ -292,8 +292,13 @@ def _run_job(job_id: str):
     if job["department"] == "Codex":
         return _run_codex_job(job, before)
     advisor = _codex_before(job)
-    prompt = _job_prompt(job) + advisor
+    import workcheck  # 完了条件・引き継ぎメモ・始める前の点検(2026-11-23 社長が A・B・C)
+    prompt = _job_prompt(job) + workcheck.prepare(job) + advisor
     try:
+        missing = workcheck.preflight(job, _job_env())
+        if missing:  # 道具が無いまま始めると途中で止まる。始めずに知らせる(社長の手が要る)
+            workcheck.notify_once(missing)
+            raise RuntimeError(f"始める前の点検で止めました: {'・'.join(missing)} が見つかりません(Mac に入れると、秘書が続きを頼みます)")
         if not shutil.which("claude"):
             raise RuntimeError("Claude Code CLI が見つかりません。ターミナルで `npm install -g @anthropic-ai/claude-code` → `claude` で一度ログインしてください。")
         _wait_cooldown(job)
@@ -317,6 +322,12 @@ def _run_job(job_id: str):
         job.update(status="error", output=(job.get("output") or "") + f"\n{e}")
     if job["status"] == "done":
         _codex_after(job)
+    try:  # 完了条件の一覧を確かめる(未合格・書き換えがあれば、完了・承認待ちにしない)
+        acc = workcheck.verify(job)
+        if acc is not None:
+            job["acceptance"] = acc
+    except Exception as e:
+        print("完了条件の確認でエラー:", e)
     job["finished"] = datetime.datetime.now().isoformat(timespec="seconds")
     _publish_worklog(job, before)
     _record_president_asks(job)
@@ -361,8 +372,19 @@ def decide_task_status(job: dict, files: List[str]) -> tuple:
     - 投稿の中身を作り、承認待ちの投稿がある、または社長の判断が要る作業 → 承認待ち(承認は社長だけ)
     - それ以外(秘書・部署だけで完結した作業)→ 完了"""
     if job.get("status") != "done":
-        why = "時間切れ" if "制限時間" in (job.get("output") or "") else "エラー"
-        return "未着手", f"作業が途中で止まりました({why})。やり直しが必要・秘書が再依頼"
+        out = job.get("output") or ""
+        if "始める前の点検で止めました" in out:  # 道具が無いだけ(数えない。道具が入れば秘書が頼み直す)
+            return "未着手", "始める前の点検で止めました(" + out.split("始める前の点検で止めました:")[-1].strip()[:80] + ")"
+        why = "時間切れ" if "制限時間" in out else "エラー"
+        return "未着手", f"作業が途中で止まりました({why})。やり直しが必要・秘書が再依頼(引き継ぎメモから続ける)"
+    acc = job.get("acceptance")
+    if acc and (acc.get("failing") or acc.get("tampered")):  # 完了条件(2026-11-23 社長 A): 全部合格するまで完了・承認待ちにしない
+        bad = acc.get("tampered") or []
+        if bad:
+            detail = "完了条件の一覧が書き換えられた: " + "・".join(bad[:3])
+        else:
+            detail = f"完了条件 {acc['passed']}/{acc['total']} 合格。未合格: " + "・".join(acc["failing"][:3])
+        return "未着手", f"作業が途中で止まりました(完了条件が未合格)。{detail}。秘書が続きを再依頼(引き継ぎメモから続ける)"
     waiting = []
     for f in files:
         if POST_FILE_RE.match(f):
@@ -536,6 +558,7 @@ ALLOWED_TOOLS = [
     "Bash(sips -g:*)", "Bash(wc:*)", "Bash(python3 -m json.tool:*)",  # 画像の寸法を読む・字数を数える・JSON を確かめる(読むだけ。2026-11-10 社長 T-150)
     f"Bash(node {REEL_DIR}/render_reel.mjs:*)",
     f"Bash(node {REEL_DIR}/render_record_reel.mjs:*)",
+    f"Bash(node {REEL_DIR}/next_bgm.mjs:*)",  # BGM の順番(P-088)。2026-11-20 許可が無く、部署が手で記録していた
     f"Bash(npx --yes {HF}:*)", f"Bash(npx {HF}:*)",
     "Bash(ffmpeg:*)", "Bash(ffprobe:*)",
     f"Bash(python3 {IMAGE_TOOL}:*)",  # 画像の生成(OpenAI。キーは秘書ハブの backend/.env)
