@@ -7,8 +7,19 @@ for d in . ../ai-company; do
     (git -C "$d" fetch -q && git -C "$d" merge --ff-only -q '@{u}' 2>/dev/null) || echo "ℹ $(basename "$(cd "$d" && pwd)") は最新版を自動で取り込めませんでした(手元の変更とぶつかるため)。秘書に伝えてください"
   fi
 done
+# 部品の部屋(venv)。元の Python が消えて壊れていたら作り直す(2026-11-23: Python を入れ替えたあと bad interpreter で止まった)
+if [ -d backend/venv ] && ! backend/venv/bin/python -c "import sys" >/dev/null 2>&1; then
+  echo "→ 部品の部屋(backend/venv)が壊れているので作り直します"
+  rm -rf backend/venv
+fi
 if [ ! -d backend/venv ]; then
-  python3 -m venv backend/venv
+  PY=""
+  for c in python3.12 python3.13 python3.11 python3; do  # 部品が対応している版を先に使う(3.14 以降は対応していない部品がある)
+    command -v "$c" >/dev/null && "$c" -c 'import sys; sys.exit(0 if (3,10) <= sys.version_info[:2] <= (3,13) else 1)' && { PY="$c"; break; }
+  done
+  [ -n "$PY" ] || { echo "⚠ Python 3.10〜3.13 がありません。https://www.python.org/downloads/macos/ の Python 3.12 の installer を入れてください"; exit 1; }
+  echo "→ $PY($("$PY" --version 2>&1))で部品の部屋を作ります(初回だけ数分)"
+  "$PY" -m venv backend/venv
 fi
 # 必要な部品を入れる(入っていれば数秒で終わる)
 backend/venv/bin/pip install -q -r backend/requirements.txt || echo "⚠ 部品のインストールに失敗しました。上のエラーを秘書に見せてください"
