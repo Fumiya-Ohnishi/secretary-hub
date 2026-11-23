@@ -265,6 +265,8 @@ async def advance() -> List[dict]:
             if (t["status"] == "未着手" and prev_done and t["assignee"] in agent.DEPT_FULL
                     and t["key"] not in running_keys and (n > 1 or near)):
                 instruction = t.get("instruction") or t["title"]
+                if _tools_missing(t["title"], instruction):  # 道具が無ければ頼まない(入れば次の見回りで頼む)
+                    break
                 await company.update_task(t["key"], status="進行中",
                                           append_note=f"{today:%m/%d} 秘書が自動で{t['assignee']}部に依頼")
                 job = agent.start_job(t["assignee"], f"{t['title']}。{instruction}(期限 {due or 'なし'})", t["title"], t["key"])
@@ -272,6 +274,20 @@ async def advance() -> List[dict]:
             break  # 1つのプランは先頭の未完了工程だけを見る
     started += await _advance_trees(tasks, running_keys | {st.get("key") for st in started}, today)
     return started
+
+
+def _tools_missing(title: str, instruction: str) -> bool:
+    """始める前の点検(2026-11-23 社長 C): 作業に要る道具が無ければ、頼まずに社長へ1日1回知らせる"""
+    try:
+        import agent
+        import workcheck
+        missing = workcheck.preflight({"title": title, "instruction": instruction}, agent._job_env())
+        if missing:
+            workcheck.notify_once(missing)
+            return True
+    except Exception as e:
+        print("始める前の点検でエラー:", e)
+    return False
 
 
 TREE_MAX_RUNNING = 3  # 親タスクの木から自動で頼む作業は、同時に3つまで(クレジットの使いすぎを防ぐ)
@@ -304,10 +320,12 @@ async def _advance_trees(tasks: List[dict], running_keys: set, today: datetime.d
             due = (t.get("due") or "")[:10]
             if due and datetime.date.fromisoformat(due) > today + datetime.timedelta(days=LOOKAHEAD_DAYS):
                 break
-            await company.update_task(t["key"], status="進行中", next_action=f"{t['assignee']}部が作業中",
-                                      append_note=f"{today:%m/%d} 秘書が親 {parent.get('id', '')} の順番で{t['assignee']}部に自動で依頼")
             instr = (f"{t['title']}(期限 {due or 'なし'})。親タスク {parent.get('id', '')}「{parent.get('title', '')}」の一部。"
                      f"備考: {(t.get('note') or '')[:600]}")
+            if _tools_missing(t["title"], instr):  # 道具が無ければ頼まない(入れば次の見回りで頼む)
+                break
+            await company.update_task(t["key"], status="進行中", next_action=f"{t['assignee']}部が作業中",
+                                      append_note=f"{today:%m/%d} 秘書が親 {parent.get('id', '')} の順番で{t['assignee']}部に自動で依頼")
             job = agent.start_job(t["assignee"], instr, t["title"], t["key"])
             started.append({"task": t["id"], "key": t["key"], "title": t["title"], "department": t["assignee"], "job": job["id"]})
             busy += 1
