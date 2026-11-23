@@ -536,6 +536,7 @@ ALLOWED_TOOLS = [
     "Bash(sips -g:*)", "Bash(wc:*)", "Bash(python3 -m json.tool:*)",  # 画像の寸法を読む・字数を数える・JSON を確かめる(読むだけ。2026-11-10 社長 T-150)
     f"Bash(node {REEL_DIR}/render_reel.mjs:*)",
     f"Bash(node {REEL_DIR}/render_record_reel.mjs:*)",
+    f"Bash(node {REEL_DIR}/next_bgm.mjs:*)",  # BGM の順番(P-088)。2026-11-20 許可が無く、部署が手で記録していた
     f"Bash(npx --yes {HF}:*)", f"Bash(npx {HF}:*)",
     "Bash(ffmpeg:*)", "Bash(ffprobe:*)",
     f"Bash(python3 {IMAGE_TOOL}:*)",  # 画像の生成(OpenAI。キーは秘書ハブの backend/.env)
