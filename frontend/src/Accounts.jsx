@@ -144,6 +144,7 @@ function Account({ account = "main", platform, week, setWeek, onChanged, notify,
         <div className="acct-kpi">
           <div className="kpi-num">{latest ? latest.followers.toLocaleString() : "—"}</div>
           <div className="kpi-lbl">フォロワー{latest ? `(${latest.date})` : ""}{diff !== null && <span className={diff >= 0 ? "up" : "down"}> {diff >= 0 ? "+" : ""}{diff}</span>}</div>
+          <QuickFollowers platform={platform} account={account} notify={notify} onDone={() => { load(); onChanged(); }} />
         </div>
       </div>
       <div className="seg">
@@ -162,6 +163,30 @@ function Account({ account = "main", platform, week, setWeek, onChanged, notify,
       {section === "improve" && <Improvements data={data} platform={platform} account={account} notify={notify} onDone={load} />}
       {section === "rules" && <div className="card"><div className="sec-text">{data.playbook || "ルールはまだありません。"}</div></div>}
     </>
+  );
+}
+
+/** アカウントの見出しから、今日のフォロワー数をその場で入れる(2026-11-24 社長「note などのアカウント数を直接入力したい」)。
+ *  Instagram・Threads・YouTube は毎朝自動で取るが、入れ直したいときにも使える */
+function QuickFollowers({ platform, account = "main", notify, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [v, setV] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    const n = parseInt(String(v).replace(/[^0-9]/g, ""), 10);
+    if (Number.isNaN(n)) return;
+    setBusy(true);
+    try { await recordFollowers({ platform, followers: n, account }); notify(`フォロワー ${n.toLocaleString()}人を記録しました`, "ok"); setV(""); setOpen(false); onDone && onDone(); }
+    catch (e) { notify(e.message, "error"); }
+    setBusy(false);
+  };
+  if (!open) return <button className="btn ghost sm quick-fol" onClick={() => setOpen(true)}>今日の数を入れる</button>;
+  return (
+    <div className="quick-fol-form">
+      <input inputMode="numeric" autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()} placeholder="フォロワー数" />
+      <button className="btn primary sm" disabled={busy || !v} onClick={save}>記録</button>
+      <button className="btn ghost sm" onClick={() => { setOpen(false); setV(""); }}>×</button>
+    </div>
   );
 }
 
