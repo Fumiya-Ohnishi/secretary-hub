@@ -120,8 +120,18 @@ def _iso_week(d: str) -> str:
         return ""
 
 
-def _set(path: Path) -> dict:
+COMMENT_RE = re.compile(r"\s+#\s.*$")
+
+
+def _parse(path: Path):
+    """_set.md を読む。値の後ろのメモ(「kind: emoji   # stamp か emoji」の # 以降)は外す
+    (2026-11-24 社長「スタンプが画面で見られない・今週の数が増えない」: メモまで種類として読み、一覧から漏れていた)"""
     meta, body = content.parse(path.read_text())
+    return {k: (COMMENT_RE.sub("", v).strip() if isinstance(v, str) else v) for k, v in meta.items()}, body
+
+
+def _set(path: Path) -> dict:
+    meta, body = _parse(path)
     sid = path.parent.name
     imgs = _images(sid)
     kind = meta.get("kind", "stamp")
@@ -172,7 +182,7 @@ def decide(sid: str, action: str, comment: str = "", url: str = "") -> dict:
     if action not in ACTIONS:
         raise ValueError("操作は " + " / ".join(ACTIONS) + " のどれかです")
     allowed, nxt = ACTIONS[action]
-    meta, body = content.parse(path.read_text())
+    meta, body = _parse(path)
     cur = meta.get("status", "下書き")
     if cur not in allowed:
         raise ValueError(f"今の状態({cur})からは「{nxt}」にできません")

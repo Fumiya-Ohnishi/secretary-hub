@@ -1225,3 +1225,8 @@ select.status-sel { color-scheme: dark; }
 .ext-add-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .ext-item.card.post { padding: 10px 12px; }
 .ext-item .badge { flex: none; align-self: center; }
+
+/* アカウントの見出しでフォロワー数をその場で入れる(2026-11-24) */
+.acct-kpi .quick-fol { margin-top: 6px; }
+.quick-fol-form { display: flex; gap: 4px; margin-top: 6px; justify-content: flex-end; }
+.quick-fol-form input { width: 110px; }
