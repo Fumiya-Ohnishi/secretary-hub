@@ -166,7 +166,7 @@ def _job_prompt(job: dict) -> str:
              f"作業: {job['instruction']}", "", *_env_facts(), *_knowledge_brief(job, dept),
              f"## {dept}の社員", roster or "(定義なし。あなた自身が部署として作業する)", "",
              "## 進め方"]
-    if staff and job["department"] in OPINION_DEPARTMENTS and len(staff) >= 2:
+    if staff and job["department"] in OPINION_DEPARTMENTS and len(staff) >= 2 and is_new_idea(job):  # 案出しを広げるのは新しい企画だけ(2026-11-24 社長 B)
         lines.append("1. 案出しの段階では、性格・視点の違う担当2〜3名に、互いの案を見せずに別々に案を出させる(各社員の定義の「性格・視点」を参照)。"
                      "清書・仕上げは採用した案の担当1名に任せる(費用を抑えるため、意見を広げるのは案出しだけ。決まった手順だけの作業=書き出し・集計の写しなどは1名でよい)")
         if job["department"] == "SNS運用":
@@ -179,13 +179,16 @@ def _job_prompt(job: dict) -> str:
             lines.append(f"1b. 上司「{bosses[0]['name']}」が案を比べ、良いところを合わせて1つにまとめる。方向がずれた案は理由を添えて軌道修正する。"
                          "採らなかった案と理由・少数意見は作業フォルダの _discussion.md に1行ずつ残す")
     elif staff:
-        lines.append("1. 作業に合う担当(複数可)のサブエージェントに作らせる")
+        lines.append("1. 作業に合う担当1名のサブエージェントに作らせる(直し・書き出し・続き・集計は1名で。人を増やさない。2026-11-24 社長: Claude の上限の節約)")
     else:
         lines.append("1. 部署のサブエージェントに作業させる")
     if bosses:
         b = bosses[0]["name"]
         lines.append(f"2. 上司のサブエージェント「{b}」にチェックさせ、不合格なら担当に直させる(最大2回)。指摘は data/corrections.md に追記")
-    if dept in CHECKED_DEPARTMENTS:
+    if dept in CHECKED_DEPARTMENTS and job.get("qa_step"):  # 進行表に品質管理部の工程が別にある: ここでは点検しない(二重の点検をやめる 2026-11-24 社長 B)
+        lines.append("3. 品質管理部の点検は、次の工程で品質管理部が行う。この作業の中では品質管理部を呼ばない(上司のチェックまで)。"
+                     "できたら投稿の状態は「下書き」のままにし、報告に「品質管理待ち」と書く")
+    elif dept in CHECKED_DEPARTMENTS:
         qa = _roster("品質管理部")
         if qa:
             names = "・".join(m["name"] for m in qa if not m["boss"])
@@ -654,11 +657,32 @@ def _stop_proc(proc):
             pass
 
 
+# 部署の作業のモデル(2026-11-24 社長が A: Claude の週の上限に毎週届くため)。
+# 基本は Sonnet。戦略の判断と新しい企画だけ Opus。.env の JOB_MODEL・JOB_MODEL_HEAVY で変えられる
+JOB_MODEL = os.getenv("JOB_MODEL", "").strip() or "sonnet"
+JOB_MODEL_HEAVY = os.getenv("JOB_MODEL_HEAVY", "").strip() or "opus"
+NEW_IDEA_WORDS = ("企画案", "企画を", "週の企画", "テーマを決", "方向転換", "Phase", "月次", "戦略", "設計を作", "新しい企画")
+REDO_WORDS = ("直し", "差し戻", "書き出し", "やり直", "続き", "修正", "描き直", "書き直", "再依頼", "引き継ぎメモ", "記録", "集計", "写し")
+
+
+def is_new_idea(job: dict) -> bool:
+    """新しい企画・判断の作業か(直し・書き出し・続き・集計は違う)"""
+    text = f"{job.get('title', '')} {job.get('instruction', '')}"
+    if any(w in text for w in REDO_WORDS):
+        return False
+    return job.get("department") == "戦略" or any(w in text for w in NEW_IDEA_WORDS)
+
+
+def job_model(job: dict) -> str:
+    heavy = job.get("department") == "戦略" or (job.get("department") == "企画" and is_new_idea(job))
+    return JOB_MODEL_HEAVY if heavy else JOB_MODEL
+
+
 def _run_claude_streaming(job: dict, prompt: str):
     """Claude Code を実行し、誰(どのサブエージェント)が何をしているかを job["activity"] に逐次記録する"""
     job.setdefault("activity", [])
     job.setdefault("log", [])
-    proc = subprocess.Popen(["claude", "-p", prompt, "--permission-mode", "acceptEdits",
+    proc = subprocess.Popen(["claude", "-p", prompt, "--model", job_model(job), "--permission-mode", "acceptEdits",
                              "--output-format", "stream-json", "--verbose", *_extra_dirs(),
                              "--allowedTools", *ALLOWED_TOOLS, "--disallowedTools", *DISALLOWED_TOOLS],
                             cwd=str(company.COMPANY_DIR), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -835,9 +859,10 @@ def member_status() -> Dict[str, dict]:
     return status
 
 
-def start_job(department: str, instruction: str, title: str, task_key: Optional[str] = None) -> dict:
+def start_job(department: str, instruction: str, title: str, task_key: Optional[str] = None, qa_step: bool = False) -> dict:
+    """qa_step: 進行表に品質管理部の工程が別にある(この作業の中では点検しない)"""
     job_id = datetime.datetime.now().strftime("%m%d%H%M%S%f")
-    jobs[job_id] = {"id": job_id, "title": title, "department": department,
+    jobs[job_id] = {"id": job_id, "title": title, "department": department, "qa_step": qa_step,
                     "department_full": DEPT_FULL.get(department, f"{department}部"), "instruction": instruction,
                     "status": "running", "output": "", "task_key": task_key, "activity": [], "log": [],
                     "started": datetime.datetime.now().isoformat(timespec="seconds"), "finished": None}
@@ -986,8 +1011,8 @@ TOOLS = [
     _tool("search_knowledge", "資料室(過去の失敗と再発防止・うまくいった型・審査・リサーチ・数字)から、関係する知見を探す。"
           "社長に「前にどうだった?」「同じ失敗してない?」と聞かれたとき、仕事を頼む前に確認するときに使う。",
           {"query": {"type": "string"}}, ["query"]),
-    _tool("hold_meeting", "部署をまたぐ会議を開く(企画会議・振り返り会議・全体会議・臨時会議)。社長に「○○について会議して」と言われたとき、"
-          "同じ差し戻しが2回あった・作業が止まったときに使う。議事録は Notion「議事録」に載り、やることは自動で起票され、決まったことが通知される。",
+    _tool("hold_meeting", "部署をまたぐ会議を開く(企画会議・振り返り会議・全体会議・臨時会議)。臨時会議は、社長に「○○について会議して」と言われたときか、"
+          "社長の判断が要る件を部署をまたいで詰めるときだけ使う(2026-11-24 社長: Claude の上限の節約。差し戻しや作業の停止だけでは開かない)。議事録は Notion「議事録」に載り、やることは自動で起票され、決まったことが通知される。",
           {"kind": {"type": "string", "enum": ["planning", "review", "allhands", "adhoc"], "description": "planning=企画会議 review=振り返り allhands=全体 adhoc=臨時"},
            "topic": {"type": "string", "description": "議題(臨時会議は必須)"},
            "departments": {"type": "array", "items": {"type": "string"}, "description": "参加部署(正式名。例: デザイン部)。省略時は会議の種類の既定"}}, ["kind"]),

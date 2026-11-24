@@ -138,7 +138,7 @@ ROUTINES += [
                     "4. 品質管理部が点検し、合格したものだけ status を承認待ちにする(本数のために点検を省かない)\n"
                     "社長への確認は、本当に判断が要るときだけ報告の「## 社長への確認」に A・B・C で書く。"},
     {"id": "news_flash_am", "daily": True, "time": "07:30", "department": "秘書", "title": "AIの新機能の速報チェック(朝)", "instruction": NEWS_FLASH},
-    {"id": "news_flash_pm", "daily": True, "time": "13:00", "department": "秘書", "title": "AIの新機能の速報チェック(昼)", "instruction": NEWS_FLASH},
+    # 昼の速報チェックはやめた(2026-11-24 社長 C: Claude の上限の節約。朝の1回だけ)
 ]
 PLAN_RE = re.compile(r"\[自動 (P[0-9a-f]+)-(\d+)\]")
 DONE = ("完了", "承認済み", "承認待ち")  # 確認待ち(社長の答え待ち)の工程があれば次へ進めない(2026-11-15)
@@ -269,7 +269,8 @@ async def advance() -> List[dict]:
                     break
                 await company.update_task(t["key"], status="進行中",
                                           append_note=f"{today:%m/%d} 秘書が自動で{t['assignee']}部に依頼")
-                job = agent.start_job(t["assignee"], f"{t['title']}。{instruction}(期限 {due or 'なし'})", t["title"], t["key"])
+                qa_step = any(pt.get("assignee") == "品質管理" for pn, pt in steps if pn > n)
+                job = agent.start_job(t["assignee"], f"{t['title']}。{instruction}(期限 {due or 'なし'})", t["title"], t["key"], qa_step=qa_step)
                 started.append({"task": t["id"], "title": t["title"], "department": t["assignee"], "job": job["id"]})
             break  # 1つのプランは先頭の未完了工程だけを見る
     started += await _advance_trees(tasks, running_keys | {st.get("key") for st in started}, today)
@@ -326,7 +327,8 @@ async def _advance_trees(tasks: List[dict], running_keys: set, today: datetime.d
                 break
             await company.update_task(t["key"], status="進行中", next_action=f"{t['assignee']}部が作業中",
                                       append_note=f"{today:%m/%d} 秘書が親 {parent.get('id', '')} の順番で{t['assignee']}部に自動で依頼")
-            job = agent.start_job(t["assignee"], instr, t["title"], t["key"])
+            qa_step = any(by_key[k].get("assignee") == "品質管理" and by_key[k].get("status") not in DONE for k in parent["children"] if k in by_key and k != t["key"])
+            job = agent.start_job(t["assignee"], instr, t["title"], t["key"], qa_step=qa_step)
             started.append({"task": t["id"], "key": t["key"], "title": t["title"], "department": t["assignee"], "job": job["id"]})
             busy += 1
             break
