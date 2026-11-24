@@ -1229,4 +1229,4 @@ select.status-sel { color-scheme: dark; }
 /* アカウントの見出しでフォロワー数をその場で入れる(2026-11-24) */
 .acct-kpi .quick-fol { margin-top: 6px; }
 .quick-fol-form { display: flex; gap: 4px; margin-top: 6px; justify-content: flex-end; }
-.quick-fol-form input { width: 110px; }
+.quick-fol-form input { width: 110px; background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 4px 8px; font-size: 13px; }
